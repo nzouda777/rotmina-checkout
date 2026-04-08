@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import type { TranzilaConfig, TranzilaChargeParams, TranzilaResponse } from './types'
 
 const DEFAULT_TRANZILA_API_URL = 'https://api.tranzila.com/v1/transaction/credit_card/create'
@@ -9,105 +10,78 @@ export class TranzilaClient {
     this.config = config
   }
 
-  async charge(params: TranzilaChargeParams): Promise<TranzilaResponse> {
-    const formData = new URLSearchParams()
-    
-    formData.append('supplier', this.config.terminalName)
-    if (this.config.terminalPassword) {
-      formData.append('TranzilaPW', this.config.terminalPassword)
+  private generateAccessToken(appKey: string, secret: string, time: number, nonce: string): string {
+    const key = `${secret}${time}${nonce}`
+    return crypto.createHmac('sha256', key).update(appKey).digest('hex')
+  }
+
+  private makeNonce(length: number): string {
+    let result = ''
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    const charactersLength = characters.length
+    for (let i = 0; i < length; i++) {
+      result += characters.charAt(Math.floor(Math.random() * charactersLength))
     }
-    
-    // Add all charge parameters
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        formData.append(key, String(value))
-      }
-    })
+    return result
+  }
 
-    // Response format
-    formData.append('response_return_format', 'json')
-
+  async charge(params: any): Promise<TranzilaResponse> {
     const apiUrl = process.env.TRANZILA_API_URL || DEFAULT_TRANZILA_API_URL
+    const appKey = process.env.TRANZILA_API_KEY || ''
+    const secret = process.env.TRANZILA_SECRET || ''
+    const time = Math.round(Date.now() / 1000)
+    const nonce = this.makeNonce(80)
+    const accessToken = this.generateAccessToken(appKey, secret, time, nonce)
 
-    // Detailed debug logging (obfuscating card number)
-    const debugData = new URLSearchParams(formData)
-    const ccno = debugData.get('ccno')
-    if (ccno) {
-      debugData.set('ccno', ccno.substring(0, 6) + '...' + ccno.substring(ccno.length - 4))
-    }
-    const cvv = debugData.get('mycvv')
-    if (cvv) {
-      debugData.set('mycvv', '***')
-    }
-    const pw = debugData.get('TranzilaPW')
-    if (pw) {
-      debugData.set('TranzilaPW', '***')
-    }
+    // Log request (obfuscating sensitive data)
+    const logParams = { ...params }
+    if (logParams.card_number) logParams.card_number = 'XXXX-XXXX-XXXX-' + String(logParams.card_number).slice(-4)
+    if (logParams.cvv) logParams.cvv = '***'
 
     console.log('[DEBUG] TRANZILA REQUEST:', {
       url: apiUrl,
-      method: 'POST',
-      body: debugData.toString(),
+      headers: {
+        'X-tranzila-api-app-key': appKey,
+        'X-tranzila-api-request-time': time,
+        'X-tranzila-api-nonce': nonce,
+        'X-tranzila-api-access-token': accessToken.substring(0, 10) + '...',
+      },
+      body: logParams,
     })
-    function makeid(length: any) {
-        var result           = '';
-        var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        var charactersLength = characters.length;
-        for ( var i = 0; i < length; i++ ) {
-          result += characters.charAt(Math.floor(Math.random() * charactersLength));
-        }
-        return result;
-    }
-    let nonce = makeid(80)
-    var time = Math.round((new Date()).getTime() / 1000);
-console.log('apiUrl', apiUrl, 'nonce', nonce, 'time', time, 'formData', formData.toString(), 'api key', process.env.TRANZILA_API_KEY, 'api secret', process.env.TRANZILA_SECRET, 'terminal name', process.env.TRANZILA_TERMINAL, 'idempotency key', process.env.IDEMPOTENCY_KEY_SECRET)
-      
-    let response
+
     try {
-      response = await fetch(apiUrl, {
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          // 'Accept': 'application/json, text/javascript, */*; q=0.01',
-          // 'Accept-Language': 'en-US,en;q=0.9,he;q=0.8',
-          // 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          // 'Referer': 'https://' + (process.env.SHOPIFY_STORE_DOMAIN || 'tranzila.com'),
-          // 'Origin': 'https://' + (process.env.SHOPIFY_STORE_DOMAIN || 'tranzila.com'),
-          'X-tranzila-api-app-key': process.env.TRANZILA_API_KEY || '',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-tranzila-api-app-key': appKey,
           'X-tranzila-api-request-time': String(time),
           'X-tranzila-api-nonce': nonce,
-          'X-tranzila-api-access-token': process.env.IDEMPOTENCY_KEY_SECRET || ''
+          'X-tranzila-api-access-token': accessToken,
         },
-        body: formData.toString(),
+        body: JSON.stringify({
+          terminal_name: this.config.terminalName,
+          ...params
+        }),
       })
-    } catch (fetchErr) {
-      console.error('[DEBUG] TRANZILA FETCH EXCEPTION:', fetchErr)
-      throw fetchErr
-    }
 
-    const text = await response.text()
-    
-    if (!response.ok) {
-      console.error('[DEBUG] TRANZILA ERROR RESPONSE:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: text,
-      })
-      throw new Error(`Tranzila request failed: ${response.statusText} (${response.status})`)
-    }
+      const text = await response.text()
+      
+      if (!response.ok) {
+        console.error('[DEBUG] TRANZILA ERROR RESPONSE:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: text,
+        })
+        throw new Error(`Tranzila request failed: ${response.statusText} (${response.status})`)
+      }
 
-    try {
+      console.log('[DEBUG] TRANZILA SUCCESS RESPONSE:', text)
       return JSON.parse(text) as TranzilaResponse
-    } catch {
-      // Parse URL-encoded response if JSON parsing fails
-      const parsed: Record<string, string> = {}
-      text.split('&').forEach(pair => {
-        const [key, value] = pair.split('=')
-        if (key) {
-          parsed[decodeURIComponent(key)] = decodeURIComponent(value || '')
-        }
-      })
-      return parsed as unknown as TranzilaResponse
+    } catch (err) {
+      console.error('[DEBUG] TRANZILA EXCEPTION:', err)
+      throw err
     }
   }
 
@@ -136,8 +110,11 @@ console.log('apiUrl', apiUrl, 'nonce', nonce, 'time', time, 'formData', formData
     return errorMessages[responseCode] || `Transaction failed (Code: ${responseCode})`
   }
 
-  static isSuccess(response: TranzilaResponse): boolean {
-    return response.Response === '000'
+  static isSuccess(response: any): boolean {
+    // For REST API, success might be different than '000' in Response
+    // Usually it returns a JSON with success: true or similar
+    // Or it still has a Response field.
+    return response.Response === '000' || response.success === true || response.status === 'success'
   }
 }
 

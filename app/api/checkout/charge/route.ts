@@ -5,6 +5,9 @@ import { createShopifyOrder } from '@/lib/shopify'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
 export async function POST(request: NextRequest) {
+  const logId = Math.random().toString(36).substring(7)
+  console.log(`[CHARGE][${logId}] Request started`)
+
   try {
     const body = await request.json()
     const { 
@@ -16,7 +19,10 @@ export async function POST(request: NextRequest) {
       cardholderName 
     } = body
 
+    console.log(`[CHARGE][${logId}] Received body for session:`, sessionId)
+
     if (!sessionId || !customerInfo || !cardNumber || !expiryDate || !cvv) {
+      console.warn(`[CHARGE][${logId}] Missing required fields`)
       return NextResponse.json(
         { error: 'Missing required payment information' },
         { status: 400 }
@@ -26,6 +32,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
 
     // Get session
+    console.log(`[CHARGE][${logId}] Fetching session from database...`)
     const { data: session, error: sessionError } = await supabase
       .from('payment_sessions')
       .select('*')
@@ -33,13 +40,17 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (sessionError || !session) {
+      console.error(`[CHARGE][${logId}] Session not found or error:`, sessionError)
       return NextResponse.json(
         { error: 'Payment session not found' },
         { status: 404 }
       )
     }
 
+    console.log(`[CHARGE][${logId}] Session found. Current status:`, session.status)
+
     if (session.status !== 'pending') {
+      console.warn(`[CHARGE][${logId}] Session already processed:`, session.status)
       return NextResponse.json(
         { error: 'Payment session already processed' },
         { status: 400 }
@@ -47,6 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update session to processing
+    console.log(`[CHARGE][${logId}] Updating session status to 'processing'...`)
     await supabase
       .from('payment_sessions')
       .update({ 
@@ -58,85 +70,101 @@ export async function POST(request: NextRequest) {
     // Process payment with Tranzila
     const tranzila = createTranzilaClient()
     
-    // Format expiry date (MMYY)
-    const formattedExpiry = expiryDate.replace('/', '')
+    // Split expiry date (MM/YY)
+    const [month, year] = expiryDate.split('/')
+    const expireMonth = parseInt(month, 10)
+    const expireYear = parseInt(`20${year}`, 10)
     
-    console.log('[DEBUG] ATTEMPTING CHARGE:', {
-      sessionId,
-      amount: session.cart.total,
-      currency: session.cart.currency,
-      email: customerInfo.email,
-    })
+    // Map cart items
+    console.log(`[CHARGE][${logId}] Mapping ${session.cart.items?.length || 0} items for Tranzila...`)
+    const tranzilaItems = (session.cart.items || []).map((item: any) => ({
+      name: item.title || 'Product',
+      unit_price: item.price,
+      units_number: item.quantity,
+      type: 'I'
+    }))
 
-    const tranzilaResponse = await tranzila.charge({
-      sum: session.cart.total,
-      currency: getCurrencyCode(session.cart.currency),
-      ccno: cardNumber.replace(/\s/g, ''),
-      expdate: formattedExpiry,
-      mycvv: cvv,
+    // If no items, add a fallback item representing the total
+    if (tranzilaItems.length === 0) {
+      tranzilaItems.push({
+        name: `Order from ${session.shop}`,
+        unit_price: session.cart.total,
+        units_number: 1,
+        type: 'I'
+      })
+    }
+
+    const chargePayload = {
+      card_number: cardNumber.replace(/\s/g, ''),
+      expire_month: expireMonth,
+      expire_year: expireYear,
+      cvv: parseInt(cvv, 10),
+      items: tranzilaItems,
+      txn_currency_code: session.cart.currency.toUpperCase(),
+      txn_type: 'debit',
       email: customerInfo.email,
-      contact: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
-      address: customerInfo.address,
-      city: customerInfo.city,
-      phone: customerInfo.phone,
-      pdesc: `Order from ${session.shop}`,
-    })
+      card_holder_name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
+      customer_address: customerInfo.address,
+      customer_city: customerInfo.city,
+      customer_phone: customerInfo.phone,
+    }
+
+    console.log(`[CHARGE][${logId}] Calling Tranzila API...`)
+    
+    const tranzilaResponse = await tranzila.charge(chargePayload)
 
     const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
+    console.log(`[CHARGE][${logId}] Tranzila result success:`, isSuccess, 'Response code:', tranzilaResponse.Response)
+
     let shopifyOrderId = session.order_id
 
     if (isSuccess && !shopifyOrderId) {
       try {
+        console.log(`[CHARGE][${logId}] Creating Shopify order...`)
         const order = await createShopifyOrder({
           session: session as PaymentSession,
           customer: customerInfo,
-          transactionId: tranzilaResponse.ConfirmationCode,
+          transactionId: tranzilaResponse.ConfirmationCode || tranzilaResponse.index,
         })
         shopifyOrderId = String(order.id)
+        console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
       } catch (err) {
-        console.error('Failed to create Shopify order during charge:', err)
+        console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
       }
     }
 
     // Update session with result
+    console.log(`[CHARGE][${logId}] Updating session final status...`)
     await supabase
       .from('payment_sessions')
       .update({
         status: isSuccess ? 'paid' : 'failed',
         raw_response: tranzilaResponse as any,
         order_id: shopifyOrderId,
-        tranzila_transaction_id: tranzilaResponse.ConfirmationCode || null,
-        error_message: isSuccess ? null : TranzilaClient.getErrorMessage(tranzilaResponse.Response),
+        tranzila_transaction_id: tranzilaResponse.ConfirmationCode || tranzilaResponse.index || null,
+        error_message: isSuccess ? null : TranzilaClient.getErrorMessage(tranzilaResponse.Response || 'error'),
       })
       .eq('id', sessionId)
+
+    console.log(`[CHARGE][${logId}] Request completed successfully`)
 
     if (isSuccess) {
       return NextResponse.json({
         success: true,
-        confirmationCode: tranzilaResponse.ConfirmationCode,
+        confirmationCode: tranzilaResponse.ConfirmationCode || tranzilaResponse.index,
         message: 'Payment processed successfully',
       })
     } else {
       return NextResponse.json({
         success: false,
-        error: TranzilaClient.getErrorMessage(tranzilaResponse.Response),
+        error: TranzilaClient.getErrorMessage(tranzilaResponse.Response || 'error'),
       })
     }
-  } catch (error) {
-    console.error('Payment processing error:', error)
+  } catch (error: any) {
+    console.error(`[CHARGE][${logId}] CRITICAL ERROR:`, error)
     return NextResponse.json(
-      { error: 'Payment processing failed' },
+      { error: 'Payment processing failed', detail: error.message },
       { status: 500 }
     )
   }
-}
-
-function getCurrencyCode(currency: string): string {
-  const currencyMap: Record<string, string> = {
-    'ILS': '1',
-    'USD': '2',
-    'EUR': '3',
-    'GBP': '4',
-  }
-  return currencyMap[currency.toUpperCase()] || '1'
 }
