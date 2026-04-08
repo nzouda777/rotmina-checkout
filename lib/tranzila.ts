@@ -27,7 +27,7 @@ export class TranzilaClient {
 
   async charge(params: any): Promise<TranzilaResponse> {
     const apiUrl = process.env.TRANZILA_API_URL || DEFAULT_TRANZILA_API_URL
-    const appKey = process.env.TRANZILA_API_KEY || ''
+    const appKey = process.env.TRANZILA_APP_KEY || ''
     const secret = process.env.TRANZILA_SECRET || ''
     const time = Math.round(Date.now() / 1000)
     const nonce = this.makeNonce(80)
