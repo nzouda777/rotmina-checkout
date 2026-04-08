@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
     console.log(`[CHARGE][${logId}] Mapping ${session.cart.items?.length || 0} items for Tranzila...`)
     const tranzilaItems = (session.cart.items || []).map((item: any) => ({
       name: item.title || 'Product',
-      unit_price: item.price,
-      units_number: item.quantity,
+      price: item.price,
+      quantity: item.quantity,
       type: 'I'
     }))
 
@@ -88,19 +88,22 @@ export async function POST(request: NextRequest) {
     if (tranzilaItems.length === 0) {
       tranzilaItems.push({
         name: `Order from ${session.shop}`,
-        unit_price: session.cart.total,
-        units_number: 1,
+        price: session.cart.total,
+        quantity: 1,
         type: 'I'
       })
     }
 
     const chargePayload = {
+      terminal_name: process.env.TRANZILA_TERMINAL || '',
+      sum: session.cart.total,
       card_number: cardNumber.replace(/\s/g, ''),
       expire_month: expireMonth,
       expire_year: expireYear,
       cvv: parseInt(cvv, 10),
       items: tranzilaItems,
       txn_currency_code: session.cart.currency.toUpperCase(),
+      currency_code: session.cart.currency.toUpperCase(),
       txn_type: 'debit',
       email: customerInfo.email,
       card_holder_name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
@@ -142,7 +145,7 @@ export async function POST(request: NextRequest) {
         raw_response: tranzilaResponse as any,
         order_id: shopifyOrderId,
         tranzila_transaction_id: tranzilaResponse.ConfirmationCode || tranzilaResponse.index || null,
-        error_message: isSuccess ? null : TranzilaClient.getErrorMessage(tranzilaResponse.Response || 'error'),
+        error_message: isSuccess ? null : TranzilaClient.getErrorMessage(tranzilaResponse),
       })
       .eq('id', sessionId)
 
@@ -157,7 +160,7 @@ export async function POST(request: NextRequest) {
     } else {
       return NextResponse.json({
         success: false,
-        error: TranzilaClient.getErrorMessage(tranzilaResponse.Response || 'error'),
+        error: TranzilaClient.getErrorMessage(tranzilaResponse),
       })
     }
   } catch (error: any) {

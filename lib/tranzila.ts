@@ -11,8 +11,8 @@ export class TranzilaClient {
   }
 
   private generateAccessToken(appKey: string, secret: string, time: number, nonce: string): string {
-    const key = `${secret}${time}${nonce}`
-    return crypto.createHmac('sha256', key).update(appKey).digest('hex')
+    const message = `${appKey}${time}${nonce}`
+    return crypto.createHmac('sha256', secret).update(message).digest('hex')
   }
 
   private makeNonce(length: number): string {
@@ -85,7 +85,18 @@ export class TranzilaClient {
     }
   }
 
-  static getErrorMessage(responseCode: string): string {
+  static getErrorMessage(response: any): string {
+    // Check for REST API error format
+    if (response && response.errors && Array.isArray(response.errors) && response.errors.length > 0) {
+      return response.errors.map((e: any) => e.message || e.code).join(', ')
+    }
+
+    if (response && response.error && typeof response.error === 'string') {
+      return response.error
+    }
+
+    const responseCode = response?.Response || 'error'
+    
     const errorMessages: Record<string, string> = {
       '000': 'Transaction approved',
       '001': 'Card blocked',
