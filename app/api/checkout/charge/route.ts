@@ -78,38 +78,47 @@ export async function POST(request: NextRequest) {
     // Map cart items
     console.log(`[CHARGE][${logId}] Mapping ${session.cart.items?.length || 0} items for Tranzila...`)
     const tranzilaItems = (session.cart.items || []).map((item: any) => ({
-      name: item.title || 'Product',
-      price: item.price,
-      quantity: item.quantity,
-      type: 'I'
+      name: String(item.title || 'Product'),
+      unit_price: Number(item.price),
+      units_number: Number(item.quantity) || 1,
+      unit_type: 0,
+      type: 'I',
+      currency_code: session.cart.currency.toUpperCase()
     }))
 
     // If no items, add a fallback item representing the total
     if (tranzilaItems.length === 0) {
       tranzilaItems.push({
-        name: `Order from ${session.shop}`,
-        price: session.cart.total,
-        quantity: 1,
-        type: 'I'
+        name: String(`Order from ${session.shop}`),
+        unit_price: Number(session.cart.total),
+        units_number: 1,
+        unit_type: 0,
+        type: 'I',
+        currency_code: session.cart.currency.toUpperCase()
       })
     }
 
     const chargePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
-      sum: session.cart.total,
-      card_number: cardNumber.replace(/\s/g, ''),
-      expire_month: expireMonth,
-      expire_year: expireYear,
-      cvv: parseInt(cvv, 10),
-      items: tranzilaItems,
       txn_currency_code: session.cart.currency.toUpperCase(),
-      currency_code: session.cart.currency.toUpperCase(),
       txn_type: 'debit',
-      email: customerInfo.email,
-      card_holder_name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
-      customer_address: customerInfo.address,
-      customer_city: customerInfo.city,
-      customer_phone: customerInfo.phone,
+      expire_month: Number(expireMonth),
+      expire_year: Number(expireYear),
+      cvv: String(cvv),
+      card_number: String(cardNumber.replace(/\s/g, '')),
+      payment_plan: 1,
+      installments_number: 1,
+      card_holder_id: null,
+      client: {
+        email: customerInfo.email,
+        name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
+        address_line_1: customerInfo.address,
+        city: customerInfo.city,
+        phone_number: customerInfo.phone,
+        country_code: null,
+        zip: null,
+      },
+      items: tranzilaItems,
     }
 
     console.log(`[CHARGE][${logId}] Calling Tranzila API...`)
