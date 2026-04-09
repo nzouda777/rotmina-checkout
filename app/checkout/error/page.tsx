@@ -8,6 +8,7 @@ import Link from 'next/link'
 function ErrorContent() {
   const searchParams = useSearchParams()
   const sessionId = searchParams.get('session')
+  const errorMessage = searchParams.get('error') // ← ajout
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -20,8 +21,12 @@ function ErrorContent() {
           Payment Failed
         </h1>
         
+        {/* Message d'erreur Tranzila si disponible */}
         <p className="text-muted-foreground mb-6">
-          We were unable to process your payment. Please try again or use a different payment method.
+          {errorMessage
+            ? decodeURIComponent(errorMessage)
+            : 'We were unable to process your payment. Please try again or use a different payment method.'
+          }
         </p>
 
         {sessionId && (

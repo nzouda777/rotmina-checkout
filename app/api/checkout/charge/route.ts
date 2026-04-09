@@ -31,7 +31,6 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Get session
     console.log(`[CHARGE][${logId}] Fetching session from database...`)
     const { data: session, error: sessionError } = await supabase
       .from('payment_sessions')
@@ -57,7 +56,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update session to processing
     console.log(`[CHARGE][${logId}] Updating session status to 'processing'...`)
     await supabase
       .from('payment_sessions')
@@ -67,15 +65,12 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', sessionId)
 
-    // Process payment with Tranzila
     const tranzila = createTranzilaClient()
     
-    // Split expiry date (MM/YY)
     const [month, year] = expiryDate.split('/')
     const expireMonth = parseInt(month, 10)
     const expireYear = parseInt(`20${year}`, 10)
     
-    // Map cart items
     console.log(`[CHARGE][${logId}] Mapping ${session.cart.items?.length || 0} items for Tranzila...`)
     const tranzilaItems = (session.cart.items || []).map((item: any) => ({
       name: String(item.title || 'Product'),
@@ -86,7 +81,6 @@ export async function POST(request: NextRequest) {
       currency_code: session.cart.currency.toUpperCase()
     }))
 
-    // If no items, add a fallback item representing the total
     if (tranzilaItems.length === 0) {
       tranzilaItems.push({
         name: String(`Order from ${session.shop}`),
@@ -98,10 +92,19 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // ── URL de callback 3DS ──────────────────────────────────────────
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    const callbackUrl = `${baseUrl}/api/checkout/3ds-callback`
+    console.log(`[CHARGE][${logId}] 3DS callback URL:`, callbackUrl)
+    // ────────────────────────────────────────────────────────────────
+
     const chargePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
       txn_currency_code: session.cart.currency.toUpperCase(),
       txn_type: 'debit',
+      amount: Number(session.cart.total), // Required field
+      activate_3ds: "Y",                 // Explicitly enable 3DS
+      items_summary_mode: "auto",      // Let Tranzila handle item summaries
       expire_month: Number(expireMonth),
       expire_year: Number(expireYear),
       cvv: String(cvv),
@@ -109,24 +112,57 @@ export async function POST(request: NextRequest) {
       payment_plan: 1,
       installments_number: 1,
       card_holder_id: null,
+      three_d_secure: {
+        callback_url: callbackUrl,
+        merchant_data: sessionId,   // ← on récupère le sessionId au retour
+      },
       client: {
         email: customerInfo.email,
         name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
         address_line_1: customerInfo.address,
         city: customerInfo.city,
         phone_number: customerInfo.phone,
-        country_code: null,
-        zip: null,
+        country_code: customerInfo.country || '',
+        zip: customerInfo.postalCode || '',
       },
       items: tranzilaItems,
     }
 
     console.log(`[CHARGE][${logId}] Calling Tranzila API...`)
-    
     const tranzilaResponse = await tranzila.charge(chargePayload)
+    console.log(`[CHARGE][${logId}] Tranzila raw response:`, JSON.stringify(tranzilaResponse))
 
+    // ── Cas 1 : Tranzila demande une redirection 3DS ─────────────────
+    const redirectUrl =
+      tranzilaResponse.redirect_url ||
+      tranzilaResponse.three_d_secure_url ||
+      tranzilaResponse.acs_url ||
+      tranzilaResponse.payment_url
+
+    if (redirectUrl) {
+      console.log(`[CHARGE][${logId}] 3DS required → redirect:`, redirectUrl)
+
+      await supabase
+        .from('payment_sessions')
+        .update({
+          status: 'pending_3ds',
+          tranzila_transaction_id: tranzilaResponse.transaction_id || tranzilaResponse.index || null,
+          raw_response: tranzilaResponse as any,
+        })
+        .eq('id', sessionId)
+
+      return NextResponse.json({
+        success: false,
+        requires3DS: true,
+        redirectUrl,
+        sessionId,
+      })
+    }
+    // ─────────────────────────────────────────────────────────────────
+
+    // ── Cas 2 : Approuvé directement (terminal 3DS désactivé) ────────
     const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
-    console.log(`[CHARGE][${logId}] Tranzila result success:`, isSuccess, 'Response code:', tranzilaResponse.Response)
+    console.log(`[CHARGE][${logId}] Direct result — success:`, isSuccess, '| Response:', tranzilaResponse.Response)
 
     let shopifyOrderId = session.order_id
 
@@ -145,8 +181,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Update session with result
-    console.log(`[CHARGE][${logId}] Updating session final status...`)
     await supabase
       .from('payment_sessions')
       .update({
@@ -158,7 +192,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', sessionId)
 
-    console.log(`[CHARGE][${logId}] Request completed successfully`)
+    console.log(`[CHARGE][${logId}] Request completed`)
 
     if (isSuccess) {
       return NextResponse.json({
@@ -172,6 +206,8 @@ export async function POST(request: NextRequest) {
         error: TranzilaClient.getErrorMessage(tranzilaResponse),
       })
     }
+    // ─────────────────────────────────────────────────────────────────
+
   } catch (error: any) {
     console.error(`[CHARGE][${logId}] CRITICAL ERROR:`, error)
     return NextResponse.json(

@@ -31,6 +31,8 @@ export function PaymentForm({
   const [cvv, setCvv] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [show3DS, setShow3DS] = useState(false)
+  const [threeDSUrl, setThreeDSUrl] = useState('')
 
   const formatCardNumber = (value: string) => {
     const digits = value.replace(/\D/g, '')
@@ -120,7 +122,21 @@ export function PaymentForm({
       })
 
       const result = await response.json()
+      
+      if (result.requires3DS && result.redirectUrl) {
+        setThreeDSUrl(result.redirectUrl)
+        setShow3DS(true)
+        return
+      }
 
+    if (result.success) {
+      // Cas terminal sans 3DS — redirection directe Shopify
+      window.location.href = `https://${process.env.SHOPIFY_STORE_DOMAIN}/`
+      return
+    }
+
+    // Erreur
+    onError(result.error || 'Paiement refusé')
       if (result.success) {
         onSuccess(result.confirmationCode)
       } else {

@@ -60,9 +60,8 @@ export class TranzilaClient {
           'X-tranzila-api-access-token': accessToken,
         },
         body: JSON.stringify({
-          terminal_name: this.config.terminalName,
+          // terminal_name and others are expected in params
           ...params,
-          cvv: String(params.cvv),
         }),
       })
 
