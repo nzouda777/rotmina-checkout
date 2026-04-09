@@ -4,6 +4,28 @@ import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
+function getIsoCountryCode(country: string): string {
+  const mapping: Record<string, string> = {
+    'Israel': 'IL',
+    'Jordan': 'JO',
+    'Egypt': 'EG',
+    'Cyprus': 'CY',
+    'Saudi Arabia': 'SA',
+    'United Arab Emirates': 'AE',
+    'United States': 'US',
+    'United Kingdom': 'GB',
+    'France': 'FR',
+    'Canada': 'CA',
+    'Australia': 'AU',
+    'Germany': 'DE',
+  }
+  return mapping[country] || country // Fallback to original if not found
+}
+
+function sanitizePhone(phone: string): string {
+  return phone.replace(/\D/g, '') // Remove all non-digits
+}
+
 export async function POST(request: NextRequest) {
   const logId = Math.random().toString(36).substring(7)
   console.log(`[CHARGE][${logId}] Request started`)
@@ -121,8 +143,8 @@ export async function POST(request: NextRequest) {
         name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
         address_line_1: customerInfo.address,
         city: customerInfo.city,
-        phone_number: customerInfo.phone,
-        country_code: customerInfo.country || '',
+        phone_number: sanitizePhone(customerInfo.phone),
+        country_code: getIsoCountryCode(customerInfo.country || 'Israel'),
         zip: customerInfo.postalCode || '',
       },
       items: tranzilaItems,
