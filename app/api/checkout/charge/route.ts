@@ -358,7 +358,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[CHARGE][${logId}] Calling Tranzila API (charging ${chargeAmount})...`)
     const tranzilaResponse = await tranzila.charge(chargePayload)
-    console.log(`[CHARGE][${logId}] Tranzila raw response:`, JSON.stringify(tranzilaResponse))
+    console.log(`[CHARGE][${logId}] Tranzila raw response fields:`, Object.keys(tranzilaResponse))
     
     // ── Case 1: 3DS redirect required ─────────────────────────────
     const tdsData = (tranzilaResponse as any)?.['3ds_data']
@@ -369,9 +369,10 @@ export async function POST(request: NextRequest) {
       (tranzilaResponse as any).acs_url ||
       (tranzilaResponse as any).payment_url
 
-    if (redirectUrl) {
-      console.log(`[CHARGE][${logId}] 3DS required → redirect:`, redirectUrl) 
+    console.log(`[CHARGE][${logId}] Detected redirectUrl:`, redirectUrl ? `YES (${redirectUrl.substring(0, 30)}...)` : 'NO')
 
+    if (redirectUrl) {
+      console.log(`[CHARGE][${logId}] 3DS required → returning redirect logic`) 
       const trackId = tdsData?.track_id || null
 
       // Store gift card info in session for post-3DS processing

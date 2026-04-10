@@ -186,36 +186,44 @@ export function PaymentForm({
         }),
       })
 
-
       const result = await response.json()
+      console.log('[PAYMENT-FORM] Response result:', JSON.stringify(result))
       
       // 3DS challenge required — show in iframe (same window)
       if (result.requires3DS && result.redirectUrl) {
+        console.log('[PAYMENT-FORM] 3DS Required. Showing modal for:', result.redirectUrl)
         setThreeDSUrl(result.redirectUrl)
         setShow3DS(true)
 
         // Helper to handle successful completion
-        const handleComplete = () => {
+        const handleComplete = (source: string) => {
+          console.log(`[PAYMENT-FORM] handleComplete called by ${source}, hiding modal`)
           setShow3DS(false)
           setIsSubmitting(false)
         }
 
         // Listen for postMessage from the iframe (sent by our 3ds-callback)
         const messageHandler = async (event: MessageEvent) => {
+          // Security: Check if it's our message type
           if (event.data?.type !== '3DS_COMPLETE') return
           
-          console.log('[3DS] Received postMessage from iframe:', event.data)
+          // Verify sessionId to avoid cross-session issues
+          if (event.data.sessionId && event.data.sessionId !== sessionId) {
+            console.log('[3DS] Received message for different session, ignoring')
+            return
+          }
+          
+          console.log('[3DS] Received matching postMessage from iframe:', event.data)
           window.removeEventListener('message', messageHandler)
-          clearInterval(statusPollInterval)
+          if (statusPollInterval) clearInterval(statusPollInterval)
 
-          // The callback already processed everything (complete + order creation)
-          // Just need to fetch the final session status
+          // The callback processed the complete API call and created the order
           try {
             const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
             if (statusRes.ok) {
               const sessionData = await statusRes.json()
               if (sessionData.status === 'paid') {
-                handleComplete()
+                handleComplete('postMessage Success')
                 onSuccess(
                   sessionData.tranzila_transaction_id || 'confirmed',
                   sessionData.raw_response?.shopifyOrderUrl,
@@ -227,12 +235,9 @@ export function PaymentForm({
             console.error('[3DS] Error fetching session after postMessage:', e)
           }
           
-          // If session isn't paid yet, the callback might have failed
-          // Show error and let user retry
-          handleComplete()
+          handleComplete('postMessage Finish')
           if (event.data.success) {
-            // Callback said success but session isn't paid — might need a moment
-            // Check once more after a short delay
+            // Callback said success but session isn't paid yet — wait and check
             setTimeout(async () => {
               try {
                 const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
@@ -256,32 +261,41 @@ export function PaymentForm({
 
         window.addEventListener('message', messageHandler)
 
-        // Fallback: poll session status only (NOT 3ds-complete) every 5 seconds
-        // This catches cases where the callback succeeds but postMessage fails
-        const statusPollInterval = setInterval(async () => {
-          try {
-            const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
-            if (statusRes.ok) {
-              const sessionData = await statusRes.json()
-              if (sessionData.status === 'paid') {
-                clearInterval(statusPollInterval)
-                window.removeEventListener('message', messageHandler)
-                handleComplete()
-                onSuccess(
-                  sessionData.tranzila_transaction_id || 'confirmed',
-                  sessionData.raw_response?.shopifyOrderUrl,
-                )
-              } else if (sessionData.status === 'failed') {
-                clearInterval(statusPollInterval)
-                window.removeEventListener('message', messageHandler)
-                handleComplete()
-                onError(sessionData.error_message || 'Payment failed after 3DS verification')
+        // Fallback: poll session status only (NOT 3ds-complete) 
+        // We add a delay before starting the first poll to allow 3DS challenge to initialize
+        let statusPollInterval: NodeJS.Timeout | null = null;
+        
+        setTimeout(() => {
+          if (!setShow3DS) return; // Component might be unmounted
+
+          statusPollInterval = setInterval(async () => {
+            console.log('[3DS] Fallback poll checking session status...')
+            try {
+              const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+              if (statusRes.ok) {
+                const sessionData = await statusRes.json()
+                console.log('[3DS] Fallback poll status:', sessionData.status)
+                
+                if (sessionData.status === 'paid') {
+                  if (statusPollInterval) clearInterval(statusPollInterval)
+                  window.removeEventListener('message', messageHandler)
+                  handleComplete('Poll Success')
+                  onSuccess(
+                    sessionData.tranzila_transaction_id || 'confirmed',
+                    sessionData.raw_response?.shopifyOrderUrl,
+                  )
+                } else if (sessionData.status === 'failed') {
+                  if (statusPollInterval) clearInterval(statusPollInterval)
+                  window.removeEventListener('message', messageHandler)
+                  handleComplete('Poll Failure')
+                  onError(sessionData.error_message || 'Payment failed after 3DS verification')
+                }
               }
+            } catch (e) {
+              console.error('[3DS] Status poll error:', e)
             }
-          } catch (e) {
-            console.error('[3DS] Status poll error:', e)
-          }
-        }, 5000) // Check every 5 seconds
+          }, 5000) // Check every 5 seconds
+        }, 10000) // Start polling only after 10 seconds to avoid race conditions with initial load
 
         return
       }
@@ -554,7 +568,7 @@ export function PaymentForm({
 
       {/* 3DS Challenge — inline iframe */}
       {show3DS && threeDSUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative w-full max-w-lg bg-background rounded-xl shadow-2xl border border-border overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
               <div className="flex items-center gap-2">

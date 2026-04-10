@@ -223,12 +223,12 @@ function redirectToSuccess(sessionId: string, confirmationCode: string, giftCard
   if (remainingBalance !== undefined) params.set('gc_remaining', String(remainingBalance))
   
   const targetUrl = `${baseUrl}/checkout/success?${params.toString()}`
-  return breakoutRedirect(targetUrl)
+  return breakoutRedirect(targetUrl, sessionId)
 }
 
 function redirectToShopify(session: any, orderUrl?: string | null) {
   const targetUrl = orderUrl || `https://${session.shop}`
-  return breakoutRedirect(targetUrl)
+  return breakoutRedirect(targetUrl, session.id)
 }
 
 function redirectToError(message: string, sessionId?: string) {
@@ -236,10 +236,10 @@ function redirectToError(message: string, sessionId?: string) {
   const params = new URLSearchParams({ error: message })
   if (sessionId) params.set('session', sessionId)
   const targetUrl = `${baseUrl}/checkout/error?${params.toString()}`
-  return breakoutRedirect(targetUrl)
+  return breakoutRedirect(targetUrl, sessionId)
 }
 
-function breakoutRedirect(url: string) {
+function breakoutRedirect(url: string, sessionId?: string) {
   // 3DS runs in an iframe on the checkout page.
   // Send postMessage to the parent with the result URL so it can handle it.
   return new NextResponse(
@@ -249,11 +249,11 @@ function breakoutRedirect(url: string) {
           try {
             // Parse result from URL
             var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url');
-            var urlObj = new URL("${url}");
             var result = {
               type: '3DS_COMPLETE',
               success: isSuccess,
               url: "${url}",
+              sessionId: "${sessionId || ''}"
             };
             // Send to parent (the checkout page)
             if (window.parent && window.parent !== window) {
