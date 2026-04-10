@@ -260,7 +260,7 @@ export async function POST(request: NextRequest) {
       unit_price: Number(item.price),
       units_number: Number(item.quantity) || 1,
       unit_type: 1,
-      type: 'I',
+      type: '8',
       currency_code: session.cart.currency.toUpperCase()
     }))
 
