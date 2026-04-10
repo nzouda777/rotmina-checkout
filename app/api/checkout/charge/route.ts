@@ -172,22 +172,27 @@ export async function POST(request: NextRequest) {
     console.log(`[CHARGE][${logId}] Calling Tranzila API...`)
     const tranzilaResponse = await tranzila.charge(chargePayload)
     console.log(`[CHARGE][${logId}] Tranzila raw response:`, JSON.stringify(tranzilaResponse))
+    
 
     // ── Cas 1 : Tranzila demande une redirection 3DS ─────────────────
+    const tdsData = (tranzilaResponse as any)?.['3ds_data']
     const redirectUrl =
-      tranzilaResponse.redirect_url ||
-      tranzilaResponse.three_d_secure_url ||
-      tranzilaResponse.acs_url ||
-      tranzilaResponse.payment_url
+      tdsData?.challengeUrl ||
+      (tranzilaResponse as any).redirect_url ||
+      (tranzilaResponse as any).three_d_secure_url ||
+      (tranzilaResponse as any).acs_url ||
+      (tranzilaResponse as any).payment_url
 
     if (redirectUrl) {
-      console.log(`[CHARGE][${logId}] 3DS required → redirect:`, redirectUrl)
+      console.log(`[CHARGE][${logId}] 3DS required → redirect:`, redirectUrl) 
+
+      const trackId = tdsData?.track_id || null
 
       await supabase
         .from('payment_sessions')
         .update({
           status: 'pending_3ds',
-          tranzila_transaction_id: tranzilaResponse.transaction_id || tranzilaResponse.index || null,
+          tranzila_transaction_id: trackId || tranzilaResponse.transaction_id || tranzilaResponse.index || null,
           raw_response: tranzilaResponse as any,
         })
         .eq('id', sessionId)

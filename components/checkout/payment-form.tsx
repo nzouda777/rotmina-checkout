@@ -137,20 +137,14 @@ export function PaymentForm({
 
       const result = await response.json()
       
+      // 3DS challenge required — show iframe modal
       if (result.requires3DS && result.redirectUrl) {
         setThreeDSUrl(result.redirectUrl)
         setShow3DS(true)
+        window.location.href = result.redirectUrl
         return
       }
 
-    if (result.success) {
-      // Cas terminal sans 3DS — redirection directe Shopify
-      window.location.href = `https://${process.env.SHOPIFY_STORE_DOMAIN}/`
-      return
-    }
-
-    // Erreur
-    onError(result.error || 'Paiement refusé')
       if (result.success) {
         onSuccess(result.confirmationCode)
       } else {
@@ -344,6 +338,32 @@ export function PaymentForm({
           </button>
         </div>
       </form>
+
+      {/* 3DS Challenge Modal */}
+      {show3DS && threeDSUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg bg-background rounded-xl shadow-2xl border border-border overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4 text-foreground" />
+                <span className="text-sm font-medium text-foreground">3D Secure Verification</span>
+              </div>
+              <button
+                onClick={() => { setShow3DS(false); setIsSubmitting(false); }}
+                className="text-muted-foreground hover:text-foreground text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <iframe
+              src={threeDSUrl}
+              className="w-full border-0"
+              style={{ height: '500px' }}
+              title="3D Secure Verification"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
