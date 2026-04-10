@@ -184,12 +184,7 @@ async function handleCallback(request: NextRequest) {
         })
         .eq('id', sessionId)
 
-      // Redirect to success page with gift card codes + remaining balance
-      if (generatedCards.length > 0 || remainingBalance !== undefined) {
-        const codes = generatedCards.map((c: any) => c.code).join(',')
-        return redirectToSuccess(sessionId, confirmationCode, codes, storedGiftCard?.code, remainingBalance)
-      }
-
+      // Redirect to Shopify native order status page
       return redirectToShopify(session, shopifyOrderUrl)
 
     } else {

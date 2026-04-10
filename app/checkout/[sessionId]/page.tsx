@@ -88,10 +88,19 @@ export default function CheckoutPage() {
 
   const handlePaymentSuccess = (
     confirmationCode: string, 
+    shopifyOrderUrl?: string,
     generatedGiftCards?: { code: string; amount: number }[],
     giftCardRemainingBalance?: number,
     usedGiftCardCode?: string
   ) => {
+    // Force redirect to Shopify Order Status URL, bypassing our local success page.
+    // Gift cards have already been emailed.
+    if (shopifyOrderUrl) {
+      window.location.href = shopifyOrderUrl
+      return
+    }
+
+    // Fallback just in case
     const params = new URLSearchParams({
       session: sessionId,
       confirmation: confirmationCode,

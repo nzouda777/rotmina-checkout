@@ -10,7 +10,13 @@ interface PaymentFormProps {
   total: number
   currency: string
   onBack: () => void
-  onSuccess: (confirmationCode: string, generatedGiftCards?: { code: string; amount: number }[], giftCardRemainingBalance?: number, usedGiftCardCode?: string) => void
+  onSuccess: (
+    confirmationCode: string,
+    shopifyOrderUrl?: string,
+    generatedGiftCards?: { code: string; amount: number }[],
+    giftCardRemainingBalance?: number,
+    usedGiftCardCode?: string
+  ) => void
   onError: (error: string) => void
   onProcessing: () => void
   giftCardId?: string
@@ -22,11 +28,19 @@ interface PaymentFormProps {
  * Calculate max installments based on the amount to be charged
  * (remaining after gift card deduction).
  */
-function getMaxInstallments(amount: number): number {
-  if (amount < 500) return 1
-  if (amount >= 1500) return 6
-  if (amount >= 1300) return 4
-  if (amount >= 900) return 3
+function getMaxInstallments(amount: number, currency: string): number {
+  let rate = 1.0
+  const normalizedCurrency = currency.toUpperCase()
+  if (normalizedCurrency === 'USD') rate = 3.7
+  else if (normalizedCurrency === 'EUR') rate = 4.0
+  else if (normalizedCurrency === 'GBP') rate = 4.7
+  
+  const amountInILS = amount * rate
+
+  if (amountInILS < 500) return 1
+  if (amountInILS >= 1500) return 6
+  if (amountInILS >= 1300) return 4
+  if (amountInILS >= 900) return 3
   return 2
 }
 
@@ -56,7 +70,7 @@ export function PaymentForm({
   // The amount charged to the credit card (after gift card deduction)
   const chargeAmount = Math.max(total - giftCardAmount, 0)
 
-  const maxInstallments = getMaxInstallments(chargeAmount)
+  const maxInstallments = getMaxInstallments(chargeAmount, currency)
 
   // Reset installments if max changed and current selection is invalid
   if (installments > maxInstallments) {
@@ -184,7 +198,13 @@ export function PaymentForm({
       }
 
       if (result.success) {
-        onSuccess(result.confirmationCode, result.generatedGiftCards, result.giftCardRemainingBalance, giftCardCode)
+        onSuccess(
+          result.confirmationCode,
+          result.shopifyOrderUrl,
+          result.generatedGiftCards,
+          result.giftCardRemainingBalance,
+          giftCardCode
+        )
       } else {
         onError(result.error || 'Payment failed')
       }

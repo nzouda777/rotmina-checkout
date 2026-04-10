@@ -188,8 +188,8 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Create Shopify order
       let shopifyOrderId = session.order_id
+      let shopifyOrderUrl: string | undefined
       try {
         console.log(`[CHARGE][${logId}] Creating Shopify order (gift card only)...`)
         const order = await createShopifyOrder({
@@ -199,6 +199,7 @@ export async function POST(request: NextRequest) {
           giftCard: giftCardInfo,
         })
         shopifyOrderId = String(order.id)
+        shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
         console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
       } catch (err) {
         console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
@@ -233,6 +234,7 @@ export async function POST(request: NextRequest) {
           amount: c.original_amount,
           currency: c.currency,
         })),
+        shopifyOrderUrl,
       })
     }
 
@@ -415,6 +417,7 @@ export async function POST(request: NextRequest) {
         shopifyOrderId,
       })
 
+      let shopifyOrderUrl: string | undefined
       if (!shopifyOrderId) {
         try {
           console.log(`[CHARGE][${logId}] Creating Shopify order...`)
@@ -425,6 +428,7 @@ export async function POST(request: NextRequest) {
             giftCard: giftCardInfo,
           })
           shopifyOrderId = String(order.id)
+          shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
           console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
         } catch (err) {
           console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
@@ -469,6 +473,7 @@ export async function POST(request: NextRequest) {
           amount: c.original_amount,
           currency: c.currency,
         })),
+        shopifyOrderUrl,
       })
     } else {
       return NextResponse.json({
