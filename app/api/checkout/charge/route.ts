@@ -41,17 +41,18 @@ async function handlePostPayment(params: {
   shopifyOrderId?: string
 }) {
   const { logId, session, sessionId, customerInfo, giftCardCode, giftCardAmount, transactionId, shopifyOrderId } = params
-  const results: { debitSuccess: boolean; generatedCards: any[] } = { debitSuccess: true, generatedCards: [] }
+  const results: { debitSuccess: boolean; generatedCards: any[]; giftCardRemainingBalance?: number } = { debitSuccess: true, generatedCards: [] }
 
   // 1. Debit gift card if used as payment
   if (giftCardCode && giftCardAmount && giftCardAmount > 0) {
     try {
       console.log(`[CHARGE][${logId}] Debiting gift card ${giftCardCode} for ${giftCardAmount}...`)
-      await debitGiftCard({
+      const updatedCard = await debitGiftCard({
         code: giftCardCode,
         amount: giftCardAmount,
         sessionId,
       })
+      results.giftCardRemainingBalance = updatedCard.balance
       console.log(`[CHARGE][${logId}] Gift card debited successfully`)
     } catch (gcError) {
       console.error(`[CHARGE][${logId}] WARNING: Payment succeeded but gift card debit failed:`, gcError)
@@ -212,6 +213,7 @@ export async function POST(request: NextRequest) {
             payment_method: 'gift_card_only',
             gift_card_code: giftCardCode,
             gift_card_amount: validGiftCardAmount,
+            gift_card_remaining_balance: postPayment.giftCardRemainingBalance,
             generated_gift_cards: postPayment.generatedCards.map(c => ({
               code: c.code,
               amount: c.original_amount,
@@ -224,7 +226,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         confirmationCode: `GC-${giftCardCode}`,
-        message: 'Payment processed successfully via gift card',
+        giftCardAmount: validGiftCardAmount,
+        giftCardRemainingBalance: postPayment.giftCardRemainingBalance,
         generatedGiftCards: postPayment.generatedCards.map(c => ({
           code: c.code,
           amount: c.original_amount,
@@ -438,6 +441,7 @@ export async function POST(request: NextRequest) {
           _gift_card: giftCardInfo ? {
             code: giftCardInfo.code,
             appliedAmount: giftCardInfo.appliedAmount,
+            remainingBalance: postPayment.giftCardRemainingBalance,
           } : null,
           _generated_gift_cards: postPayment.generatedCards.map(c => ({
             code: c.code,
@@ -458,6 +462,8 @@ export async function POST(request: NextRequest) {
         success: true,
         confirmationCode: tranzilaResponse.ConfirmationCode || tranzilaResponse.index,
         message: 'Payment processed successfully',
+        giftCardAmount: validGiftCardAmount > 0 ? validGiftCardAmount : undefined,
+        giftCardRemainingBalance: postPayment.giftCardRemainingBalance,
         generatedGiftCards: postPayment.generatedCards.map(c => ({
           code: c.code,
           amount: c.original_amount,

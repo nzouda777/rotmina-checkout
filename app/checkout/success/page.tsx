@@ -8,6 +8,8 @@ function SuccessContent() {
   const searchParams = useSearchParams()
   const confirmation = searchParams.get('confirmation')
   const giftCardsParam = searchParams.get('gift_cards')
+  const usedGcCode = searchParams.get('used_gc')
+  const gcRemaining = searchParams.get('gc_remaining')
 
   // Parse gift card codes from query params (comma-separated)
   const giftCardCodes = giftCardsParam ? giftCardsParam.split(',').filter(Boolean) : []
@@ -31,6 +33,27 @@ function SuccessContent() {
           <div className="bg-muted/50 rounded-lg p-4 mb-6">
             <p className="text-sm text-muted-foreground mb-1">Confirmation Code</p>
             <p className="text-lg font-mono font-semibold text-foreground">{confirmation}</p>
+          </div>
+        )}
+
+        {/* Used Gift Card Info */}
+        {usedGcCode && gcRemaining !== null && (
+          <div className="bg-green-50/50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-lg p-4 mb-6 text-left">
+            <div className="flex items-center gap-2 mb-2">
+              <Gift className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <p className="text-sm font-medium text-foreground">Gift Card Used</p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              You paid a portion of this order using gift card <span className="font-mono text-foreground">{usedGcCode}</span>.
+            </p>
+            <p className="text-sm font-medium text-green-600 dark:text-green-400 mt-2">
+              Remaining Balance: {
+                new Intl.NumberFormat('he-IL', {
+                  style: 'currency',
+                  currency: 'ILS', // fallback to ILS if unknown
+                }).format(Number(gcRemaining))
+              }
+            </p>
           </div>
         )}
 

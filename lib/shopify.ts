@@ -48,12 +48,24 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
 
   const orderData = {
     order: {
-      line_items: session.cart.items.map((item) => ({
-        variant_id: item.variant_id ? parseInt(String(item.variant_id)) : undefined,
-        quantity: item.quantity,
-        price: item.price,
-        title: item.title,
-      })),
+      line_items: session.cart.items.map((item) => {
+        // Map our Record<string, string> properties to Shopify's expected array of {name, value}
+        let lineItemProperties: { name: string; value: string }[] | undefined
+        if (item.properties && Object.keys(item.properties).length > 0) {
+          lineItemProperties = Object.entries(item.properties).map(([name, value]) => ({
+            name,
+            value,
+          }))
+        }
+
+        return {
+          variant_id: item.variant_id ? parseInt(String(item.variant_id)) : undefined,
+          quantity: item.quantity,
+          price: item.price,
+          title: item.title,
+          properties: lineItemProperties,
+        }
+      }),
       customer: {
         first_name: customer.firstName,
         last_name: customer.lastName,

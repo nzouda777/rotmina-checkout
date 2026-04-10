@@ -41,7 +41,8 @@ export async function POST(request: NextRequest) {
           price: item.price / 100,
           image: item.image,
           variant: item.variant_title,
-          sku: item.sku
+          sku: item.sku,
+          properties: item.properties || undefined,
         })),
         subtotal: cart.total_price / 100,
         shipping: 0,

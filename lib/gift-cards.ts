@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { sendGiftCardEmailToRecipient, sendGiftCardEmailToBuyer } from '@/lib/email'
 import type { CartItem } from './types'
 
 // ── Gift Card Product Detection ──────────────────────────────────────────────
@@ -75,6 +76,12 @@ export interface GiftCardRecord {
   purchased_session_id: string | null
   purchased_order_id: string | null
   buyer_email: string | null
+  recipient_name?: string | null
+  recipient_email?: string | null
+  sender_name?: string | null
+  sender_email?: string | null
+  personal_message?: string | null
+  email_sent?: boolean
   created_at: string
 }
 
@@ -88,6 +95,11 @@ export async function createGiftCard(params: {
   sessionId?: string
   orderId?: string
   buyerEmail?: string
+  recipientName?: string
+  recipientEmail?: string
+  senderName?: string
+  senderEmail?: string
+  personalMessage?: string
 }): Promise<GiftCardRecord> {
   const supabase = await createClient()
   
@@ -118,6 +130,12 @@ export async function createGiftCard(params: {
       purchased_session_id: params.sessionId || null,
       purchased_order_id: params.orderId || null,
       buyer_email: params.buyerEmail || null,
+      recipient_name: params.recipientName || null,
+      recipient_email: params.recipientEmail || null,
+      sender_name: params.senderName || null,
+      sender_email: params.senderEmail || null,
+      personal_message: params.personalMessage || null,
+      email_sent: false,
     })
     .select()
     .single()
@@ -224,14 +242,65 @@ export async function generateGiftCardsForOrder(params: {
     // Generate one card per quantity
     for (let q = 0; q < (item.quantity || 1); q++) {
       try {
+        const props = item.properties || {}
+        const recipientName = props['Recipient name'] || props['recipient_name'] || undefined
+        const recipientEmail = props['Recipient email'] || props['recipient_email'] || undefined
+        const senderName = props['Your name'] || props['your_name'] || props['sender_name'] || undefined
+        const senderEmail = props['Your email'] || props['your_email'] || props['sender_email'] || undefined
+        const personalMessage = props['Message'] || props['message'] || undefined
+
         const card = await createGiftCard({
           amount: item.price,
           currency: params.currency || 'ILS',
           sessionId: params.sessionId,
           orderId: params.orderId,
           buyerEmail: params.buyerEmail,
+          recipientName,
+          recipientEmail,
+          senderName,
+          senderEmail,
+          personalMessage,
         })
+        
         generatedCards.push(card)
+
+        // Attempt to send emails
+        let allEmailsSent = true
+
+        if (recipientEmail) {
+          const res = await sendGiftCardEmailToRecipient({
+            recipientEmail,
+            recipientName,
+            senderName,
+            giftCardCode: card.code,
+            amount: item.price,
+            currency: params.currency || 'ILS',
+            message: personalMessage,
+          })
+          if (!res.success) allEmailsSent = false
+        }
+
+        const buyerMailToUse = senderEmail || params.buyerEmail
+        if (buyerMailToUse) {
+          const res = await sendGiftCardEmailToBuyer({
+            buyerEmail: buyerMailToUse,
+            buyerName: senderName,
+            recipientName,
+            giftCardCode: card.code,
+            amount: item.price,
+            currency: params.currency || 'ILS',
+          })
+          if (!res.success) allEmailsSent = false
+        }
+
+        if (allEmailsSent && (recipientEmail || buyerMailToUse)) {
+          const supabase = await createClient()
+          await supabase
+            .from('gift_cards')
+            .update({ email_sent: true })
+            .eq('id', card.id)
+        }
+
       } catch (err) {
         console.error(`[GIFT-CARD] Failed to generate card for item ${item.title}:`, err)
       }

@@ -11,8 +11,12 @@ CREATE TABLE IF NOT EXISTS gift_cards (
   purchased_session_id UUID,                   -- references payment_sessions(id)
   purchased_order_id VARCHAR(255),
   buyer_email VARCHAR(255),
+  recipient_name VARCHAR(255),
   recipient_email VARCHAR(255),
-  note TEXT,
+  sender_name VARCHAR(255),
+  sender_email VARCHAR(255),
+  personal_message TEXT,
+  email_sent BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   last_used_at TIMESTAMPTZ
@@ -37,3 +41,13 @@ CREATE TRIGGER trigger_update_gift_cards
   BEFORE UPDATE ON gift_cards
   FOR EACH ROW
   EXECUTE FUNCTION update_gift_cards_updated_at();
+
+-- Run this section if you already created the table previously:
+/*
+ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS recipient_name VARCHAR(255);
+ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS recipient_email VARCHAR(255);
+ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS sender_name VARCHAR(255);
+ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS sender_email VARCHAR(255);
+ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS personal_message TEXT;
+ALTER TABLE gift_cards ADD COLUMN IF NOT EXISTS email_sent BOOLEAN DEFAULT false;
+*/

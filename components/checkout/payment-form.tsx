@@ -10,7 +10,7 @@ interface PaymentFormProps {
   total: number
   currency: string
   onBack: () => void
-  onSuccess: (confirmationCode: string, generatedGiftCards?: { code: string; amount: number }[]) => void
+  onSuccess: (confirmationCode: string, generatedGiftCards?: { code: string; amount: number }[], giftCardRemainingBalance?: number, usedGiftCardCode?: string) => void
   onError: (error: string) => void
   onProcessing: () => void
   giftCardId?: string
@@ -21,10 +21,9 @@ interface PaymentFormProps {
 /**
  * Calculate max installments based on the amount to be charged
  * (remaining after gift card deduction).
- * Installments are only available for Israel.
  */
-function getMaxInstallments(amount: number, isIsrael: boolean): number {
-  if (!isIsrael || amount < 500) return 1
+function getMaxInstallments(amount: number): number {
+  if (amount < 500) return 1
   if (amount >= 1500) return 6
   if (amount >= 1300) return 4
   if (amount >= 900) return 3
@@ -57,8 +56,7 @@ export function PaymentForm({
   // The amount charged to the credit card (after gift card deduction)
   const chargeAmount = Math.max(total - giftCardAmount, 0)
 
-  const isIsrael = customerInfo.country.toLowerCase() === 'israel' || customerInfo.country.toUpperCase() === 'IL'
-  const maxInstallments = getMaxInstallments(chargeAmount, isIsrael)
+  const maxInstallments = getMaxInstallments(chargeAmount)
 
   // Reset installments if max changed and current selection is invalid
   if (installments > maxInstallments) {
@@ -186,7 +184,7 @@ export function PaymentForm({
       }
 
       if (result.success) {
-        onSuccess(result.confirmationCode, result.generatedGiftCards)
+        onSuccess(result.confirmationCode, result.generatedGiftCards, result.giftCardRemainingBalance, giftCardCode)
       } else {
         onError(result.error || 'Payment failed')
       }
@@ -408,12 +406,7 @@ export function PaymentForm({
                   </div>
                 )}
 
-                {/* Israel-only notice for non-Israeli customers */}
-                {!isIsrael && (
-                  <p className="text-xs text-muted-foreground">
-                    Installment payments are available for customers in Israel only.
-                  </p>
-                )}
+
               </div>
             </div>
           </div>

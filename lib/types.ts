@@ -8,6 +8,7 @@ export interface CartItem {
   sku?: string
   variant_id?: string | number
   product_id?: string | number
+  properties?: Record<string, string>
 }
 
 export interface CustomerInfo {

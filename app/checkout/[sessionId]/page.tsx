@@ -86,13 +86,24 @@ export default function CheckoutPage() {
     setStep('payment')
   }
 
-  const handlePaymentSuccess = (confirmationCode: string, generatedGiftCards?: { code: string; amount: number }[]) => {
+  const handlePaymentSuccess = (
+    confirmationCode: string, 
+    generatedGiftCards?: { code: string; amount: number }[],
+    giftCardRemainingBalance?: number,
+    usedGiftCardCode?: string
+  ) => {
     const params = new URLSearchParams({
       session: sessionId,
       confirmation: confirmationCode,
     })
     if (generatedGiftCards && generatedGiftCards.length > 0) {
       params.set('gift_cards', generatedGiftCards.map(gc => gc.code).join(','))
+    }
+    if (usedGiftCardCode) {
+      params.set('used_gc', usedGiftCardCode)
+    }
+    if (giftCardRemainingBalance !== undefined) {
+      params.set('gc_remaining', String(giftCardRemainingBalance))
     }
     router.push(`/checkout/success?${params.toString()}`)
   }

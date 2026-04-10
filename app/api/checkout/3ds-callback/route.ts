@@ -97,17 +97,19 @@ async function handleCallback(request: NextRequest) {
     if (isSuccess) {
       // ── Post-payment: Gift card debit + generation ──────────────────
       const storedGiftCard = session.raw_response?._gift_card
+      let remainingBalance: number | undefined
       
       // Debit gift card if used as payment
       if (storedGiftCard?.code && storedGiftCard?.appliedAmount > 0) {
         try {
           console.log('[3DS-CALLBACK] Debiting gift card:', storedGiftCard.code)
-          await debitGiftCard({
+          const updatedCard = await debitGiftCard({
             code: storedGiftCard.code,
             amount: storedGiftCard.appliedAmount,
             sessionId,
           })
-          console.log('[3DS-CALLBACK] Gift card debited successfully')
+          remainingBalance = updatedCard.balance
+          console.log(`[3DS-CALLBACK] Gift card debited successfully - remaining: ${remainingBalance}`)
         } catch (gcError) {
           console.error('[3DS-CALLBACK] Gift card debit failed:', gcError)
         }
@@ -171,7 +173,7 @@ async function handleCallback(request: NextRequest) {
           order_id: shopifyOrderId,
           raw_response: {
             ...completeResponse as any,
-            _gift_card: storedGiftCard || null,
+            _gift_card: storedGiftCard ? { ...storedGiftCard, remainingBalance } : null,
             _generated_gift_cards: generatedCards.map((c: any) => ({
               code: c.code,
               amount: c.original_amount,
@@ -182,10 +184,10 @@ async function handleCallback(request: NextRequest) {
         })
         .eq('id', sessionId)
 
-      // Redirect to success page with gift card codes in query params
-      if (generatedCards.length > 0) {
+      // Redirect to success page with gift card codes + remaining balance
+      if (generatedCards.length > 0 || remainingBalance !== undefined) {
         const codes = generatedCards.map((c: any) => c.code).join(',')
-        return redirectToSuccess(sessionId, confirmationCode, codes)
+        return redirectToSuccess(sessionId, confirmationCode, codes, storedGiftCard?.code, remainingBalance)
       }
 
       return redirectToShopify(session, shopifyOrderUrl)
@@ -212,13 +214,16 @@ async function handleCallback(request: NextRequest) {
   }
 }
 
-function redirectToSuccess(sessionId: string, confirmationCode: string, giftCardCodes?: string) {
+function redirectToSuccess(sessionId: string, confirmationCode: string, giftCardCodes?: string, usedGiftCardCode?: string, remainingBalance?: number) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL
   const params = new URLSearchParams({
     session: sessionId,
     confirmation: confirmationCode,
   })
   if (giftCardCodes) params.set('gift_cards', giftCardCodes)
+  if (usedGiftCardCode) params.set('used_gc', usedGiftCardCode)
+  if (remainingBalance !== undefined) params.set('gc_remaining', String(remainingBalance))
+  
   const targetUrl = `${baseUrl}/checkout/success?${params.toString()}`
   return breakoutRedirect(targetUrl)
 }
