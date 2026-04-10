@@ -68,7 +68,10 @@ export async function POST(request: NextRequest) {
     console.log('[3DS-COMPLETE] Complete response:', JSON.stringify(completeResponse))
 
     const isSuccess = TranzilaClient.isSuccess(completeResponse)
+    const txnResult = (completeResponse as any).transaction_result
     const confirmationCode =
+      txnResult?.auth_number ||
+      txnResult?.transaction_id ||
       (completeResponse as any).ConfirmationCode ||
       (completeResponse as any).confirmation_code ||
       (completeResponse as any).transaction_id ||

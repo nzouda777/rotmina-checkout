@@ -134,8 +134,17 @@ export class TranzilaClient {
   static isSuccess(response: any): boolean {
     if (!response) return false
 
-    // Erreur de validation explicite → jamais un succès
+    // Explicit error_code field (from 3DS complete response)
+    // error_code: 0 = success, any other number = failure
+    if (typeof response.error_code === 'number') {
+      if (response.error_code === 0) return true
+      return false
+    }
+    // error_code as non-zero truthy value (string, etc.)
     if (response.error_code) return false
+
+    // 3DS complete: nested transaction_result with processor_response_code
+    if (response.transaction_result?.processor_response_code === '000') return true
 
     // Code Response legacy '000'
     if (response.Response === '000') return true
@@ -159,8 +168,11 @@ export class TranzilaClient {
   static getErrorMessage(response: any): string {
     if (!response) return 'Unknown error'
 
-    // Erreur de validation schema (error_code présent)
-    if (response.error_code) {
+    // error_code from 3DS complete response (0 = success, non-zero = error)
+    if (typeof response.error_code === 'number' && response.error_code !== 0) {
+      return response.message || `Transaction error (code: ${response.error_code})`
+    }
+    if (response.error_code && response.error_code !== 0) {
       let msg = response.message || 'Validation error'
       if (response.mismatch_info && Array.isArray(response.mismatch_info)) {
         const details = response.mismatch_info
@@ -169,6 +181,12 @@ export class TranzilaClient {
         if (details) msg += ` (${details})`
       }
       return msg
+    }
+
+    // Check nested transaction_result for processor errors
+    const txnResult = response.transaction_result
+    if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
+      return `Transaction failed (processor code: ${txnResult.processor_response_code})`
     }
 
     // Tableau errors[]
