@@ -6,12 +6,20 @@ import { CheckoutHeader } from '@/components/checkout/checkout-header'
 import { OrderSummary } from '@/components/checkout/order-summary'
 import { CustomerForm } from '@/components/checkout/customer-form'
 import { PaymentForm } from '@/components/checkout/payment-form'
+import { GiftCardForm } from '@/components/checkout/gift-card-form'
 import { CheckoutFooter } from '@/components/checkout/checkout-footer'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
 // console.log('CheckoutPage module loaded');
 
 type CheckoutStep = 'information' | 'payment' | 'processing'
+
+interface AppliedGiftCard {
+  id: string
+  code: string
+  balance: number
+  appliedAmount: number
+}
 
 export default function CheckoutPage() {
   // console.log('CheckoutPage rendering START');
@@ -36,6 +44,9 @@ export default function CheckoutPage() {
     country: 'Israel',
     phone: '',
   })
+
+  // Gift card state
+  const [appliedGiftCard, setAppliedGiftCard] = useState<AppliedGiftCard | null>(null)
 
   useEffect(() => {
   console.log('EFFECT MOUNT - sessionId:', sessionId);
@@ -75,13 +86,28 @@ export default function CheckoutPage() {
     setStep('payment')
   }
 
-  const handlePaymentSuccess = (confirmationCode: string) => {
-    router.push(`/checkout/success?session=${sessionId}&confirmation=${confirmationCode}`)
+  const handlePaymentSuccess = (confirmationCode: string, generatedGiftCards?: { code: string; amount: number }[]) => {
+    const params = new URLSearchParams({
+      session: sessionId,
+      confirmation: confirmationCode,
+    })
+    if (generatedGiftCards && generatedGiftCards.length > 0) {
+      params.set('gift_cards', generatedGiftCards.map(gc => gc.code).join(','))
+    }
+    router.push(`/checkout/success?${params.toString()}`)
   }
 
   const handlePaymentError = (errorMessage: string) => {
     setError(errorMessage)
     setStep('payment')
+  }
+
+  const handleGiftCardApply = (giftCard: AppliedGiftCard) => {
+    setAppliedGiftCard(giftCard)
+  }
+
+  const handleGiftCardRemove = () => {
+    setAppliedGiftCard(null)
   }
 
   console.log('Render state - Loading:', loading, 'Error:', error, 'Session:', !!session);
@@ -111,6 +137,8 @@ export default function CheckoutPage() {
   if (!session) {
     return null
   }
+
+  const giftCardAmount = appliedGiftCard?.appliedAmount || 0
 
   return (
     <div className="min-h-screen bg-background">
@@ -147,16 +175,34 @@ export default function CheckoutPage() {
             )}
 
             {step === 'payment' && (
-              <PaymentForm
-                sessionId={sessionId}
-                customerInfo={customerInfo}
-                total={session.cart.total}
-                currency={session.cart.currency}
-                onBack={() => setStep('information')}
-                onSuccess={handlePaymentSuccess}
-                onError={handlePaymentError}
-                onProcessing={() => setStep('processing')}
-              />
+              <div className="space-y-6">
+                {/* Gift Card Section */}
+                <GiftCardForm
+                  currency={session.cart.currency}
+                  onApply={handleGiftCardApply}
+                  onRemove={handleGiftCardRemove}
+                  appliedGiftCard={appliedGiftCard}
+                  orderTotal={session.cart.total}
+                />
+
+                {/* Divider */}
+                <div className="border-t border-border" />
+
+                {/* Payment Form */}
+                <PaymentForm
+                  sessionId={sessionId}
+                  customerInfo={customerInfo}
+                  total={session.cart.total}
+                  currency={session.cart.currency}
+                  onBack={() => setStep('information')}
+                  onSuccess={handlePaymentSuccess}
+                  onError={handlePaymentError}
+                  onProcessing={() => setStep('processing')}
+                  giftCardId={appliedGiftCard?.id}
+                  giftCardCode={appliedGiftCard?.code}
+                  giftCardAmount={giftCardAmount}
+                />
+              </div>
             )}
 
             {step === 'processing' && (
@@ -171,7 +217,11 @@ export default function CheckoutPage() {
           {/* Right Column - Order Summary */}
           <div className="w-full lg:w-[400px] order-1 lg:order-2">
             <div className="lg:sticky lg:top-8">
-              <OrderSummary cartData={session.cart} />
+              <OrderSummary
+                cartData={session.cart}
+                giftCardAmount={giftCardAmount}
+                giftCardCode={appliedGiftCard?.code}
+              />
             </div>
           </div>
         </div>

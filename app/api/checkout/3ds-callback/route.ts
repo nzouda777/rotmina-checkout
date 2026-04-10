@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
-import type { PaymentSession, CustomerInfo } from '@/lib/types'
+import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // Tranzila peut appeler en GET ou POST selon la config
 export async function GET(request: NextRequest) {
@@ -70,7 +71,6 @@ async function handleCallback(request: NextRequest) {
     }
 
     // ── Step 3: Call Tranzila 3DS Complete ─────────────────────────────
-    // Retrieve the track_id from the stored raw_response
     const trackId =
       params.track_id ||
       session.tranzila_transaction_id ||
@@ -95,9 +95,56 @@ async function handleCallback(request: NextRequest) {
     // ──────────────────────────────────────────────────────────────────
 
     if (isSuccess) {
+      // ── Post-payment: Gift card debit + generation ──────────────────
+      const storedGiftCard = session.raw_response?._gift_card
+      
+      // Debit gift card if used as payment
+      if (storedGiftCard?.code && storedGiftCard?.appliedAmount > 0) {
+        try {
+          console.log('[3DS-CALLBACK] Debiting gift card:', storedGiftCard.code)
+          await debitGiftCard({
+            code: storedGiftCard.code,
+            amount: storedGiftCard.appliedAmount,
+            sessionId,
+          })
+          console.log('[3DS-CALLBACK] Gift card debited successfully')
+        } catch (gcError) {
+          console.error('[3DS-CALLBACK] Gift card debit failed:', gcError)
+        }
+      }
+
+      // Generate gift card codes if cart contains gift card products
+      let generatedCards: any[] = []
+      try {
+        const customer = session.customer as CustomerInfo
+        generatedCards = await generateGiftCardsForOrder({
+          items: session.cart?.items || [],
+          sessionId,
+          buyerEmail: customer?.email,
+          currency: session.cart?.currency || 'ILS',
+        })
+        if (generatedCards.length > 0) {
+          console.log('[3DS-CALLBACK] Generated gift cards:', generatedCards.map((c: any) => c.code))
+        }
+      } catch (err) {
+        console.error('[3DS-CALLBACK] Gift card generation failed:', err)
+      }
+
       // Créer la commande Shopify
       let shopifyOrderId = session.order_id
       let shopifyOrderUrl = null
+      
+      // Build gift card info for Shopify order
+      let giftCardInfo: GiftCardInfo | undefined
+      if (storedGiftCard?.code && storedGiftCard?.appliedAmount > 0) {
+        giftCardInfo = {
+          id: storedGiftCard.id || '',
+          code: storedGiftCard.code,
+          balance: storedGiftCard.appliedAmount,
+          currency: session.cart?.currency || 'ILS',
+          appliedAmount: storedGiftCard.appliedAmount,
+        }
+      }
 
       if (!shopifyOrderId) {
         try {
@@ -106,6 +153,7 @@ async function handleCallback(request: NextRequest) {
             session: session as PaymentSession,
             customer: session.customer as CustomerInfo,
             transactionId: confirmationCode,
+            giftCard: giftCardInfo,
           })
           shopifyOrderId = String(order.id)
           shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
@@ -121,10 +169,24 @@ async function handleCallback(request: NextRequest) {
           status: 'paid',
           tranzila_transaction_id: confirmationCode || trackId,
           order_id: shopifyOrderId,
-          raw_response: completeResponse as any,
+          raw_response: {
+            ...completeResponse as any,
+            _gift_card: storedGiftCard || null,
+            _generated_gift_cards: generatedCards.map((c: any) => ({
+              code: c.code,
+              amount: c.original_amount,
+              currency: c.currency,
+            })),
+          },
           error_message: null,
         })
         .eq('id', sessionId)
+
+      // Redirect to success page with gift card codes in query params
+      if (generatedCards.length > 0) {
+        const codes = generatedCards.map((c: any) => c.code).join(',')
+        return redirectToSuccess(sessionId, confirmationCode, codes)
+      }
 
       return redirectToShopify(session, shopifyOrderUrl)
 
@@ -148,6 +210,17 @@ async function handleCallback(request: NextRequest) {
     console.error('[3DS-CALLBACK] CRITICAL ERROR:', error)
     return redirectToError('Erreur interne du serveur')
   }
+}
+
+function redirectToSuccess(sessionId: string, confirmationCode: string, giftCardCodes?: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+  const params = new URLSearchParams({
+    session: sessionId,
+    confirmation: confirmationCode,
+  })
+  if (giftCardCodes) params.set('gift_cards', giftCardCodes)
+  const targetUrl = `${baseUrl}/checkout/success?${params.toString()}`
+  return breakoutRedirect(targetUrl)
 }
 
 function redirectToShopify(session: any, orderUrl?: string | null) {
@@ -177,19 +250,4 @@ function breakoutRedirect(url: string) {
       headers: { 'Content-Type': 'text/html' },
     }
   )
-}
-
-function getErrorFromCode(code: string): string {
-  const codes: Record<string, string> = {
-    '001': 'Carte bloquée',
-    '002': 'Carte volée',
-    '004': 'Transaction refusée',
-    '006': 'CVV ou ID invalide',
-    '010': 'Transaction non approuvée',
-    '011': 'Montant invalide',
-    '012': 'Numéro de carte invalide',
-    '017': 'Carte expirée',
-    '033': 'Devise invalide',
-  }
-  return codes[code] || `Paiement échoué (code: ${code})`
 }

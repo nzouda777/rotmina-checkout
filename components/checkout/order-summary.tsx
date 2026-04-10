@@ -6,10 +6,14 @@ import type { CartData } from '@/lib/types'
 
 interface OrderSummaryProps {
   cartData: CartData
+  giftCardAmount?: number
+  giftCardCode?: string
 }
 
-export function OrderSummary({ cartData }: OrderSummaryProps) {
+export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: OrderSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true)
+
+  const finalTotal = Math.max(cartData.total - giftCardAmount, 0)
 
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat('he-IL', {
@@ -37,7 +41,7 @@ export function OrderSummary({ cartData }: OrderSummaryProps) {
           )}
         </div>
         <span className="text-lg font-semibold text-foreground">
-          {formatPrice(cartData.total)}
+          {formatPrice(finalTotal)}
         </span>
       </button>
 
@@ -108,15 +112,35 @@ export function OrderSummary({ cartData }: OrderSummaryProps) {
               <span className="text-foreground">{formatPrice(cartData.tax)}</span>
             </div>
           )}
+
+          {/* Gift Card Discount Line */}
+          {giftCardAmount > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                <GiftIcon className="h-3.5 w-3.5" />
+                Gift card{giftCardCode ? ` ${giftCardCode}` : ''}
+              </span>
+              <span className="text-green-600 dark:text-green-400 font-medium">
+                −{formatPrice(giftCardAmount)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Total */}
         <div className="border-t border-border mt-4 pt-4">
           <div className="flex justify-between items-center">
             <span className="text-base font-medium text-foreground">Total</span>
-            <span className="text-2xl font-semibold text-foreground">
-              {formatPrice(cartData.total)}
-            </span>
+            <div className="text-right">
+              {giftCardAmount > 0 && (
+                <span className="text-sm text-muted-foreground line-through mr-2">
+                  {formatPrice(cartData.total)}
+                </span>
+              )}
+              <span className="text-2xl font-semibold text-foreground">
+                {formatPrice(finalTotal)}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -136,6 +160,14 @@ function Package({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+    </svg>
+  )
+}
+
+function GiftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20 12v10H4V12M2 7h20v5H2V7zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z" />
     </svg>
   )
 }

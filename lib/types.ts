@@ -90,8 +90,17 @@ export interface TranzilaResponse {
   [key: string]: string | undefined
 }
 
+export interface GiftCardInfo {
+  id: string
+  code: string // full code (custom system, e.g. ROTM-XXXX-XXXX-XXXX)
+  balance: number
+  currency: string
+  appliedAmount: number
+}
+
 export interface ShopifyOrderCreateData {
   session: PaymentSession
   customer: CustomerInfo
   transactionId?: string
+  giftCard?: GiftCardInfo
 }

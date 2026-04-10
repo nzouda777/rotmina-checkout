@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
-import type { PaymentSession, CustomerInfo } from '@/lib/types'
+import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 function getIsoCountryCode(country: string): string {
   const mapping: Record<string, string> = {
@@ -19,11 +20,63 @@ function getIsoCountryCode(country: string): string {
     'Australia': 'AU',
     'Germany': 'DE',
   }
-  return mapping[country] || country // Fallback to original if not found
+  return mapping[country] || country
 }
 
 function sanitizePhone(phone: string): string {
-  return phone.replace(/\D/g, '') // Remove all non-digits
+  return phone.replace(/\D/g, '')
+}
+
+/**
+ * Handle post-payment tasks: debit gift card + generate new gift card codes
+ */
+async function handlePostPayment(params: {
+  logId: string
+  session: any
+  sessionId: string
+  customerInfo: CustomerInfo
+  giftCardCode?: string
+  giftCardAmount?: number
+  transactionId?: string
+  shopifyOrderId?: string
+}) {
+  const { logId, session, sessionId, customerInfo, giftCardCode, giftCardAmount, transactionId, shopifyOrderId } = params
+  const results: { debitSuccess: boolean; generatedCards: any[] } = { debitSuccess: true, generatedCards: [] }
+
+  // 1. Debit gift card if used as payment
+  if (giftCardCode && giftCardAmount && giftCardAmount > 0) {
+    try {
+      console.log(`[CHARGE][${logId}] Debiting gift card ${giftCardCode} for ${giftCardAmount}...`)
+      await debitGiftCard({
+        code: giftCardCode,
+        amount: giftCardAmount,
+        sessionId,
+      })
+      console.log(`[CHARGE][${logId}] Gift card debited successfully`)
+    } catch (gcError) {
+      console.error(`[CHARGE][${logId}] WARNING: Payment succeeded but gift card debit failed:`, gcError)
+      results.debitSuccess = false
+    }
+  }
+
+  // 2. Generate gift card codes if cart contains gift card products
+  try {
+    const generatedCards = await generateGiftCardsForOrder({
+      items: session.cart.items || [],
+      sessionId,
+      orderId: shopifyOrderId,
+      buyerEmail: customerInfo.email,
+      currency: session.cart.currency,
+    })
+    results.generatedCards = generatedCards
+    if (generatedCards.length > 0) {
+      console.log(`[CHARGE][${logId}] Generated ${generatedCards.length} gift card(s):`, generatedCards.map(c => c.code))
+    }
+  } catch (err) {
+    console.error(`[CHARGE][${logId}] Failed to generate gift cards:`, err)
+  }
+
+  return results
 }
 
 export async function POST(request: NextRequest) {
@@ -40,12 +93,17 @@ export async function POST(request: NextRequest) {
       cvv,
       cardholderName,
       browserData,
-      installments = 1
+      installments = 1,
+      // Gift card fields (redemption)
+      giftCardId,
+      giftCardCode,
+      giftCardAmount = 0,
     } = body
 
     console.log(`[CHARGE][${logId}] Received body for session:`, sessionId)
+    console.log(`[CHARGE][${logId}] Gift card: Code=${giftCardCode || 'none'}, Amount=${giftCardAmount}`)
 
-    if (!sessionId || !customerInfo || !cardNumber || !expiryDate || !cvv) {
+    if (!sessionId || !customerInfo) {
       console.warn(`[CHARGE][${logId}] Missing required fields`)
       return NextResponse.json(
         { error: 'Missing required payment information' },
@@ -89,6 +147,102 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', sessionId)
 
+    const orderTotal = Number(session.cart.total)
+    const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, orderTotal)
+    const chargeAmount = Math.max(orderTotal - validGiftCardAmount, 0)
+
+    console.log(`[CHARGE][${logId}] Order total: ${orderTotal}, Gift card: ${validGiftCardAmount}, CC charge: ${chargeAmount}`)
+
+    // Prepare gift card info for order creation
+    let giftCardInfo: GiftCardInfo | undefined
+    if (giftCardCode && validGiftCardAmount > 0) {
+      giftCardInfo = {
+        id: giftCardId || '',
+        code: giftCardCode,
+        balance: validGiftCardAmount,
+        currency: session.cart.currency,
+        appliedAmount: validGiftCardAmount,
+      }
+    }
+
+    // ── Case: Gift card covers entire order ─────────────────────────────
+    if (chargeAmount <= 0) {
+      console.log(`[CHARGE][${logId}] Gift card covers full order. No CC charge needed.`)
+
+      // Handle post-payment tasks
+      const postPayment = await handlePostPayment({
+        logId, session, sessionId, customerInfo,
+        giftCardCode, giftCardAmount: validGiftCardAmount,
+        transactionId: `GC-${giftCardCode}`,
+      })
+
+      if (!postPayment.debitSuccess) {
+        await supabase
+          .from('payment_sessions')
+          .update({ status: 'failed', error_message: 'Failed to process gift card payment' })
+          .eq('id', sessionId)
+        return NextResponse.json(
+          { success: false, error: 'Failed to process gift card payment. Please try again.' },
+          { status: 500 }
+        )
+      }
+
+      // Create Shopify order
+      let shopifyOrderId = session.order_id
+      try {
+        console.log(`[CHARGE][${logId}] Creating Shopify order (gift card only)...`)
+        const order = await createShopifyOrder({
+          session: session as PaymentSession,
+          customer: customerInfo,
+          transactionId: `GC-${giftCardCode}`,
+          giftCard: giftCardInfo,
+        })
+        shopifyOrderId = String(order.id)
+        console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
+      } catch (err) {
+        console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
+      }
+
+      await supabase
+        .from('payment_sessions')
+        .update({
+          status: 'paid',
+          order_id: shopifyOrderId,
+          raw_response: {
+            payment_method: 'gift_card_only',
+            gift_card_code: giftCardCode,
+            gift_card_amount: validGiftCardAmount,
+            generated_gift_cards: postPayment.generatedCards.map(c => ({
+              code: c.code,
+              amount: c.original_amount,
+              currency: c.currency,
+            })),
+          } as any,
+        })
+        .eq('id', sessionId)
+
+      return NextResponse.json({
+        success: true,
+        confirmationCode: `GC-${giftCardCode}`,
+        message: 'Payment processed successfully via gift card',
+        generatedGiftCards: postPayment.generatedCards.map(c => ({
+          code: c.code,
+          amount: c.original_amount,
+          currency: c.currency,
+        })),
+      })
+    }
+
+    // ── Case: Credit card charge (with or without gift card) ────────────
+    if (!cardNumber || !expiryDate || !cvv) {
+      console.warn(`[CHARGE][${logId}] Missing credit card fields for CC charge`)
+      await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+      return NextResponse.json(
+        { error: 'Missing required credit card information' },
+        { status: 400 }
+      )
+    }
+
     const tranzila = createTranzilaClient()
     
     const [month, year] = expiryDate.split('/')
@@ -108,7 +262,7 @@ export async function POST(request: NextRequest) {
     if (tranzilaItems.length === 0) {
       tranzilaItems.push({
         name: String(`Order from ${session.shop}`),
-        unit_price: Number(session.cart.total),
+        unit_price: Number(chargeAmount),
         units_number: 1,
         unit_type: 1,
         type: 'I',
@@ -116,37 +270,47 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── URL de callback 3DS ──────────────────────────────────────────
+    // Add gift card discount line if applicable
+    if (validGiftCardAmount > 0) {
+      tranzilaItems.push({
+        name: `Gift Card ${giftCardCode}`,
+        unit_price: -Number(validGiftCardAmount),
+        units_number: 1,
+        unit_type: 1,
+        type: 'I',
+        currency_code: session.cart.currency.toUpperCase()
+      })
+    }
+
+    // ── 3DS callback URL ──────────────────────────────────────────
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL
     const callbackUrl = `${baseUrl}/api/checkout/3ds-callback`
     console.log(`[CHARGE][${logId}] 3DS callback URL:`, callbackUrl)
-    // ────────────────────────────────────────────────────────────────
 
     // Extract client IP for 3DS browser data
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() 
       || request.headers.get('x-real-ip') 
       || '127.0.0.1'
 
-    // Inject IP into browser data
     const enrichedBrowserData = {
       ...browserData,
       ip: clientIp,
     }
-
-    const amount = Number(session.cart.total)
     
+    // ── Installment calculation (based on CC charge amount) ──────
     let payment_plan = 1
     let tranzilaInstallments = {}
 
-    if (installments > 1 && amount > 0) {
+    if (installments > 1 && chargeAmount > 0) {
       payment_plan = 8
-      const otherAmount = Math.floor((amount / installments) * 100) / 100
-      const firstAmount = amount - (otherAmount * (installments - 1))
+      const otherAmount = Math.floor((chargeAmount / installments) * 100) / 100
+      const firstAmount = chargeAmount - (otherAmount * (installments - 1))
       tranzilaInstallments = {
         installments_number: installments,
         first_installment_amount: Number(firstAmount.toFixed(2)),
         other_installments_amount: Number(otherAmount.toFixed(2))
       }
+      console.log(`[CHARGE][${logId}] Installments: ${installments}x, First: ${firstAmount.toFixed(2)}, Others: ${otherAmount.toFixed(2)}`)
     }
 
     const chargePayload = {
@@ -187,12 +351,11 @@ export async function POST(request: NextRequest) {
     console.log(JSON.stringify(chargePayload, null, 2))
     console.log(`[CHARGE][${logId}] === END PAYLOAD ===`)
 
-    console.log(`[CHARGE][${logId}] Calling Tranzila API...`)
+    console.log(`[CHARGE][${logId}] Calling Tranzila API (charging ${chargeAmount})...`)
     const tranzilaResponse = await tranzila.charge(chargePayload)
     console.log(`[CHARGE][${logId}] Tranzila raw response:`, JSON.stringify(tranzilaResponse))
     
-
-    // ── Cas 1 : Tranzila demande une redirection 3DS ─────────────────
+    // ── Case 1: 3DS redirect required ─────────────────────────────
     const tdsData = (tranzilaResponse as any)?.['3ds_data']
     const redirectUrl =
       tdsData?.challengeUrl ||
@@ -206,12 +369,20 @@ export async function POST(request: NextRequest) {
 
       const trackId = tdsData?.track_id || null
 
+      // Store gift card info in session for post-3DS processing
       await supabase
         .from('payment_sessions')
         .update({
           status: 'pending_3ds',
           tranzila_transaction_id: trackId || tranzilaResponse.transaction_id || tranzilaResponse.index || null,
-          raw_response: tranzilaResponse as any,
+          raw_response: {
+            ...tranzilaResponse as any,
+            _gift_card: giftCardInfo ? {
+              id: giftCardInfo.id,
+              code: giftCardInfo.code,
+              appliedAmount: giftCardInfo.appliedAmount,
+            } : null,
+          },
         })
         .eq('id', sessionId)
 
@@ -222,26 +393,39 @@ export async function POST(request: NextRequest) {
         sessionId,
       })
     }
-    // ─────────────────────────────────────────────────────────────────
 
-    // ── Cas 2 : Approuvé directement (terminal 3DS désactivé) ────────
+    // ── Case 2: Direct approval ─────────────────────────────────
     const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
     console.log(`[CHARGE][${logId}] Direct result — success:`, isSuccess, '| Response:', tranzilaResponse.Response)
 
     let shopifyOrderId = session.order_id
+    let postPayment = { debitSuccess: true, generatedCards: [] as any[] }
 
-    if (isSuccess && !shopifyOrderId) {
-      try {
-        console.log(`[CHARGE][${logId}] Creating Shopify order...`)
-        const order = await createShopifyOrder({
-          session: session as PaymentSession,
-          customer: customerInfo,
-          transactionId: tranzilaResponse.ConfirmationCode || tranzilaResponse.index,
-        })
-        shopifyOrderId = String(order.id)
-        console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
-      } catch (err) {
-        console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
+    if (isSuccess) {
+      const txnId = tranzilaResponse.ConfirmationCode || tranzilaResponse.index
+
+      // Handle gift card debit + code generation
+      postPayment = await handlePostPayment({
+        logId, session, sessionId, customerInfo,
+        giftCardCode, giftCardAmount: validGiftCardAmount,
+        transactionId: txnId,
+        shopifyOrderId,
+      })
+
+      if (!shopifyOrderId) {
+        try {
+          console.log(`[CHARGE][${logId}] Creating Shopify order...`)
+          const order = await createShopifyOrder({
+            session: session as PaymentSession,
+            customer: customerInfo,
+            transactionId: txnId,
+            giftCard: giftCardInfo,
+          })
+          shopifyOrderId = String(order.id)
+          console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
+        } catch (err) {
+          console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
+        }
       }
     }
 
@@ -249,7 +433,18 @@ export async function POST(request: NextRequest) {
       .from('payment_sessions')
       .update({
         status: isSuccess ? 'paid' : 'failed',
-        raw_response: tranzilaResponse as any,
+        raw_response: {
+          ...tranzilaResponse as any,
+          _gift_card: giftCardInfo ? {
+            code: giftCardInfo.code,
+            appliedAmount: giftCardInfo.appliedAmount,
+          } : null,
+          _generated_gift_cards: postPayment.generatedCards.map(c => ({
+            code: c.code,
+            amount: c.original_amount,
+            currency: c.currency,
+          })),
+        },
         order_id: shopifyOrderId,
         tranzila_transaction_id: tranzilaResponse.ConfirmationCode || tranzilaResponse.index || null,
         error_message: isSuccess ? null : TranzilaClient.getErrorMessage(tranzilaResponse),
@@ -263,6 +458,11 @@ export async function POST(request: NextRequest) {
         success: true,
         confirmationCode: tranzilaResponse.ConfirmationCode || tranzilaResponse.index,
         message: 'Payment processed successfully',
+        generatedGiftCards: postPayment.generatedCards.map(c => ({
+          code: c.code,
+          amount: c.original_amount,
+          currency: c.currency,
+        })),
       })
     } else {
       return NextResponse.json({
@@ -270,7 +470,6 @@ export async function POST(request: NextRequest) {
         error: TranzilaClient.getErrorMessage(tranzilaResponse),
       })
     }
-    // ─────────────────────────────────────────────────────────────────
 
   } catch (error: any) {
     console.error(`[CHARGE][${logId}] CRITICAL ERROR:`, error)

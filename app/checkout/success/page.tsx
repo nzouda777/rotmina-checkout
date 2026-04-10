@@ -1,12 +1,16 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
-import { CheckCircle } from 'lucide-react'
+import { Suspense, useState } from 'react'
+import { CheckCircle, Gift, Copy, Check } from 'lucide-react'
 
 function SuccessContent() {
   const searchParams = useSearchParams()
   const confirmation = searchParams.get('confirmation')
+  const giftCardsParam = searchParams.get('gift_cards')
+
+  // Parse gift card codes from query params (comma-separated)
+  const giftCardCodes = giftCardsParam ? giftCardsParam.split(',').filter(Boolean) : []
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -30,9 +34,91 @@ function SuccessContent() {
           </div>
         )}
 
+        {/* Generated Gift Card Codes */}
+        {giftCardCodes.length > 0 && (
+          <div className="mt-6 mb-6">
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Gift className="h-5 w-5 text-foreground" />
+              <h2 className="text-lg font-semibold text-foreground">
+                {giftCardCodes.length === 1 ? 'Your Gift Card' : 'Your Gift Cards'}
+              </h2>
+            </div>
+
+            <div className="space-y-3">
+              {giftCardCodes.map((code, index) => (
+                <GiftCardCodeDisplay key={index} code={code} />
+              ))}
+            </div>
+
+            <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                ⚠️ Please save {giftCardCodes.length === 1 ? 'this code' : 'these codes'} carefully. 
+                You can use {giftCardCodes.length === 1 ? 'it' : 'them'} at checkout to pay for future orders.
+              </p>
+            </div>
+          </div>
+        )}
+
         <p className="text-sm text-muted-foreground">
           A confirmation email has been sent to your email address.
         </p>
+      </div>
+    </div>
+  )
+}
+
+function GiftCardCodeDisplay({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Fallback for browsers without clipboard API
+      const textArea = document.createElement('textarea')
+      textArea.value = code
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border-2 border-dashed border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10 p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30">
+            <Gift className="h-5 w-5 text-green-600 dark:text-green-400" />
+          </div>
+          <div className="text-left">
+            <p className="text-xs text-muted-foreground mb-0.5">Gift Card Code</p>
+            <p className="text-lg font-mono font-bold text-foreground tracking-wider">
+              {code}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-background border border-border hover:bg-muted transition-colors text-sm"
+          title="Copy to clipboard"
+        >
+          {copied ? (
+            <>
+              <Check className="h-4 w-4 text-green-600" />
+              <span className="text-green-600">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Copy</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   )
