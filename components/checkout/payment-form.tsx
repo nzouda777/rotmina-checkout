@@ -193,23 +193,29 @@ export function PaymentForm({
       if (result.requires3DS && result.redirectUrl) {
         setThreeDSUrl(result.redirectUrl)
         setShow3DS(true)
-        const threeDSTrackId = result.trackId
 
-        // Poll: actively try to complete 3DS every few seconds
-        let completing = false
-        const pollInterval = setInterval(async () => {
-          if (completing) return
-          completing = true
+        // Helper to handle successful completion
+        const handleComplete = () => {
+          setShow3DS(false)
+          setIsSubmitting(false)
+        }
 
+        // Listen for postMessage from the iframe (sent by our 3ds-callback)
+        const messageHandler = async (event: MessageEvent) => {
+          if (event.data?.type !== '3DS_COMPLETE') return
+          
+          console.log('[3DS] Received postMessage from iframe:', event.data)
+          window.removeEventListener('message', messageHandler)
+          clearInterval(statusPollInterval)
+
+          // The callback already processed everything (complete + order creation)
+          // Just need to fetch the final session status
           try {
-            // First check if the callback already processed it  
             const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
             if (statusRes.ok) {
               const sessionData = await statusRes.json()
               if (sessionData.status === 'paid') {
-                clearInterval(pollInterval)
-                setShow3DS(false)
-                setIsSubmitting(false)
+                handleComplete()
                 onSuccess(
                   sessionData.tranzila_transaction_id || 'confirmed',
                   sessionData.raw_response?.shopifyOrderUrl,
@@ -217,39 +223,65 @@ export function PaymentForm({
                 return
               }
             }
+          } catch (e) {
+            console.error('[3DS] Error fetching session after postMessage:', e)
+          }
+          
+          // If session isn't paid yet, the callback might have failed
+          // Show error and let user retry
+          handleComplete()
+          if (event.data.success) {
+            // Callback said success but session isn't paid — might need a moment
+            // Check once more after a short delay
+            setTimeout(async () => {
+              try {
+                const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+                if (statusRes.ok) {
+                  const sessionData = await statusRes.json()
+                  if (sessionData.status === 'paid') {
+                    onSuccess(
+                      sessionData.tranzila_transaction_id || 'confirmed',
+                      sessionData.raw_response?.shopifyOrderUrl,
+                    )
+                    return
+                  }
+                }
+              } catch {}
+              onError('Payment verification completed but order processing failed. Please contact support.')
+            }, 2000)
+          } else {
+            onError('3DS verification failed. Please try again.')
+          }
+        }
 
-            // Try to complete the 3DS manually — pass trackId directly
-            const completeRes = await fetch('/api/checkout/3ds-complete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sessionId, trackId: threeDSTrackId }),
-            })
-            const completeResult = await completeRes.json()
+        window.addEventListener('message', messageHandler)
 
-            if (completeResult.success) {
-              clearInterval(pollInterval)
-              setShow3DS(false)
-              setIsSubmitting(false)
-              onSuccess(
-                completeResult.confirmationCode,
-                completeResult.shopifyOrderUrl,
-                completeResult.generatedGiftCards,
-                completeResult.giftCardRemainingBalance,
-                giftCardCode
-              )
-              return
-            }
-
-            // If it's a definitive failure (not just "not ready"), stop on user action
-            if (completeResult.error && !completeResult.pending) {
-              console.log('[3DS] Poll: not ready yet or error:', completeResult.error)
+        // Fallback: poll session status only (NOT 3ds-complete) every 5 seconds
+        // This catches cases where the callback succeeds but postMessage fails
+        const statusPollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+            if (statusRes.ok) {
+              const sessionData = await statusRes.json()
+              if (sessionData.status === 'paid') {
+                clearInterval(statusPollInterval)
+                window.removeEventListener('message', messageHandler)
+                handleComplete()
+                onSuccess(
+                  sessionData.tranzila_transaction_id || 'confirmed',
+                  sessionData.raw_response?.shopifyOrderUrl,
+                )
+              } else if (sessionData.status === 'failed') {
+                clearInterval(statusPollInterval)
+                window.removeEventListener('message', messageHandler)
+                handleComplete()
+                onError(sessionData.error_message || 'Payment failed after 3DS verification')
+              }
             }
           } catch (e) {
-            console.error('[3DS] Poll error:', e)
-          } finally {
-            completing = false
+            console.error('[3DS] Status poll error:', e)
           }
-        }, 4000) // Poll every 4 seconds to give user time to complete
+        }, 5000) // Check every 5 seconds
 
         return
       }

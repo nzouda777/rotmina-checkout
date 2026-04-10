@@ -240,25 +240,35 @@ function redirectToError(message: string, sessionId?: string) {
 }
 
 function breakoutRedirect(url: string) {
-  // Since 3DS now runs in a popup, just close it.
-  // The main checkout page polls the session and will handle the redirect.
+  // 3DS runs in an iframe on the checkout page.
+  // Send postMessage to the parent with the result URL so it can handle it.
   return new NextResponse(
     `<html>
       <body>
         <script>
           try {
-            // If we're in a popup, close it. The parent page polls for completion.
-            if (window.opener) {
+            // Parse result from URL
+            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url');
+            var urlObj = new URL("${url}");
+            var result = {
+              type: '3DS_COMPLETE',
+              success: isSuccess,
+              url: "${url}",
+            };
+            // Send to parent (the checkout page)
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(result, '*');
+            } else if (window.opener) {
+              window.opener.postMessage(result, '*');
               window.close();
             } else {
-              // Fallback: redirect normally if not in a popup
-              window.top.location.href = "${url}";
+              window.location.href = "${url}";
             }
           } catch(e) {
             window.location.href = "${url}";
           }
         </script>
-        <p>Verification complete. This window will close automatically...</p>
+        <p>Verification complete. Processing payment...</p>
       </body>
     </html>`,
     {
