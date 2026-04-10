@@ -396,6 +396,7 @@ export async function POST(request: NextRequest) {
         requires3DS: true,
         redirectUrl,
         sessionId,
+        trackId: trackId || tranzilaResponse.transaction_id || tranzilaResponse.index || null,
       })
     }
 

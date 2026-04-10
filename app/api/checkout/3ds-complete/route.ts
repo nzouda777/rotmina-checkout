@@ -13,7 +13,8 @@ export async function POST(request: NextRequest) {
   console.log('[3DS-COMPLETE] Manual 3DS completion triggered')
 
   try {
-    const { sessionId } = await request.json()
+    const body = await request.json()
+    const { sessionId, trackId: clientTrackId } = body
 
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
@@ -43,8 +44,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Must be in a state where 3DS completion makes sense
-    // 'pending' is allowed because there's a race condition where the poll fires
-    // before the charge route finishes writing 'pending_3ds' to the database
     if (session.status !== 'pending_3ds' && session.status !== 'processing' && session.status !== 'pending') {
       console.log('[3DS-COMPLETE] Session not in 3DS state:', session.status)
       return NextResponse.json({
@@ -53,15 +52,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Find the track_id
+    // Use trackId from client first (avoids race condition), then fall back to DB
     const trackId =
+      clientTrackId ||
       session.tranzila_transaction_id ||
       session.raw_response?.['3ds_data']?.track_id ||
       session.raw_response?.track_id
 
     if (!trackId) {
       console.error('[3DS-COMPLETE] No track_id found for session:', sessionId)
-      return NextResponse.json({ error: 'No track_id found' }, { status: 400 })
+      return NextResponse.json({ error: 'No track_id found — 3DS not ready yet', pending: true }, { status: 400 })
     }
 
     console.log('[3DS-COMPLETE] Calling 3DS Complete with track_id:', trackId)
