@@ -84,6 +84,53 @@ export class TranzilaClient {
     }
   }
 
+  /**
+   * Step 3 of 3DS flow: Complete the transaction after user finishes the challenge.
+   * POST /v1/transaction/credit_card/3ds/complete
+   */
+  async complete3DS(trackId: string): Promise<TranzilaResponse> {
+    const apiUrl = 'https://api.tranzila.com/v1/transaction/credit_card/3ds/complete'
+    const appKey = process.env.TRANZILA_APP_KEY || ''
+    const secret = process.env.TRANZILA_SECRET || ''
+    const time = Math.round(Date.now() / 1000)
+    const nonce = this.makeNonce(80)
+    const accessToken = this.generateAccessToken(appKey, secret, time, nonce)
+
+    const body = {
+      terminal_name: process.env.TRANZILA_TERMINAL || '',
+      track_id: trackId,
+    }
+
+    console.log('[3DS-COMPLETE] Calling Tranzila 3DS Complete:', { url: apiUrl, body })
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-tranzila-api-app-key': appKey,
+          'X-tranzila-api-request-time': String(time),
+          'X-tranzila-api-nonce': nonce,
+          'X-tranzila-api-access-token': accessToken,
+        },
+        body: JSON.stringify(body),
+      })
+
+      const text = await response.text()
+      console.log('[3DS-COMPLETE] Response:', text)
+
+      if (!response.ok) {
+        throw new Error(`3DS Complete failed: ${response.statusText} (${response.status})`)
+      }
+
+      return JSON.parse(text) as TranzilaResponse
+    } catch (err) {
+      console.error('[3DS-COMPLETE] Exception:', err)
+      throw err
+    }
+  }
+
   static isSuccess(response: any): boolean {
     if (!response) return false
 
