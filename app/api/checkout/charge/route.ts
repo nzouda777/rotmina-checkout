@@ -38,7 +38,8 @@ export async function POST(request: NextRequest) {
       cardNumber, 
       expiryDate, 
       cvv,
-      cardholderName 
+      cardholderName,
+      browserData
     } = body
 
     console.log(`[CHARGE][${logId}] Received body for session:`, sessionId)
@@ -125,8 +126,6 @@ export async function POST(request: NextRequest) {
       txn_currency_code: session.cart.currency.toUpperCase(),
       txn_type: 'debit',
       amount: Number(session.cart.total), // Required field
-      activate_3ds: "Y",                 // Explicitly enable 3DS
-      items_summary_mode: "auto",      // Let Tranzila handle item summaries
       expire_month: Number(expireMonth),
       expire_year: Number(expireYear),
       cvv: String(cvv),
@@ -134,9 +133,17 @@ export async function POST(request: NextRequest) {
       payment_plan: 1,
       installments_number: 1,
       card_holder_id: null,
-      three_d_secure: {
-        callback_url: callbackUrl,
-        merchant_data: sessionId,   // ← on récupère le sessionId au retour
+      activate_3ds: "Y",
+      "3ds_settings": {
+        browser: browserData,
+        force_txn_on_3ds_fail: "N",
+        force_challenge: 0,
+        auth_3ds_redirect: [
+          {
+            key: 'url',
+            value: `${callbackUrl}?merchant_data=${sessionId}`
+          }
+        ]
       },
       client: {
         email: customerInfo.email,

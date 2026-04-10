@@ -107,6 +107,18 @@ export function PaymentForm({
     setIsSubmitting(true)
     onProcessing()
 
+    const browserData = {
+      java_enabled: navigator.javaEnabled() ? 1 : 0,
+      language: navigator.language || 'en-US',
+      color_depth: window.screen.colorDepth || 24,
+      screen_height: window.screen.height || 1080,
+      screen_width: window.screen.width || 1920,
+      time_zone: new Date().getTimezoneOffset(),
+      user_agent: navigator.userAgent,
+      accept_header: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      window_size: '05', // Full screen default
+    }
+
     try {
       const response = await fetch('/api/checkout/charge', {
         method: 'POST',
@@ -118,8 +130,10 @@ export function PaymentForm({
           expiryDate,
           cvv,
           cardholderName,
+          browserData,
         }),
       })
+
 
       const result = await response.json()
       
