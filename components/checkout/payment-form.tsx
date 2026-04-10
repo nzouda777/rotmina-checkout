@@ -33,6 +33,16 @@ export function PaymentForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [show3DS, setShow3DS] = useState(false)
   const [threeDSUrl, setThreeDSUrl] = useState('')
+  const [installments, setInstallments] = useState(1)
+
+  const isIsrael = customerInfo.country.toLowerCase() === 'israel' || customerInfo.country.toUpperCase() === 'IL'
+  let maxInstallments = 1
+  if (isIsrael && total >= 500) {
+    if (total >= 1500) maxInstallments = 6
+    else if (total >= 1300) maxInstallments = 4
+    else if (total >= 900) maxInstallments = 3
+    else maxInstallments = 2
+  }
 
   const formatCardNumber = (value: string) => {
     const digits = value.replace(/\D/g, '')
@@ -131,6 +141,7 @@ export function PaymentForm({
           cvv,
           cardholderName,
           browserData,
+          installments,
         }),
       })
 
@@ -309,6 +320,25 @@ export function PaymentForm({
                   )}
                 </div>
               </div>
+
+              {maxInstallments > 1 && (
+                <div>
+                  <label htmlFor="installments" className="sr-only">Installments</label>
+                  <select
+                    id="installments"
+                    value={installments}
+                    onChange={(e) => setInstallments(parseInt(e.target.value))}
+                    className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+                  >
+                    <option value={1}>No Installments</option>
+                    {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 2).map((num) => (
+                      <option key={num} value={num}>
+                        {num} Installments ({formatPrice(total / num)} / mo)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         </div>

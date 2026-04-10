@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
       expiryDate, 
       cvv,
       cardholderName,
-      browserData
+      browserData,
+      installments = 1
     } = body
 
     console.log(`[CHARGE][${logId}] Received body for session:`, sessionId)
@@ -132,6 +133,22 @@ export async function POST(request: NextRequest) {
       ip: clientIp,
     }
 
+    const amount = Number(session.cart.total)
+    
+    let payment_plan = 1
+    let tranzilaInstallments = {}
+
+    if (installments > 1 && amount > 0) {
+      payment_plan = 8
+      const otherAmount = Math.floor((amount / installments) * 100) / 100
+      const firstAmount = amount - (otherAmount * (installments - 1))
+      tranzilaInstallments = {
+        installments_number: installments,
+        first_installment_amount: Number(firstAmount.toFixed(2)),
+        other_installments_amount: Number(otherAmount.toFixed(2))
+      }
+    }
+
     const chargePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
       txn_currency_code: session.cart.currency.toUpperCase(),
@@ -140,11 +157,12 @@ export async function POST(request: NextRequest) {
       expire_year: Number(expireYear),
       cvv: String(cvv),
       card_number: String(cardNumber.replace(/\s/g, '')),
-      payment_plan: 1,
+      payment_plan: payment_plan,
+      ...tranzilaInstallments,
       activate_3ds: "Y",
       "3ds_settings": {
         browser: enrichedBrowserData,
-        force_txn_on_3ds_fail: "N",
+        force_txn_on_3ds_fail: "Y",
         force_challenge: 0,
         auth_3ds_redirect: [
           {
