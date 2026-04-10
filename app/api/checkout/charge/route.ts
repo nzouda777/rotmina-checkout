@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       name: String(item.title || 'Product'),
       unit_price: Number(item.price),
       units_number: Number(item.quantity) || 1,
-      unit_type: 0,
+      unit_type: 1,
       type: 'I',
       currency_code: session.cart.currency.toUpperCase()
     }))
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
         name: String(`Order from ${session.shop}`),
         unit_price: Number(session.cart.total),
         units_number: 1,
-        unit_type: 0,
+        unit_type: 1,
         type: 'I',
         currency_code: session.cart.currency.toUpperCase()
       })
@@ -121,6 +121,17 @@ export async function POST(request: NextRequest) {
     console.log(`[CHARGE][${logId}] 3DS callback URL:`, callbackUrl)
     // ────────────────────────────────────────────────────────────────
 
+    // Extract client IP for 3DS browser data
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() 
+      || request.headers.get('x-real-ip') 
+      || '127.0.0.1'
+
+    // Inject IP into browser data
+    const enrichedBrowserData = {
+      ...browserData,
+      ip: clientIp,
+    }
+
     const chargePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
       txn_curreny_codetype: 'debit',
@@ -131,7 +142,7 @@ export async function POST(request: NextRequest) {
       payment_plan: 1,
       activate_3ds: "Y",
       "3ds_settings": {
-        browser: browserData,
+        browser: enrichedBrowserData,
         force_txn_on_3ds_fail: "N",
         force_challenge: 0,
         auth_3ds_redirect: [
@@ -152,6 +163,10 @@ export async function POST(request: NextRequest) {
       },
       items: tranzilaItems,
     }
+
+    console.log(`[CHARGE][${logId}] === FULL PAYLOAD ===`)
+    console.log(JSON.stringify(chargePayload, null, 2))
+    console.log(`[CHARGE][${logId}] === END PAYLOAD ===`)
 
     console.log(`[CHARGE][${logId}] Calling Tranzila API...`)
     const tranzilaResponse = await tranzila.charge(chargePayload)
