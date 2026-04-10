@@ -116,7 +116,7 @@ export function PaymentForm({
       time_zone: new Date().getTimezoneOffset(),
       user_agent: navigator.userAgent,
       accept_header: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      window_size: '05', // Full screen default
+      window_size: '04', // 600x400 is the largest allowed enum value
     }
 
     try {
