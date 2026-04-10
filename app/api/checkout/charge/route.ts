@@ -123,16 +123,12 @@ export async function POST(request: NextRequest) {
 
     const chargePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
-      txn_currency_code: session.cart.currency.toUpperCase(),
-      txn_type: 'debit',
-      amount: Number(session.cart.total), // Required field
+      txn_curreny_codetype: 'debit',
       expire_month: Number(expireMonth),
       expire_year: Number(expireYear),
       cvv: String(cvv),
       card_number: String(cardNumber.replace(/\s/g, '')),
       payment_plan: 1,
-      installments_number: 1,
-      card_holder_id: null,
       activate_3ds: "Y",
       "3ds_settings": {
         browser: browserData,
