@@ -134,7 +134,8 @@ export async function POST(request: NextRequest) {
 
     const chargePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
-      txn_curreny_codetype: 'debit',
+      txn_currency_code: session.cart.currency.toUpperCase(),
+      txn_type: 'debit',
       expire_month: Number(expireMonth),
       expire_year: Number(expireYear),
       cvv: String(cvv),
