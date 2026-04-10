@@ -131,10 +131,10 @@ export async function POST(request: NextRequest) {
 
     console.log(`[CHARGE][${logId}] Session found. Current status:`, session.status)
 
-    if (session.status !== 'pending') {
-      console.warn(`[CHARGE][${logId}] Session already processed:`, session.status)
+    if (session.status === 'paid' || session.status === 'processing') {
+      console.warn(`[CHARGE][${logId}] Session already processed or processing:`, session.status)
       return NextResponse.json(
-        { error: 'Payment session already processed' },
+        { error: 'Payment session already processed or is currently processing' },
         { status: 400 }
       )
     }
@@ -404,7 +404,8 @@ export async function POST(request: NextRequest) {
     console.log(`[CHARGE][${logId}] Direct result — success:`, isSuccess, '| Response:', tranzilaResponse.Response)
 
     let shopifyOrderId = session.order_id
-    let postPayment = { debitSuccess: true, generatedCards: [] as any[] }
+    let postPayment: { debitSuccess: boolean; generatedCards: any[]; giftCardRemainingBalance?: number } = { debitSuccess: true, generatedCards: [] }
+    let shopifyOrderUrl = process.env.SHOPIFY_STORE_DOMAIN
 
     if (isSuccess) {
       const txnId = tranzilaResponse.ConfirmationCode || tranzilaResponse.index
@@ -417,7 +418,6 @@ export async function POST(request: NextRequest) {
         shopifyOrderId,
       })
 
-      let shopifyOrderUrl: string | undefined
       if (!shopifyOrderId) {
         try {
           console.log(`[CHARGE][${logId}] Creating Shopify order...`)
