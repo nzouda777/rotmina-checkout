@@ -189,11 +189,74 @@ export function PaymentForm({
 
       const result = await response.json()
       
-      // 3DS challenge required — redirect
+      // 3DS challenge required — open popup + poll
       if (result.requires3DS && result.redirectUrl) {
         setThreeDSUrl(result.redirectUrl)
         setShow3DS(true)
-        window.location.href = result.redirectUrl
+
+        // Open 3DS in a popup window
+        const popup = window.open(
+          result.redirectUrl,
+          '3DS_Verification',
+          'width=500,height=600,scrollbars=yes,resizable=yes'
+        )
+
+        // Poll until the session status changes or popup is closed
+        const pollInterval = setInterval(async () => {
+          try {
+            // Check if popup was closed by the user
+            if (popup && popup.closed) {
+              clearInterval(pollInterval)
+              console.log('[3DS] Popup closed, attempting to complete 3DS...')
+
+              // Call our manual 3DS complete endpoint
+              try {
+                const completeRes = await fetch('/api/checkout/3ds-complete', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sessionId }),
+                })
+                const completeResult = await completeRes.json()
+                setShow3DS(false)
+
+                if (completeResult.success) {
+                  onSuccess(
+                    completeResult.confirmationCode,
+                    completeResult.shopifyOrderUrl,
+                    completeResult.generatedGiftCards,
+                    completeResult.giftCardRemainingBalance,
+                    giftCardCode
+                  )
+                } else {
+                  onError(completeResult.error || 'Payment failed after 3DS verification')
+                }
+              } catch {
+                onError('Failed to complete 3DS verification. Please try again.')
+              }
+              setIsSubmitting(false)
+              return
+            }
+
+            // Also check session status in case the callback processed it
+            const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+            if (statusRes.ok) {
+              const sessionData = await statusRes.json()
+              if (sessionData.status === 'paid') {
+                clearInterval(pollInterval)
+                if (popup && !popup.closed) popup.close()
+                setShow3DS(false)
+                setIsSubmitting(false)
+                onSuccess(
+                  sessionData.tranzila_transaction_id || 'confirmed',
+                  sessionData.raw_response?.shopifyOrderUrl,
+                )
+              }
+            }
+          } catch (e) {
+            console.error('[3DS] Poll error:', e)
+          }
+        }, 2000) // Poll every 2 seconds
+
         return
       }
 
@@ -463,28 +526,22 @@ export function PaymentForm({
         </div>
       </form>
 
-      {/* 3DS Challenge Modal */}
-      {show3DS && threeDSUrl && (
+      {/* 3DS Challenge Overlay — popup is open in separate window */}
+      {show3DS && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg bg-background rounded-xl shadow-2xl border border-border overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
-              <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-foreground" />
-                <span className="text-sm font-medium text-foreground">3D Secure Verification</span>
-              </div>
-              <button
-                onClick={() => { setShow3DS(false); setIsSubmitting(false); }}
-                className="text-muted-foreground hover:text-foreground text-lg leading-none"
-              >
-                ×
-              </button>
+          <div className="relative w-full max-w-md bg-background rounded-xl shadow-2xl border border-border overflow-hidden p-8 text-center">
+            <Shield className="h-10 w-10 text-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-foreground mb-2">3D Secure Verification</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              A verification window has opened. Please complete the security check in the popup window.
+            </p>
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+              <span className="text-sm text-muted-foreground">Waiting for verification...</span>
             </div>
-            <iframe
-              src={threeDSUrl}
-              className="w-full border-0"
-              style={{ height: '500px' }}
-              title="3D Secure Verification"
-            />
+            <p className="text-xs text-muted-foreground">
+              Once complete, close the popup window and your payment will be finalized automatically.
+            </p>
           </div>
         </div>
       )}
