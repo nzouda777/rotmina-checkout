@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
@@ -42,15 +43,7 @@ async function handleCallback(request: NextRequest) {
       params.session_id ||
       params.userData
 
-    const responseCode = params.Response || params.response_code || params.status
-    const confirmationCode = params.ConfirmationCode || params.confirmation_code || params.transaction_id
-    const isSuccess =
-      responseCode === '000' ||
-      responseCode === 'approved' ||
-      responseCode === 'success' ||
-      params.success === 'true'
-
-    console.log('[3DS-CALLBACK] sessionId:', sessionId, '| isSuccess:', isSuccess, '| code:', responseCode)
+    console.log('[3DS-CALLBACK] sessionId:', sessionId)
 
     if (!sessionId) {
       console.error('[3DS-CALLBACK] No sessionId found in params')
@@ -76,6 +69,31 @@ async function handleCallback(request: NextRequest) {
       return redirectToShopify(session)
     }
 
+    // ── Step 3: Call Tranzila 3DS Complete ─────────────────────────────
+    // Retrieve the track_id from the stored raw_response
+    const trackId =
+      params.track_id ||
+      session.tranzila_transaction_id ||
+      session.raw_response?.['3ds_data']?.track_id
+
+    if (!trackId) {
+      console.error('[3DS-CALLBACK] No track_id found')
+      return redirectToError('3DS verification failed: missing track_id')
+    }
+
+    console.log('[3DS-CALLBACK] Calling 3DS Complete with track_id:', trackId)
+    const tranzila = createTranzilaClient()
+    const completeResponse = await tranzila.complete3DS(trackId)
+    console.log('[3DS-CALLBACK] Complete response:', JSON.stringify(completeResponse))
+
+    const isSuccess = TranzilaClient.isSuccess(completeResponse)
+    const confirmationCode =
+      (completeResponse as any).ConfirmationCode ||
+      (completeResponse as any).confirmation_code ||
+      (completeResponse as any).transaction_id ||
+      (completeResponse as any).index
+    // ──────────────────────────────────────────────────────────────────
+
     if (isSuccess) {
       // Créer la commande Shopify
       let shopifyOrderId = session.order_id
@@ -90,12 +108,10 @@ async function handleCallback(request: NextRequest) {
             transactionId: confirmationCode,
           })
           shopifyOrderId = String(order.id)
-          // L'URL de confirmation Shopify — adapte selon ta structure
           shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
           console.log('[3DS-CALLBACK] Shopify order created:', shopifyOrderId)
         } catch (err) {
           console.error('[3DS-CALLBACK] Shopify order failed:', err)
-          // Ne pas bloquer — le paiement est quand même réussi
         }
       }
 
@@ -103,32 +119,28 @@ async function handleCallback(request: NextRequest) {
         .from('payment_sessions')
         .update({
           status: 'paid',
-          tranzila_transaction_id: confirmationCode || null,
+          tranzila_transaction_id: confirmationCode || trackId,
           order_id: shopifyOrderId,
-          raw_response: params as any,
+          raw_response: completeResponse as any,
           error_message: null,
         })
         .eq('id', sessionId)
 
-      // Rediriger vers la confirmation Shopify
       return redirectToShopify(session, shopifyOrderUrl)
 
     } else {
-      const errorMsg =
-        params.message ||
-        params.error ||
-        getErrorFromCode(responseCode)
+      const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
 
       await supabase
         .from('payment_sessions')
         .update({
           status: 'failed',
-          raw_response: params as any,
+          raw_response: completeResponse as any,
           error_message: errorMsg,
         })
         .eq('id', sessionId)
 
-      console.log('[3DS-CALLBACK] Payment failed:', errorMsg)
+      console.log('[3DS-CALLBACK] Payment failed after 3DS Complete:', errorMsg)
       return redirectToError(errorMsg, sessionId)
     }
 
