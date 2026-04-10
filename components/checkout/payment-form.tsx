@@ -201,43 +201,15 @@ export function PaymentForm({
           'width=500,height=600,scrollbars=yes,resizable=yes'
         )
 
-        // Poll until the session status changes or popup is closed
+        // Poll: actively try to complete 3DS every few seconds
+        let completing = false
         const pollInterval = setInterval(async () => {
+          // Prevent concurrent calls
+          if (completing) return
+          completing = true
+
           try {
-            // Check if popup was closed by the user
-            if (popup && popup.closed) {
-              clearInterval(pollInterval)
-              console.log('[3DS] Popup closed, attempting to complete 3DS...')
-
-              // Call our manual 3DS complete endpoint
-              try {
-                const completeRes = await fetch('/api/checkout/3ds-complete', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ sessionId }),
-                })
-                const completeResult = await completeRes.json()
-                setShow3DS(false)
-
-                if (completeResult.success) {
-                  onSuccess(
-                    completeResult.confirmationCode,
-                    completeResult.shopifyOrderUrl,
-                    completeResult.generatedGiftCards,
-                    completeResult.giftCardRemainingBalance,
-                    giftCardCode
-                  )
-                } else {
-                  onError(completeResult.error || 'Payment failed after 3DS verification')
-                }
-              } catch {
-                onError('Failed to complete 3DS verification. Please try again.')
-              }
-              setIsSubmitting(false)
-              return
-            }
-
-            // Also check session status in case the callback processed it
+            // First check if the callback already processed it
             const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
             if (statusRes.ok) {
               const sessionData = await statusRes.json()
@@ -250,12 +222,50 @@ export function PaymentForm({
                   sessionData.tranzila_transaction_id || 'confirmed',
                   sessionData.raw_response?.shopifyOrderUrl,
                 )
+                return
+              }
+            }
+
+            // Try to complete the 3DS manually
+            const completeRes = await fetch('/api/checkout/3ds-complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId }),
+            })
+            const completeResult = await completeRes.json()
+
+            if (completeResult.success) {
+              clearInterval(pollInterval)
+              if (popup && !popup.closed) popup.close()
+              setShow3DS(false)
+              setIsSubmitting(false)
+              onSuccess(
+                completeResult.confirmationCode,
+                completeResult.shopifyOrderUrl,
+                completeResult.generatedGiftCards,
+                completeResult.giftCardRemainingBalance,
+                giftCardCode
+              )
+              return
+            }
+
+            // If the complete call says the session is failed, stop
+            if (completeResult.error && !completeResult.error.includes('pending')) {
+              // Check if popup was closed — user gave up
+              if (popup && popup.closed) {
+                clearInterval(pollInterval)
+                setShow3DS(false)
+                setIsSubmitting(false)
+                onError(completeResult.error || 'Payment failed after 3DS verification')
+                return
               }
             }
           } catch (e) {
             console.error('[3DS] Poll error:', e)
+          } finally {
+            completing = false
           }
-        }, 2000) // Poll every 2 seconds
+        }, 3000) // Poll every 3 seconds
 
         return
       }

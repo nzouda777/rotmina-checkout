@@ -237,13 +237,25 @@ function redirectToError(message: string, sessionId?: string) {
 }
 
 function breakoutRedirect(url: string) {
+  // Since 3DS now runs in a popup, just close it.
+  // The main checkout page polls the session and will handle the redirect.
   return new NextResponse(
     `<html>
       <body>
         <script>
-          window.top.location.href = "${url}";
+          try {
+            // If we're in a popup, close it. The parent page polls for completion.
+            if (window.opener) {
+              window.close();
+            } else {
+              // Fallback: redirect normally if not in a popup
+              window.top.location.href = "${url}";
+            }
+          } catch(e) {
+            window.location.href = "${url}";
+          }
         </script>
-        <p>Redirecting...</p>
+        <p>Verification complete. This window will close automatically...</p>
       </body>
     </html>`,
     {
