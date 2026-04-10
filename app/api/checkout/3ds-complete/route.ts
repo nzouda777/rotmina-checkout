@@ -42,8 +42,10 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Must be in pending_3ds status
-    if (session.status !== 'pending_3ds' && session.status !== 'processing') {
+    // Must be in a state where 3DS completion makes sense
+    // 'pending' is allowed because there's a race condition where the poll fires
+    // before the charge route finishes writing 'pending_3ds' to the database
+    if (session.status !== 'pending_3ds' && session.status !== 'processing' && session.status !== 'pending') {
       console.log('[3DS-COMPLETE] Session not in 3DS state:', session.status)
       return NextResponse.json({
         error: `Session is in '${session.status}' state, not pending 3DS`,
