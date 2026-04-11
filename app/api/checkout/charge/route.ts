@@ -333,16 +333,9 @@ export async function POST(request: NextRequest) {
         browser: enrichedBrowserData,
         force_txn_on_3ds_fail: "Y",
         force_challenge: 0,
-        auth_3ds_redirect: [
-          {
-            key: 'success',
-            value: `${callbackUrl}?merchant_data=${sessionId}`
-          },
-          {
-            key: 'failure',
-            value: `${callbackUrl}?merchant_data=${sessionId}`
-          }
-        ]
+        auth_3ds_redirect: {
+          url: `${callbackUrl}?merchant_data=${sessionId}`
+        }
       },
       client: {
         email: customerInfo.email,
