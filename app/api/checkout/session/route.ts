@@ -15,6 +15,21 @@ function corsResponse(data: any, status: number = 200) {
   })
 }
 
+async function getExchangeRate(from: string, to: string): Promise<number> {
+  if (from === to) return 1;
+  try {
+    const res = await fetch(`https://open.er-api.com/v6/latest/${from}`, { next: { revalidate: 3600 } });
+    const data = await res.json();
+    if (data?.rates?.[to]) return data.rates[to];
+  } catch (e) {
+    console.warn('[CURRENCY] Failed to fetch live exchange rate, using fallback');
+  }
+  if (from === 'USD' && to === 'ILS') return 3.75;
+  if (from === 'EUR' && to === 'ILS') return 4.05;
+  if (from === 'GBP' && to === 'ILS') return 4.75;
+  return 1;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -28,6 +43,10 @@ export async function POST(request: NextRequest) {
     const shop = bodyShop || process.env.SHOPIFY_STORE_DOMAIN
     const idempotencyKey = bodyIdempotencyKey || idempotency_key || Math.random().toString(36).substring(2) + Date.now().toString(36)
 
+    // Calculate currency conversion if cart is not originally ILS
+    const originalCurrency = cart?.currency || 'ILS';
+    const rate = await getExchangeRate(originalCurrency, 'ILS');
+
     // Handle raw Shopify cart format if detected
     let finalCart = cart
     if (cart && cart.token && cart.items && !cart.subtotal) {
@@ -38,18 +57,28 @@ export async function POST(request: NextRequest) {
           product_id: item.product_id,
           title: item.title,
           quantity: item.quantity,
-          price: item.price / 100,
+          price: Math.round((item.price / 100) * rate * 100) / 100,
           image: item.image,
           variant: item.variant_title,
           sku: item.sku,
           properties: item.properties || undefined,
         })),
-        subtotal: cart.total_price / 100,
+        subtotal: Math.round((cart.total_price / 100) * rate * 100) / 100,
         shipping: 0,
         tax: 0,
-        total: cart.total_price / 100,
-        currency: cart.currency || 'ILS'
+        total: Math.round((cart.total_price / 100) * rate * 100) / 100,
+        currency: 'ILS'
       }
+    } else if (finalCart && rate !== 1) {
+      // If it's the pre-formatted cart but had a different currency
+      finalCart.items = finalCart.items.map((item: any) => ({
+        ...item,
+        price: Math.round(item.price * rate * 100) / 100
+      }));
+      finalCart.subtotal = Math.round(finalCart.subtotal * rate * 100) / 100;
+      finalCart.total = Math.round(finalCart.total * rate * 100) / 100;
+      if (finalCart.shipping) finalCart.shipping = Math.round(finalCart.shipping * rate * 100) / 100;
+      if (finalCart.tax) finalCart.tax = Math.round(finalCart.tax * rate * 100) / 100;
     }
 
     if (!shop || !finalCart) {
@@ -58,11 +87,11 @@ export async function POST(request: NextRequest) {
         hasCart: !!finalCart,
         body 
       })
-      return corsResponse(
-        { error: 'Missing required fields', details: { shop: !!shop, cart: !!finalCart } },
-        400
-      )
+      return corsResponse({ error: 'Missing required fields' }, 400)
     }
+
+    // Force ILS locally so components don't display $ and Tranzila/Shopify act in ILS
+    finalCart.currency = 'ILS';
 
     const supabase = await createClient()
 

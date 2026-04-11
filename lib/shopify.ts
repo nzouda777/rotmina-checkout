@@ -48,6 +48,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
 
   const orderData = {
     order: {
+      inventory_behaviour: 'bypass',
       line_items: session.cart.items.map((item) => {
         // Map our Record<string, string> properties to Shopify's expected array of {name, value}
         let lineItemProperties: { name: string; value: string }[] | undefined
@@ -59,9 +60,9 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         }
 
         return {
-          variant_id: item.variant_id ? parseInt(String(item.variant_id)) : undefined,
+          variant_id: item.variant_id ? parseInt(String(item.variant_id).replace(/\D/g, '')) : undefined,
           quantity: item.quantity,
-          price: item.price,
+          price: String(item.price),
           title: item.title,
           properties: lineItemProperties,
         }
