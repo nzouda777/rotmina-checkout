@@ -203,7 +203,7 @@ export function PaymentForm({
 
         console.log("show3DS",show3DS)
         console.log("threeDSUrl", result.redirectUrl)
-        window.location.href = result.redirectUrl
+        // window.location.href = result.redirectUrl
 
         // Listen for postMessage from the iframe
         const messageHandler = async (event: MessageEvent) => {
