@@ -21,13 +21,15 @@ async function handleCallback(request: NextRequest) {
     // Parser les params selon la méthode (GET = query params, POST = form ou JSON)
     let params: Record<string, string> = {}
 
-    if (request.method === 'GET') {
-      const { searchParams } = new URL(request.url)
-      searchParams.forEach((value, key) => { params[key] = value })
-    } else {
+    // Extract query parameters from URL for BOTH GET and POST methods
+    const { searchParams } = new URL(request.url)
+    searchParams.forEach((value, key) => { params[key] = value })
+
+    if (request.method !== 'GET') {
       const contentType = request.headers.get('content-type') || ''
       if (contentType.includes('application/json')) {
-        params = await request.json()
+        const jsonParams = await request.json()
+        params = { ...params, ...jsonParams }
       } else {
         // form-urlencoded (le plus courant chez Tranzila)
         const formData = await request.formData()

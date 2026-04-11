@@ -217,12 +217,12 @@ export function PaymentForm({
           if (eventData?.type !== '3DS_COMPLETE' && !eventData?.track_id) return
           
           // Verify sessionId to avoid cross-session issues
-          if (event.data.sessionId && event.data.sessionId !== sessionId) {
+          if (eventData.sessionId && eventData.sessionId !== sessionId) {
             console.log('[3DS] Received message for different session, ignoring')
             return
           }
           
-          console.log('[3DS] Received matching postMessage from iframe:', event.data)
+          console.log('[3DS] Received matching postMessage from iframe:', eventData)
           window.removeEventListener('message', messageHandler)
           if (statusPollInterval) clearInterval(statusPollInterval)
 
@@ -245,7 +245,7 @@ export function PaymentForm({
           }
           
           close3DS('postMessage Finish')
-          if (event.data.success) {
+          if (eventData.success) {
             // Callback said success but session isn't paid yet — wait and check
             setTimeout(async () => {
               try {
