@@ -202,13 +202,19 @@ export function PaymentForm({
 
         console.log("show3DS",show3DS)
         console.log("threeDSUrl",threeDSUrl)
-        // Helper to handle completion within this scope
-        const on3DSComplete = () => close3DS('3DS Process')
 
-        // Listen for postMessage from the iframe (sent by our 3ds-callback)
+        // Listen for postMessage from the iframe
         const messageHandler = async (event: MessageEvent) => {
-          // Security: Check if it's our message type
-          if (event.data?.type !== '3DS_COMPLETE') return
+          // Debug everything coming from the iframe
+          console.log('[3DS DEBUG] Raw MessageEvent received:', event.data, 'from origin:', event.origin)
+          
+          let eventData = event.data;
+          try {
+             if (typeof eventData === 'string') eventData = JSON.parse(eventData);
+          } catch(e) {}
+
+          // Security: Check if it's our message type OR Tranzila's
+          if (eventData?.type !== '3DS_COMPLETE' && !eventData?.track_id) return
           
           // Verify sessionId to avoid cross-session issues
           if (event.data.sessionId && event.data.sessionId !== sessionId) {
