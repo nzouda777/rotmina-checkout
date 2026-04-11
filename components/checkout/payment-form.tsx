@@ -311,7 +311,7 @@ export function PaymentForm({
               console.error('[3DS] Error verifying completion:', e)
             }
           }, 5000) // Check every 5 seconds
-        }, 10000) // Start polling only after 10 seconds to avoid race conditions with initial load
+        }, 30000) // Start polling only after 10 seconds to avoid race conditions with initial load
 
         return
       }
