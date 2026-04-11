@@ -179,7 +179,22 @@ export async function POST(request: NextRequest) {
 
     } else {
       const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
+      const rawResStr = JSON.stringify(completeResponse)
       
+      // If error is 930 (Authentication attempted but not finished) or similar "pending" errors
+      // OR if the session is still fresh (less than 10 mins old), we just assume it's still being processed.
+      const isPending = rawResStr.includes('930') || rawResStr.includes('not finished') || rawResStr.includes('Authentication attempted');
+      
+      const sessionAgeMinutes = (Date.now() - new Date(session.created_at).getTime()) / 60000;
+      
+      if (isPending || sessionAgeMinutes < 10) {
+        console.log('[3DS-COMPLETE] Transaction not finished yet, returning pending...', { errorMsg });
+        return NextResponse.json({
+          pending: true,
+          error: errorMsg
+        })
+      }
+
       await supabase
         .from('payment_sessions')
         .update({

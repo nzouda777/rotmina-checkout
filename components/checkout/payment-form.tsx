@@ -280,30 +280,35 @@ export function PaymentForm({
           if (!setShow3DS) return; // Component might be unmounted
 
           statusPollInterval = setInterval(async () => {
-            console.log('[3DS] Fallback poll checking session status...')
+            console.log('[3DS] Fallback poll checking Tranzila completion...')
             try {
-              const statusRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+              const statusRes = await fetch(`/api/checkout/3ds-complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId, trackId: result.trackId })
+              })
+              
               if (statusRes.ok) {
-                const sessionData = await statusRes.json()
-                console.log('[3DS] Fallback poll status:', sessionData.status)
+                const completeData = await statusRes.json()
+                console.log('[3DS] Complete poll status:', completeData)
                 
-                if (sessionData.status === 'paid') {
+                if (completeData.success || completeData.alreadyProcessed) {
                   if (statusPollInterval) clearInterval(statusPollInterval)
                   window.removeEventListener('message', messageHandler)
                   close3DS('Poll Success')
                   onSuccess(
-                    sessionData.tranzila_transaction_id || 'confirmed',
-                    sessionData.raw_response?.shopifyOrderUrl,
+                    completeData.confirmationCode || 'confirmed',
+                    completeData.shopifyOrderUrl || result.shopifyOrderUrl,
                   )
-                } else if (sessionData.status === 'failed') {
+                } else if (!completeData.pending) {
                   if (statusPollInterval) clearInterval(statusPollInterval)
                   window.removeEventListener('message', messageHandler)
                   close3DS('Poll Failure')
-                  onError(sessionData.error_message || 'Payment failed after 3DS verification')
+                  onError(completeData.error || 'Payment failed after 3DS verification')
                 }
               }
             } catch (e) {
-              console.error('[3DS] Status poll error:', e)
+              console.error('[3DS] Error verifying completion:', e)
             }
           }, 5000) // Check every 5 seconds
         }, 10000) // Start polling only after 10 seconds to avoid race conditions with initial load
