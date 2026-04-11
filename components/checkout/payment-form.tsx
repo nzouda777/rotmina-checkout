@@ -67,6 +67,12 @@ export function PaymentForm({
   const [threeDSUrl, setThreeDSUrl] = useState('')
   const [installments, setInstallments] = useState(1)
 
+  const close3DS = (source: string) => {
+    console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
+    setShow3DS(false)
+    setIsSubmitting(false)
+  }
+
   // The amount charged to the credit card (after gift card deduction)
   const chargeAmount = Math.max(total - giftCardAmount, 0)
 
@@ -195,12 +201,8 @@ export function PaymentForm({
         setThreeDSUrl(result.redirectUrl)
         setShow3DS(true)
 
-        // Helper to handle successful completion
-        const handleComplete = (source: string) => {
-          console.log(`[PAYMENT-FORM] handleComplete called by ${source}, hiding modal`)
-          setShow3DS(false)
-          setIsSubmitting(false)
-        }
+        // Helper to handle completion within this scope
+        const on3DSComplete = () => close3DS('3DS Process')
 
         // Listen for postMessage from the iframe (sent by our 3ds-callback)
         const messageHandler = async (event: MessageEvent) => {
@@ -223,7 +225,7 @@ export function PaymentForm({
             if (statusRes.ok) {
               const sessionData = await statusRes.json()
               if (sessionData.status === 'paid') {
-                handleComplete('postMessage Success')
+                close3DS('postMessage Success')
                 onSuccess(
                   sessionData.tranzila_transaction_id || 'confirmed',
                   sessionData.raw_response?.shopifyOrderUrl,
@@ -235,7 +237,7 @@ export function PaymentForm({
             console.error('[3DS] Error fetching session after postMessage:', e)
           }
           
-          handleComplete('postMessage Finish')
+          close3DS('postMessage Finish')
           if (event.data.success) {
             // Callback said success but session isn't paid yet — wait and check
             setTimeout(async () => {
@@ -279,7 +281,7 @@ export function PaymentForm({
                 if (sessionData.status === 'paid') {
                   if (statusPollInterval) clearInterval(statusPollInterval)
                   window.removeEventListener('message', messageHandler)
-                  handleComplete('Poll Success')
+                  close3DS('Poll Success')
                   onSuccess(
                     sessionData.tranzila_transaction_id || 'confirmed',
                     sessionData.raw_response?.shopifyOrderUrl,
@@ -287,7 +289,7 @@ export function PaymentForm({
                 } else if (sessionData.status === 'failed') {
                   if (statusPollInterval) clearInterval(statusPollInterval)
                   window.removeEventListener('message', messageHandler)
-                  handleComplete('Poll Failure')
+                  close3DS('Poll Failure')
                   onError(sessionData.error_message || 'Payment failed after 3DS verification')
                 }
               }
@@ -575,9 +577,17 @@ export function PaymentForm({
                 <Shield className="h-4 w-4 text-foreground" />
                 <span className="text-sm font-medium text-foreground">3D Secure Verification</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-                <span className="text-xs text-muted-foreground">Verifying...</span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                  <span className="text-xs text-muted-foreground">Verifying...</span>
+                </div>
+                <button
+                  onClick={() => close3DS('User Cancel')}
+                  className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
             <iframe
