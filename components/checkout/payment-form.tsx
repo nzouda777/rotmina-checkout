@@ -158,7 +158,6 @@ export function PaymentForm({
     if (!validate()) return
 
     setIsSubmitting(true)
-    onProcessing()
 
     const browserData = {
       java_enabled: navigator.javaEnabled() ? 1 : 0,
