@@ -295,7 +295,7 @@ export async function POST(request: NextRequest) {
     // Extract client IP for 3DS browser data
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() 
       || request.headers.get('x-real-ip') 
-      || '127.0.0.1'
+      || '216.198.79.131'
 
     const enrichedBrowserData = {
       ...browserData,

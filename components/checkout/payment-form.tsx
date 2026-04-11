@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ArrowLeft, CreditCard, Lock, Shield, Info } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
+import { redirect } from 'next/dist/server/api-utils'
 
 interface PaymentFormProps {
   sessionId: string
@@ -201,7 +202,8 @@ export function PaymentForm({
         setShow3DS(true)
 
         console.log("show3DS",show3DS)
-        console.log("threeDSUrl",threeDSUrl)
+        console.log("threeDSUrl", result.redirectUrl)
+        window.location.href = result.redirectUrl
 
         // Listen for postMessage from the iframe
         const messageHandler = async (event: MessageEvent) => {
