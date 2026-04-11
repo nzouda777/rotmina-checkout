@@ -200,6 +200,8 @@ export function PaymentForm({
         setThreeDSUrl(result.redirectUrl)
         setShow3DS(true)
 
+        console.log("show3DS",show3DS)
+        console.log("threeDSUrl",threeDSUrl)
         // Helper to handle completion within this scope
         const on3DSComplete = () => close3DS('3DS Process')
 
