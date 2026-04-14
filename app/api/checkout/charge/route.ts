@@ -453,7 +453,7 @@ export async function POST(request: NextRequest) {
           })),
         },
         order_id: shopifyOrderId,
-        tranzila_transaction_id: tranzilaResponse.ConfirmationCode || tranzilaResponse.index || null,
+        tranzila_transaction_id: tranzilaResponse.transaction_id || tranzilaResponse.ConfirmationCode || tranzilaResponse.index || null,
         error_message: isSuccess ? null : TranzilaClient.getErrorMessage(tranzilaResponse),
       })
       .eq('id', sessionId)

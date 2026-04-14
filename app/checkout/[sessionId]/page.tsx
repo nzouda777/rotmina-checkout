@@ -93,10 +93,9 @@ export default function CheckoutPage() {
     giftCardRemainingBalance?: number,
     usedGiftCardCode?: string
   ) => {
-    // Force redirect to Shopify Order Status URL, bypassing our local success page.
-    // Gift cards have already been emailed.
-    if (shopifyOrderUrl) {
-      window.location.href = shopifyOrderUrl
+    // Force redirect to Shopify custom /pages/success instead of native order status.
+    if (session?.shop) {
+      window.location.href = `https://${session.shop}/pages/success`
       return
     }
 
@@ -118,8 +117,12 @@ export default function CheckoutPage() {
   }
 
   const handlePaymentError = (errorMessage: string) => {
-    setError(errorMessage)
-    setStep('payment')
+    if (session?.shop) {
+      window.location.href = `https://${session.shop}/pages/error`
+    } else {
+      setError(errorMessage)
+      setStep('payment')
+    }
   }
 
   const handleGiftCardApply = (giftCard: AppliedGiftCard) => {

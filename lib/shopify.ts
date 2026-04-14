@@ -55,7 +55,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         if (item.properties && Object.keys(item.properties).length > 0) {
           lineItemProperties = Object.entries(item.properties).map(([name, value]) => ({
             name,
-            value,
+            value: String(value),
           }))
         }
 
@@ -67,11 +67,6 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
           properties: lineItemProperties,
         }
       }),
-      customer: {
-        first_name: customer.firstName,
-        last_name: customer.lastName,
-        email: customer.email,
-      },
       billing_address: {
         first_name: customer.firstName,
         last_name: customer.lastName,
@@ -79,7 +74,6 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         city: customer.city,
         zip: customer.postalCode,
         country: customer.country,
-        phone: customer.phone,
       },
       shipping_address: {
         first_name: customer.firstName,
@@ -88,15 +82,15 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         city: customer.city,
         zip: customer.postalCode,
         country: customer.country,
-        phone: customer.phone,
       },
       email: customer.email,
-      phone: customer.phone,
       financial_status: 'paid',
       currency: session.cart.currency,
-      total_price: session.cart.total,
-      transactions,
-      note,
+      transactions: transactions.map(t => ({
+        ...t,
+        amount: String(t.amount)
+      })),
+      note: note + ` | Phone: ${customer.phone}`,
       tags: giftCard
         ? 'Custom Checkout, Tranzila, Gift Card Used'
         : 'Custom Checkout, Tranzila',
