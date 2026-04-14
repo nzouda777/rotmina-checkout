@@ -28,13 +28,13 @@ export async function GET() {
        phone: "+972501234567"
     };
 
-    const order = await createShopifyOrder({ 
-      session: session as any, 
-      customer: customer as any, 
-      transactionId: "123456789" 
-    });
+    // const order = await createShopifyOrder({ 
+    //   session: session as any, 
+    //   customer: customer as any, 
+    //   transactionId: "123456789" 
+    // });
     
-    return NextResponse.json({ success: true, order });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message });
   }
