@@ -36,10 +36,11 @@ export async function sendGiftCardEmailToRecipient(params: {
     })
 
     if (error) {
-      console.error('[EMAIL] Error sending to recipient:', error)
+      console.error(`[EMAIL-RECIPIENT] Resend error for ${params.recipientEmail}:`, error)
       return { success: false, error }
     }
 
+    console.log(`[EMAIL-RECIPIENT] Successfully sent to ${params.recipientEmail}. ID: ${data?.id}`)
     return { success: true, data }
   } catch (err: any) {
     console.error('[EMAIL] Exception sending to recipient:', err)
@@ -75,10 +76,11 @@ export async function sendGiftCardEmailToBuyer(params: {
     })
 
     if (error) {
-      console.error('[EMAIL] Error sending to buyer:', error)
+      console.error(`[EMAIL-BUYER] Resend error for ${params.buyerEmail}:`, error)
       return { success: false, error }
     }
 
+    console.log(`[EMAIL-BUYER] Successfully sent to ${params.buyerEmail}. ID: ${data?.id}`)
     return { success: true, data }
   } catch (err: any) {
     console.error('[EMAIL] Exception sending to buyer:', err)

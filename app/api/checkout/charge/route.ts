@@ -74,7 +74,7 @@ async function handlePostPayment(params: {
       console.log(`[CHARGE][${logId}] Generated ${generatedCards.length} gift card(s):`, generatedCards.map(c => c.code))
     }
   } catch (err) {
-    console.error(`[CHARGE][${logId}] Failed to generate gift cards:`, err)
+    console.error(`[CHARGE][${logId}] CRITICAL ERROR during gift card generation:`, err)
   }
 
   return results

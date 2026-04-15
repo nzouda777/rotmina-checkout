@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
           console.log('[3DS-COMPLETE] Generated gift cards:', generatedCards.map((c: any) => c.code))
         }
       } catch (err) {
-        console.error('[3DS-COMPLETE] Gift card generation failed:', err)
+        console.error(`[3DS-COMPLETE][${sessionId}] Gift card generation CRITICAL error:`, err)
       }
 
       // Create Shopify order

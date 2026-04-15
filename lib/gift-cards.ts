@@ -14,19 +14,31 @@ export function isGiftCardProduct(item: CartItem): boolean {
   const configuredHandle = process.env.GIFT_CARD_PRODUCT_HANDLE
   const configuredProductId = process.env.GIFT_CARD_PRODUCT_ID
 
+  console.log(`[GIFT-CARD-CHECK] Checking item: "${item.title}" (Handle: ${item.handle}, ID: ${item.product_id})`)
+
   // Match by product ID if configured
   if (configuredProductId && item.product_id) {
-    if (String(item.product_id) === configuredProductId) return true
+    if (String(item.product_id) === configuredProductId) {
+      console.log(`[GIFT-CARD-CHECK] Match found by product ID: ${configuredProductId}`)
+      return true
+    }
   }
 
   // Match by product handle if configured
   if (configuredHandle && item.handle) {
-    if (item.handle === configuredHandle) return true
+    if (item.handle === configuredHandle) {
+      console.log(`[GIFT-CARD-CHECK] Match found by product handle: ${configuredHandle}`)
+      return true
+    }
   }
 
   // Match by title keywords
   const titleLower = (item.title || '').toLowerCase()
-  return GIFT_CARD_TITLE_KEYWORDS.some(keyword => titleLower.includes(keyword))
+  const match = GIFT_CARD_TITLE_KEYWORDS.some(keyword => titleLower.includes(keyword))
+  if (match) {
+    console.log(`[GIFT-CARD-CHECK] Match found by title keyword in: "${titleLower}"`)
+  }
+  return match
 }
 
 /**
@@ -54,19 +66,28 @@ export function separateGiftCardItems(items: CartItem[]): {
 // ── Gift Card Code Generation ────────────────────────────────────────────────
 
 /**
- * Generate a unique gift card code in format: ROTM-XXXX-XXXX-XXXX
+ * Generate a unique gift card code in format: ROTM-XXXX-XXXX-X (Total 16 chars)
  */
 function generateCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // No 0/O/1/I to avoid confusion
-  const segments: string[] = ['ROTM']
-  for (let s = 0; s < 3; s++) {
-    let segment = ''
-    for (let i = 0; i < 4; i++) {
-      segment += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    segments.push(segment)
+  let code = 'ROTM-'
+  
+  // 4 chars
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length))
   }
-  return segments.join('-')
+  code += '-'
+  
+  // 4 chars
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  code += '-'
+  
+  // 1 char (to reach exactly 16)
+  code += chars.charAt(Math.floor(Math.random() * chars.length))
+  
+  return code
 }
 
 // ── Database Operations ──────────────────────────────────────────────────────
@@ -237,17 +258,26 @@ export async function generateGiftCardsForOrder(params: {
   buyerEmail?: string
   currency?: string
 }): Promise<GiftCardRecord[]> {
-  const { giftCardItems } = separateGiftCardItems(params.items)
+  const { giftCardItems, regularItems } = separateGiftCardItems(params.items)
 
-  if (giftCardItems.length === 0) return []
+  console.log(`[GIFT-CARD-GEN] Processing order. Total items: ${params.items.length}, Gift card items found: ${giftCardItems.length}`)
+
+  if (giftCardItems.length === 0) {
+    console.log(`[GIFT-CARD-GEN] No gift card items to process for session ${params.sessionId}`)
+    return []
+  }
 
   const generatedCards: GiftCardRecord[] = []
 
   for (const item of giftCardItems) {
+    console.log(`[GIFT-CARD-GEN] Generating cards for item: ${item.title}, Quantity: ${item.quantity || 1}`)
+    
     // Generate one card per quantity
     for (let q = 0; q < (item.quantity || 1); q++) {
       try {
+        console.log(`[GIFT-CARD-GEN] Generating card #${q + 1} for item ${item.title}...`)
         const props = item.properties || {}
+        console.log(`[GIFT-CARD-GEN] Item properties for ${item.title}:`, JSON.stringify(props))
         const recipientName = props['Recipient name'] || props['recipient_name'] || undefined
         const recipientEmail = props['Recipient email'] || props['recipient_email'] || undefined
         const senderName = props['Your name'] || props['your_name'] || props['sender_name'] || undefined
@@ -273,6 +303,7 @@ export async function generateGiftCardsForOrder(params: {
         let allEmailsSent = true
 
         if (recipientEmail) {
+          console.log(`[GIFT-CARD-GEN] Attempting to send email to RECIPIENT: ${recipientEmail}`)
           const res = await sendGiftCardEmailToRecipient({
             recipientEmail,
             recipientName,
@@ -282,11 +313,17 @@ export async function generateGiftCardsForOrder(params: {
             currency: params.currency || 'ILS',
             message: personalMessage,
           })
-          if (!res.success) allEmailsSent = false
+          if (!res.success) {
+            console.error(`[GIFT-CARD-GEN] Failed to send email to recipient ${recipientEmail}:`, res.error)
+            allEmailsSent = false
+          } else {
+            console.log(`[GIFT-CARD-GEN] Email sent successfully to recipient: ${recipientEmail}`)
+          }
         }
 
         const buyerMailToUse = senderEmail || params.buyerEmail
         if (buyerMailToUse) {
+          console.log(`[GIFT-CARD-GEN] Attempting to send email to BUYER: ${buyerMailToUse}`)
           const res = await sendGiftCardEmailToBuyer({
             buyerEmail: buyerMailToUse,
             buyerName: senderName,
@@ -295,7 +332,12 @@ export async function generateGiftCardsForOrder(params: {
             amount: item.price,
             currency: params.currency || 'ILS',
           })
-          if (!res.success) allEmailsSent = false
+          if (!res.success) {
+            console.error(`[GIFT-CARD-GEN] Failed to send email to buyer ${buyerMailToUse}:`, res.error)
+            allEmailsSent = false
+          } else {
+            console.log(`[GIFT-CARD-GEN] Email sent successfully to buyer: ${buyerMailToUse}`)
+          }
         }
 
         if (allEmailsSent && (recipientEmail || buyerMailToUse)) {
