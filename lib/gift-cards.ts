@@ -19,6 +19,11 @@ export function isGiftCardProduct(item: CartItem): boolean {
     if (String(item.product_id) === configuredProductId) return true
   }
 
+  // Match by product handle if configured
+  if (configuredHandle && item.handle) {
+    if (item.handle === configuredHandle) return true
+  }
+
   // Match by title keywords
   const titleLower = (item.title || '').toLowerCase()
   return GIFT_CARD_TITLE_KEYWORDS.some(keyword => titleLower.includes(keyword))
