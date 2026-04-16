@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { GiftCardEmail } from '@/components/emails/gift-card-email'
 import { GiftCardBuyerEmail } from '@/components/emails/gift-card-buyer-email'
+import { OrderConfirmationEmail } from '@/components/emails/order-confirmation-email'
 import * as React from 'react'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
@@ -84,6 +85,61 @@ export async function sendGiftCardEmailToBuyer(params: {
     return { success: true, data }
   } catch (err: any) {
     console.error('[EMAIL] Exception sending to buyer:', err)
+    return { success: false, error: err.message }
+  }
+}
+
+export async function sendOrderConfirmationEmail(params: {
+  toEmail: string
+  orderName: string
+  customerName: string
+  items: { title: string; quantity: number; price: number; image?: string }[]
+  subtotal: number
+  shipping: number
+  tax: number
+  total: number
+  currency: string
+  shippingAddress: {
+    address: string
+    city: string
+    postalCode: string
+    country: string
+  }
+  orderStatusUrl?: string
+}) {
+  if (!resend) {
+    console.warn('[EMAIL] Missing RESEND_API_KEY or uninitialized Resend instance. Skipping order confirmation.')
+    return { success: false, error: 'Missing API Key' }
+  }
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: fromEmail,
+      to: [params.toEmail],
+      subject: `Order Confirmation #${params.orderName} 🛍️`,
+      react: React.createElement(OrderConfirmationEmail, {
+        orderName: params.orderName,
+        customerName: params.customerName,
+        items: params.items,
+        subtotal: params.subtotal,
+        shipping: params.shipping,
+        tax: params.tax,
+        total: params.total,
+        currency: params.currency,
+        shippingAddress: params.shippingAddress,
+        orderStatusUrl: params.orderStatusUrl,
+      }),
+    })
+
+    if (error) {
+      console.error(`[EMAIL-ORDER] Resend error for ${params.toEmail}:`, error)
+      return { success: false, error }
+    }
+
+    console.log(`[EMAIL-ORDER] Successfully sent to ${params.toEmail}. ID: ${data?.id}`)
+    return { success: true, data }
+  } catch (err: any) {
+    console.error('[EMAIL] Exception sending order confirmation:', err)
     return { success: false, error: err.message }
   }
 }

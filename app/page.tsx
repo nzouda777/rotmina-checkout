@@ -152,9 +152,9 @@ export default function DemoPage() {
 function FeatureCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (
     <div className="p-6 rounded-xl border border-border bg-card">
-      <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center text-foreground mb-4">
+      {/* <div className="h-12 w-12 rounded-lg bg-muted flex items-center justify-center text-foreground mb-4">
         {icon}
-      </div>
+      </div> */}
       <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
       <p className="text-muted-foreground">{description}</p>
     </div>

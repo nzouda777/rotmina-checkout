@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import { sendOrderConfirmationEmail } from '@/lib/email'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 function getIsoCountryCode(country: string): string {
@@ -201,6 +202,36 @@ export async function POST(request: NextRequest) {
         shopifyOrderId = String(order.id)
         shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
         console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
+
+        // ── Send Order Confirmation Email ────────────────────────
+        try {
+          console.log(`[CHARGE][${logId}] Sending order confirmation email (GC only)...`)
+          await sendOrderConfirmationEmail({
+            toEmail: customerInfo.email,
+            orderName: String(order.name || order.id),
+            customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
+            items: session.cart.items.map((item: any) => ({
+              title: item.title,
+              quantity: item.quantity,
+              price: item.price,
+              image: item.image,
+            })),
+            subtotal: session.cart.subtotal,
+            shipping: session.cart.shipping,
+            tax: session.cart.tax,
+            total: session.cart.total,
+            currency: session.cart.currency,
+            shippingAddress: {
+              address: customerInfo.address,
+              city: customerInfo.city,
+              postalCode: customerInfo.postalCode,
+              country: customerInfo.country,
+            },
+            orderStatusUrl: shopifyOrderUrl,
+          })
+        } catch (emailErr) {
+          console.error(`[CHARGE][${logId}] Failed to send order confirmation email:`, emailErr)
+        }
       } catch (err) {
         console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
       }
@@ -429,6 +460,36 @@ export async function POST(request: NextRequest) {
           shopifyOrderId = String(order.id)
           shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
           console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
+
+          // ── Send Order Confirmation Email ────────────────────────
+          try {
+            console.log(`[CHARGE][${logId}] Sending order confirmation email...`)
+            await sendOrderConfirmationEmail({
+              toEmail: customerInfo.email,
+              orderName: String(order.name || order.id), // Use the public order name if available
+              customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
+              items: session.cart.items.map((item: any) => ({
+                title: item.title,
+                quantity: item.quantity,
+                price: item.price,
+                image: item.image,
+              })),
+              subtotal: session.cart.subtotal,
+              shipping: session.cart.shipping,
+              tax: session.cart.tax,
+              total: session.cart.total,
+              currency: session.cart.currency,
+              shippingAddress: {
+                address: customerInfo.address,
+                city: customerInfo.city,
+                postalCode: customerInfo.postalCode,
+                country: customerInfo.country,
+              },
+              orderStatusUrl: shopifyOrderUrl,
+            })
+          } catch (emailErr) {
+            console.error(`[CHARGE][${logId}] Failed to send order confirmation email:`, emailErr)
+          }
         } catch (err) {
           console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
         }

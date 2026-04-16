@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ArrowLeft, CreditCard, Lock, Shield, Info } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
 import { redirect } from 'next/dist/server/api-utils'
+import Image from 'next/image'
 
 interface PaymentFormProps {
   sessionId: string
@@ -618,12 +619,12 @@ export function PaymentForm({
 }
 
 function CardBrand({ type }: { type: string }) {
-  const brands: Record<string, { bg: string; text: string }> = {
-    visa: { bg: 'bg-blue-600', text: 'VISA' },
-    mastercard: { bg: 'bg-orange-500', text: 'MC' },
-    amex: { bg: 'bg-blue-400', text: 'AMEX' },
-    discover: { bg: 'bg-orange-400', text: 'DISC' },
-    generic: { bg: 'bg-muted', text: '' },
+  const brands: Record<string, { bg: string; text: string, src?: string }> = {
+    visa: { bg: 'transparent', text: 'VISA', src: '/visa.png' },
+    mastercard: { bg: 'transparent', text: 'MC', src: '/master.png' },
+    amex: { bg: 'transparent', text: 'AMEX', src: '/amex.png' },
+    discover: { bg: 'transparent', text: 'DISC', src: '/discover.jpg' },
+    generic: { bg: 'bg-muted', text: 'generic' },
   }
 
   const brand = brands[type] || brands.generic
@@ -634,7 +635,13 @@ function CardBrand({ type }: { type: string }) {
 
   return (
     <div className={`h-6 px-2 rounded ${brand.bg} flex items-center justify-center`}>
-      <span className="text-[10px] font-bold text-white">{brand.text}</span>
+      <span className="text-[10px] font-bold text-white">
+        {brand.src ? (
+          <Image src={brand.src} alt={brand.text} width={40} height={20} />
+        ) : (
+          brand.text
+        )}
+      </span>
     </div>
   )
 }

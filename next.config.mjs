@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  allowedDevOrigins: ['703e-129-0-99-85.ngrok-free.app'],
+  allowedDevOrigins: ['*'],
   experimental: {
   },
   typescript: {
