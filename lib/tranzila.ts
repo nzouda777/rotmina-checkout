@@ -187,19 +187,45 @@ export class TranzilaClient {
     if (!response) return false
 
     // Explicit error_code field (from 3DS complete response)
-    // error_code: 0 = success, any other number = failure
+    // error_code: 0 = "no API error", but we must ALSO check transaction_result
     if (typeof response.error_code === 'number') {
-      if (response.error_code === 0) return true
+      if (response.error_code !== 0) return false
+      // error_code === 0 means API call succeeded, but transaction may still be declined.
+      // Check nested transaction_result if it exists.
+      if (response.transaction_result) {
+        const processorCode = response.transaction_result.processor_response_code
+        if (processorCode && processorCode !== '000') {
+          console.log(`[TRANZILA] error_code=0 but processor_response_code=${processorCode} → DECLINED`)
+          return false
+        }
+      }
+    } else if (response.error_code) {
+      // error_code as non-zero truthy value (string, etc.)
       return false
     }
-    // error_code as non-zero truthy value (string, etc.)
-    if (response.error_code) return false
 
     // 3DS complete: nested transaction_result with processor_response_code
-    if (response.transaction_result?.processor_response_code === '000') return true
+    if (response.transaction_result) {
+      if (response.transaction_result.processor_response_code && response.transaction_result.processor_response_code !== '000') {
+         return false
+      }
+    }
 
-    // Code Response legacy '000'
-    if (response.Response === '000') return true
+    // Code Response legacy
+    if (response.Response) {
+      if (response.Response === '000') return true
+      return false
+    }
+
+    // Tableau errors[]
+    if (Array.isArray(response.errors) && response.errors.length > 0) {
+      return false
+    }
+    
+    // String errors
+    if (response.error) {
+       return false
+    }
 
     // Champ status (insensible à la casse)
     if (typeof response.status === 'string') {
@@ -210,6 +236,12 @@ export class TranzilaClient {
 
     // Champ success explicite
     if (response.success === true) return true
+    if (response.success === false) return false
+
+    // Finally, if it has error_code: 0 and no transaction_result errors and hasn't returned yet:
+    if (typeof response.error_code === 'number' && response.error_code === 0) {
+      return true
+    }
 
     // Présence d'un code de confirmation = transaction approuvée
     if (response.ConfirmationCode || response.transaction_id || response.index) return true
@@ -238,7 +270,30 @@ export class TranzilaClient {
     // Check nested transaction_result for processor errors
     const txnResult = response.transaction_result
     if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
-      return `Transaction failed (processor code: ${txnResult.processor_response_code})`
+      const processorMessages: Record<string, string> = {
+        '001': 'Refer to card issuer',
+        '002': 'Refer to card issuer, special condition',
+        '003': 'Invalid merchant',
+        '004': 'Pick up card',
+        '005': 'Do not honor',
+        '012': 'Invalid transaction',
+        '013': 'Invalid amount',
+        '014': 'Invalid card number',
+        '041': 'Lost card',
+        '043': 'Stolen card',
+        '051': 'Insufficient funds',
+        '054': 'Expired card',
+        '055': 'Incorrect PIN',
+        '057': 'Transaction not permitted to cardholder',
+        '058': 'Transaction not permitted to terminal',
+        '061': 'Exceeds withdrawal amount limit',
+        '062': 'Restricted card',
+        '065': 'Exceeds withdrawal frequency limit',
+        '091': 'Issuer unavailable',
+        '096': 'System error',
+      }
+      const code = txnResult.processor_response_code
+      return processorMessages[code] || `Transaction declined (code: ${code})`
     }
 
     // Tableau errors[]
@@ -268,6 +323,18 @@ export class TranzilaClient {
       '015': 'Terminal not found',
       '017': 'Card expired',
       '033': 'Invalid currency',
+      '041': 'Lost card',
+      '043': 'Stolen card',
+      '051': 'Insufficient funds',
+      '054': 'Expired card',
+      '055': 'Incorrect PIN',
+      '057': 'Transaction not permitted to cardholder',
+      '058': 'Transaction not permitted to terminal',
+      '061': 'Exceeds withdrawal amount limit',
+      '062': 'Restricted card',
+      '065': 'Exceeds withdrawal frequency limit',
+      '091': 'Issuer unavailable',
+      '096': 'System error',
     }
 
     const code = response.Response

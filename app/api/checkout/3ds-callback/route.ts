@@ -205,7 +205,7 @@ async function handleCallback(request: NextRequest) {
         .eq('id', sessionId)
 
       console.log('[3DS-CALLBACK] Payment failed after 3DS Complete:', errorMsg)
-      return redirectToError(errorMsg, sessionId)
+      return redirectToError(errorMsg, sessionId, undefined, errorMsg)
     }
 
   } catch (error: any) {
@@ -234,27 +234,29 @@ function redirectToShopify(session: any, shopifyOrderId?: string | null) {
   return breakoutRedirect(targetUrl, session.id)
 }
 
-function redirectToError(message: string, sessionId?: string, shop?: string) {
+function redirectToError(message: string, sessionId?: string, shop?: string, errorMessage?: string) {
   const shopifyDomain = shop || 'rotmina.myshopify.com'
   const targetUrl = `https://${shopifyDomain}/pages/error?error=${encodeURIComponent(message)}`
-  return breakoutRedirect(targetUrl, sessionId)
+  return breakoutRedirect(targetUrl, sessionId, errorMessage)
 }
 
-function breakoutRedirect(url: string, sessionId?: string) {
+function breakoutRedirect(url: string, sessionId?: string, errorMessage?: string) {
   // 3DS runs in an iframe on the checkout page.
   // Send postMessage to the parent with the result URL so it can handle it.
+  const safeError = (errorMessage || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')
   return new NextResponse(
     `<html>
       <body>
         <script>
           try {
             // Parse result from URL
-            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url');
+            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url') || "${url}".includes('/pages/success');
             var result = {
               type: '3DS_COMPLETE',
               success: isSuccess,
               url: "${url}",
-              sessionId: "${sessionId || ''}"
+              sessionId: "${sessionId || ''}",
+              errorMessage: "${safeError}"
             };
             // Send to parent (the checkout page)
             if (window.parent && window.parent !== window) {

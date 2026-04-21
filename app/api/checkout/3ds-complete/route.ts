@@ -218,19 +218,25 @@ export async function POST(request: NextRequest) {
       const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
       const rawResStr = JSON.stringify(completeResponse)
       
-      // If error is 930 (Authentication attempted but not finished) or similar "pending" errors
-      // OR if the session is still fresh (less than 10 mins old), we just assume it's still being processed.
-      const isPending = rawResStr.includes('930') || rawResStr.includes('not finished') || rawResStr.includes('Authentication attempted');
+      // Only treat as "pending" if the 3DS challenge itself hasn't completed yet
+      // (error 930 = "Authentication attempted but not finished")
+      // Real declines (insufficient funds, expired card, etc.) should NOT be treated as pending
+      const is3DSStillInProgress = rawResStr.includes('930') || rawResStr.includes('not finished') || rawResStr.includes('Authentication attempted');
       
-      const sessionAgeMinutes = (Date.now() - new Date(session.created_at).getTime()) / 60000;
+      // Check if this is an actual processor decline (not a 3DS flow issue)
+      const txnResult = (completeResponse as any)?.transaction_result
+      const processorCode = txnResult?.processor_response_code
+      const isActualDecline = processorCode && processorCode !== '000'
       
-      if (isPending || sessionAgeMinutes < 10) {
-        console.log('[3DS-COMPLETE] Transaction not finished yet, returning pending...', { errorMsg });
+      if (is3DSStillInProgress && !isActualDecline) {
+        console.log('[3DS-COMPLETE] 3DS challenge not finished yet, returning pending...', { errorMsg });
         return NextResponse.json({
           pending: true,
           error: errorMsg
         })
       }
+
+      console.log('[3DS-COMPLETE] Transaction DECLINED:', { errorMsg, processorCode })
 
       await supabase
         .from('payment_sessions')

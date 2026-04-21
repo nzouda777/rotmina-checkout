@@ -69,6 +69,7 @@ export function PaymentForm({
   const [threeDSUrl, setThreeDSUrl] = useState('')
   const [installments, setInstallments] = useState(1)
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'bit'>('card')
+  const [paymentError, setPaymentError] = useState<string | null>(null)
 
   const close3DS = (source: string) => {
     console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
@@ -264,12 +265,20 @@ export function PaymentForm({
                     )
                     return
                   }
+                  // Session marked as failed — show the error from the session
+                  if (sessionData.status === 'failed') {
+                    const errorMsg = sessionData.error_message || 'Payment was declined by your bank.'
+                    setPaymentError(errorMsg)
+                    return
+                  }
                 }
               } catch {}
-              onError('Payment verification completed but order processing failed. Please contact support.')
+              setPaymentError('Payment verification completed but order processing failed. Please contact support.')
             }, 2000)
           } else {
-            onError('3DS verification failed. Please try again.')
+            // Extract the error message from the postMessage data
+            const errorMsg = eventData.errorMessage || eventData.error || 'Payment was declined. Please check your card balance and try again.'
+            setPaymentError(errorMsg)
           }
         }
 
@@ -322,7 +331,7 @@ export function PaymentForm({
                   if (statusPollInterval) clearInterval(statusPollInterval as any)
                   window.removeEventListener('message', messageHandler)
                   close3DS('Poll Failure')
-                  onError(data.error || 'Payment failed after 3DS verification')
+                  setPaymentError(data.error || 'Payment was declined. Please check your card balance and try again.')
                 }
               }
             } catch (e) {
@@ -343,10 +352,10 @@ export function PaymentForm({
           giftCardCode
         )
       } else {
-        onError(result.error || 'Payment failed')
+        setPaymentError(result.error || 'Payment failed')
       }
     } catch {
-      onError('Payment processing failed. Please try again.')
+      setPaymentError('Payment processing failed. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -661,6 +670,47 @@ export function PaymentForm({
           </button>
         </div>
       </form>
+
+      {/* Payment Error Popup */}
+      {paymentError && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-md mx-4 bg-background rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Red top accent bar */}
+            <div className="h-1.5 w-full bg-gradient-to-r from-red-500 via-red-400 to-orange-400" />
+            
+            <div className="p-6 text-center space-y-4">
+              {/* Error icon */}
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                <svg className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-lg font-bold text-foreground">Payment Declined</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {paymentError}
+                </p>
+              </div>
+
+              <div className="pt-2 space-y-3">
+                <button
+                  onClick={() => {
+                    setPaymentError(null)
+                    setIsSubmitting(false)
+                  }}
+                  className="w-full py-3 px-6 rounded-xl bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  Try Again
+                </button>
+                <p className="text-xs text-muted-foreground">
+                  Please verify your card balance or try a different payment method.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 3DS Challenge — inline iframe */}
       {show3DS && threeDSUrl && (
