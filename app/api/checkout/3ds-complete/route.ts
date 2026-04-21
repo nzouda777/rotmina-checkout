@@ -37,10 +37,14 @@ export async function POST(request: NextRequest) {
     // Already paid — return success immediately
     if (session.status === 'paid') {
       console.log('[3DS-COMPLETE] Already paid')
+      const shopifyDomain = session.shop || 'rotmina.myshopify.com'
+      const shopifyOrderUrl = `https://${shopifyDomain}/pages/success${session.order_id ? `?order_id=${session.order_id}` : ''}`
+      
       return NextResponse.json({
         success: true,
         confirmationCode: session.tranzila_transaction_id,
         alreadyProcessed: true,
+        shopifyOrderUrl: shopifyOrderUrl,
       })
     }
 
@@ -61,8 +65,8 @@ export async function POST(request: NextRequest) {
       session.raw_response?.track_id
 
     if (!trackId) {
-      console.error('[3DS-COMPLETE] No track_id found for session:', sessionId)
-      return NextResponse.json({ error: 'No track_id found — 3DS not ready yet', pending: true }, { status: 400 })
+      console.log('[3DS-COMPLETE] No track_id found yet for session:', sessionId)
+      return NextResponse.json({ error: 'No track_id found — 3DS not ready yet', pending: true })
     }
 
     console.log('[3DS-COMPLETE] Calling 3DS Complete with track_id:', trackId)
@@ -140,7 +144,8 @@ export async function POST(request: NextRequest) {
             giftCard: giftCardInfo,
           })
           shopifyOrderId = String(order.id)
-          shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+          const shopifyDomain = session.shop || 'rotmina.myshopify.com'
+          shopifyOrderUrl = `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`
           console.log('[3DS-COMPLETE] Shopify order created:', shopifyOrderId)
 
           // ── Send Order Confirmation Email ────────────────────────

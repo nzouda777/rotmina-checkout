@@ -68,6 +68,7 @@ export function PaymentForm({
   const [show3DS, setShow3DS] = useState(false)
   const [threeDSUrl, setThreeDSUrl] = useState('')
   const [installments, setInstallments] = useState(1)
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'bit'>('card')
 
   const close3DS = (source: string) => {
     console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
@@ -118,10 +119,10 @@ export function PaymentForm({
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
 
-    // If the gift card covers the full amount, no card needed
-    if (chargeAmount <= 0) return true
+    if (paymentMethod === 'bit') return true
 
     const cardDigits = cardNumber.replace(/\s/g, '')
+    // ... rest of validation for card
 
     if (!cardDigits || cardDigits.length < 13) {
       newErrors.cardNumber = 'Invalid card number'
@@ -183,9 +184,10 @@ export function PaymentForm({
           cardNumber: chargeAmount > 0 ? cardNumber.replace(/\s/g, '') : undefined,
           expiryDate: chargeAmount > 0 ? expiryDate : undefined,
           cvv: chargeAmount > 0 ? cvv : undefined,
-          cardholderName: chargeAmount > 0 ? cardholderName : undefined,
-          browserData: chargeAmount > 0 ? browserData : undefined,
-          installments,
+          cardholderName: (chargeAmount > 0 && paymentMethod === 'card') ? cardholderName : undefined,
+          browserData: (chargeAmount > 0 && paymentMethod === 'card') ? browserData : undefined,
+          installments: paymentMethod === 'card' ? installments : 1,
+          paymentMethod,
           // Gift card data
           giftCardId: giftCardId || undefined,
           giftCardCode: giftCardCode || undefined,
@@ -281,31 +283,46 @@ export function PaymentForm({
           if (!setShow3DS) return; // Component might be unmounted
 
           statusPollInterval = setInterval(async () => {
-            console.log('[3DS] Fallback poll checking Tranzila completion...')
+            console.log(`[POLL] Fallback checking ${paymentMethod.toUpperCase()} completion...`)
             try {
-              const statusRes = await fetch(`/api/checkout/3ds-complete`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, trackId: result.trackId })
-              })
+              const pollUrl = paymentMethod === 'bit' 
+                ? `/api/checkout/session?id=${sessionId}`
+                : `/api/checkout/3ds-complete`
+              
+              const pollOptions = paymentMethod === 'bit'
+                ? { method: 'GET' }
+                : { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, trackId: result.trackId })
+                  }
+
+              const statusRes = await fetch(pollUrl, pollOptions as any)
               
               if (statusRes.ok) {
-                const completeData = await statusRes.json()
-                console.log('[3DS] Complete poll status:', completeData)
+                const data = await statusRes.json()
                 
-                if (completeData.success || completeData.alreadyProcessed) {
-                  if (statusPollInterval) clearInterval(statusPollInterval)
+                const isFinalized = paymentMethod === 'bit' 
+                  ? data.status === 'paid'
+                  : (data.success || data.alreadyProcessed)
+
+                if (isFinalized) {
+                  console.log(`[POLL] ${paymentMethod.toUpperCase()} success detected via poll`)
+                  if (statusPollInterval) clearInterval(statusPollInterval as any)
                   window.removeEventListener('message', messageHandler)
+                  
+                  const finalSession = paymentMethod === 'bit' ? data : await (await fetch(`/api/checkout/session?id=${sessionId}`)).json()
+                  
                   close3DS('Poll Success')
                   onSuccess(
-                    completeData.confirmationCode || 'confirmed',
-                    completeData.shopifyOrderUrl || result.shopifyOrderUrl,
+                    finalSession.tranzila_transaction_id || 'confirmed',
+                    finalSession.raw_response?.shopifyOrderUrl,
                   )
-                } else if (!completeData.pending) {
-                  if (statusPollInterval) clearInterval(statusPollInterval)
+                } else if (paymentMethod !== 'bit' && !data.pending) {
+                  if (statusPollInterval) clearInterval(statusPollInterval as any)
                   window.removeEventListener('message', messageHandler)
                   close3DS('Poll Failure')
-                  onError(completeData.error || 'Payment failed after 3DS verification')
+                  onError(data.error || 'Payment failed after 3DS verification')
                 }
               }
             } catch (e) {
@@ -415,7 +432,55 @@ export function PaymentForm({
               All transactions are secure and encrypted.
             </p>
 
-            <div className="rounded-lg border border-border overflow-hidden">
+            {/* Payment Method Selector */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('card')}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                  paymentMethod === 'card'
+                    ? 'border-foreground bg-foreground/5 shadow-sm'
+                    : 'border-border bg-background hover:border-muted-foreground/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <CreditCard className={`h-5 w-5 ${paymentMethod === 'card' ? 'text-foreground' : 'text-muted-foreground'}`} />
+                  <span className={`text-sm font-semibold ${paymentMethod === 'card' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    Credit Card
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('bit')}
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                  paymentMethod === 'bit'
+                    ? 'border-[#ffcc00] bg-[#ffcc00]/5 shadow-sm'
+                    : 'border-border bg-background hover:border-muted-foreground/30'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="relative w-12 h-5 flex items-center justify-center">
+                     <span className={`text-base font-black italic tracking-tighter ${paymentMethod === 'bit' ? 'text-[#000]' : 'text-muted-foreground'}`}>
+                       <Image src="/bit.png" alt="Bit" width={30} height={20} style={{
+                         width: '20px',
+                         height: '20px',
+                         objectFit: 'contain',
+
+                       }}/>
+                     </span>
+                     <div className={`absolute -right-2 top-0 h-2 w-2 rounded-full ${paymentMethod === 'bit' ? 'bg-[#ffcc00]' : 'bg-muted-foreground/30'}`} />
+                  </div>
+                  <span className={`text-sm font-semibold ${paymentMethod === 'bit' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    Bit
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {paymentMethod === 'card' ? (
+              <div className="rounded-lg border border-border overflow-hidden">
               {/* Card Header */}
               <div className="bg-muted/50 px-4 py-3 flex items-center justify-between border-b border-border">
                 <div className="flex items-center gap-2">
@@ -426,6 +491,9 @@ export function PaymentForm({
                   <CardBrand type="visa" />
                   <CardBrand type="mastercard" />
                   <CardBrand type="amex" />
+                  <CardBrand type="discover" />
+                  <CardBrand type="diners" />
+
                 </div>
               </div>
 
@@ -549,8 +617,19 @@ export function PaymentForm({
 
               </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="rounded-xl border-2 border-[#ffcc00] bg-[#ffcc00]/5 p-6 text-center space-y-4">
+              <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[#ffcc00] mb-2">
+                 <span className="text-2xl font-black italic tracking-tighter text-black">bit</span>
+              </div>
+              <h3 className="text-lg font-bold text-foreground">Pay with Bit</h3>
+              <p className="text-sm text-muted-foreground max-w-[280px] mx-auto">
+                After clicking the button below, a secure payment window will open with a QR code to scan from your Bit app.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
         {/* Security Badge */}
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -576,7 +655,7 @@ export function PaymentForm({
             {isSubmitting
               ? 'Processing...'
               : chargeAmount > 0
-                ? `Pay ${formatPrice(chargeAmount)}`
+                ? (paymentMethod === 'bit' ? 'Pay with Bit' : `Pay ${formatPrice(chargeAmount)}`)
                 : `Complete order (${formatPrice(0)} — paid by gift card)`
             }
           </button>
@@ -622,8 +701,9 @@ function CardBrand({ type }: { type: string }) {
   const brands: Record<string, { bg: string; text: string, src?: string }> = {
     visa: { bg: 'transparent', text: 'VISA', src: '/visa.png' },
     mastercard: { bg: 'transparent', text: 'MC', src: '/master.png' },
-    amex: { bg: 'transparent', text: 'AMEX', src: '/amex.png' },
     discover: { bg: 'transparent', text: 'DISC', src: '/discover.jpg' },
+    amex: { bg: 'transparent', text: 'AMEX', src: '/amex.png' },
+    diners: { bg: 'transparent', text: 'DINERS', src: '/Diners_Club_Logo.svg' },
     generic: { bg: 'bg-muted', text: 'generic' },
   }
 
@@ -637,7 +717,12 @@ function CardBrand({ type }: { type: string }) {
     <div className={`h-6 px-2 rounded ${brand.bg} flex items-center justify-center`}>
       <span className="text-[10px] font-bold text-white">
         {brand.src ? (
-          <Image src={brand.src} alt={brand.text} width={40} height={20} />
+          <Image src={brand.src} alt={brand.text} width={30} height={20} style={{
+            width: '50px',
+            height: '40px',
+            objectFit: 'contain',
+
+          }}/>
         ) : (
           brand.text
         )}

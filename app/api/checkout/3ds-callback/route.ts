@@ -190,7 +190,7 @@ async function handleCallback(request: NextRequest) {
         .eq('id', sessionId)
 
       // Redirect to Shopify native order status page
-      return redirectToShopify(session, shopifyOrderUrl)
+      return redirectToShopify(session, shopifyOrderId)
 
     } else {
       const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
@@ -228,16 +228,15 @@ function redirectToSuccess(sessionId: string, confirmationCode: string, giftCard
   return breakoutRedirect(targetUrl, sessionId)
 }
 
-function redirectToShopify(session: any, orderUrl?: string | null) {
-  const targetUrl = orderUrl || `https://${session.shop}`
+function redirectToShopify(session: any, shopifyOrderId?: string | null) {
+  const shopifyDomain = session.shop || 'rotmina.myshopify.com'
+  const targetUrl = `https://${shopifyDomain}/pages/success${shopifyOrderId ? `?order_id=${shopifyOrderId}` : ''}`
   return breakoutRedirect(targetUrl, session.id)
 }
 
-function redirectToError(message: string, sessionId?: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-  const params = new URLSearchParams({ error: message })
-  if (sessionId) params.set('session', sessionId)
-  const targetUrl = `${baseUrl}/checkout/error?${params.toString()}`
+function redirectToError(message: string, sessionId?: string, shop?: string) {
+  const shopifyDomain = shop || 'rotmina.myshopify.com'
+  const targetUrl = `https://${shopifyDomain}/pages/error?error=${encodeURIComponent(message)}`
   return breakoutRedirect(targetUrl, sessionId)
 }
 

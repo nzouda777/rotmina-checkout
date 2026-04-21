@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       cardholderName,
       browserData,
       installments = 1,
+      paymentMethod = 'card',
       // Gift card fields (redemption)
       giftCardId,
       giftCardCode,
@@ -200,7 +201,8 @@ export async function POST(request: NextRequest) {
           giftCard: giftCardInfo,
         })
         shopifyOrderId = String(order.id)
-        shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+        const shopifyDomain = session.shop || 'rotmina.myshopify.com'
+        shopifyOrderUrl = `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`
         console.log(`[CHARGE][${logId}] Shopify order created:`, shopifyOrderId)
 
         // ── Send Order Confirmation Email ────────────────────────
@@ -270,13 +272,15 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Case: Credit card charge (with or without gift card) ────────────
-    if (!cardNumber || !expiryDate || !cvv) {
-      console.warn(`[CHARGE][${logId}] Missing credit card fields for CC charge`)
-      await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
-      return NextResponse.json(
-        { error: 'Missing required credit card information' },
-        { status: 400 }
-      )
+    if (paymentMethod === 'card') {
+      if (!cardNumber || !expiryDate || !cvv) {
+        console.warn(`[CHARGE][${logId}] Missing credit card fields for CC charge`)
+        await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+        return NextResponse.json(
+          { error: 'Missing required credit card information' },
+          { status: 400 }
+        )
+      }
     }
 
     const tranzila = createTranzilaClient()
@@ -318,10 +322,12 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── 3DS callback URL ──────────────────────────────────────────
+    // ── callback URL ──────────────────────────────────────────
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    const callbackUrl = `${baseUrl}/api/checkout/3ds-callback`
-    console.log(`[CHARGE][${logId}] 3DS callback URL:`, callbackUrl)
+    const callbackUrl = paymentMethod === 'bit' 
+      ? `${baseUrl}/api/checkout/bit-callback`
+      : `${baseUrl}/api/checkout/3ds-callback`
+    console.log(`[CHARGE][${logId}] ${paymentMethod.toUpperCase()} callback URL:`, callbackUrl)
 
     // Extract client IP for 3DS browser data
     const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() 
@@ -349,14 +355,101 @@ export async function POST(request: NextRequest) {
       console.log(`[CHARGE][${logId}] Installments: ${installments}x, First: ${firstAmount.toFixed(2)}, Others: ${otherAmount.toFixed(2)}`)
     }
 
-    const chargePayload = {
+    // ── Base payload for Tranzila ────────────────────────────────
+    const basePayload = {
       terminal_name: process.env.TRANZILA_TERMINAL || '',
       txn_currency_code: session.cart.currency.toUpperCase(),
+      items: tranzilaItems,
+    }
+
+    // ── Case 0: Bit Payment ──────────────────────────────────────
+    if (paymentMethod === 'bit') {
+      console.log(`[BIT-STEP 1] Starting Bit payload construction for session ${sessionId}`)
+
+      const bitItems = tranzilaItems.map((item: any) => ({
+        code: item.code || "",
+        name: item.name,
+        type: "I",
+        units_number: Number(item.units_number),
+        unit_type: 1,
+        unit_price: Number(item.unit_price),
+        price_type: "G",
+        currency_code: session.cart.currency.toUpperCase(),
+        to_txn_currency_exchange_rate: 1
+      }))
+
+      const bitPayload = {
+        terminal_name: process.env.TRANZILA_TERMINAL || '',
+        txn_currency_code: session.cart.currency.toUpperCase(),
+        txn_type: 'debit',
+        success_url: `${callbackUrl}/success?merchant_data=${sessionId}`,
+        failure_url: `${callbackUrl}/failure?merchant_data=${sessionId}`,
+        notify_url: `${callbackUrl}/notify?merchant_data=${sessionId}`,
+        client: {
+          name: `${customerInfo.firstName} ${customerInfo.lastName}`,
+          email: customerInfo.email,
+          address_line_1: customerInfo.address,
+          city: customerInfo.city,
+          zip: customerInfo.postalCode || '',
+          phone: sanitizePhone(customerInfo.phone)
+        },
+        items: bitItems,
+        response_language: "english",
+        created_by_system: "rotmani-checkout"
+      }
+
+      console.log(`[BIT-STEP 2] Payload prepared for ${sessionId}:`, JSON.stringify(bitPayload, null, 2))
+
+      console.log(`[BIT-STEP 3] Calling Tranzila Bit Init API...`)
+      try {
+        const bitResponse = await tranzila.initBit(bitPayload)
+        console.log(`[BIT-STEP 4] Bit API Response:`, JSON.stringify(bitResponse, null, 2))
+        
+        const redirectUrl = bitResponse.bit_url || bitResponse.sale_url
+        
+        if (redirectUrl) {
+          console.log(`[BIT-STEP 5] Bit Init Success. URL generated: ${redirectUrl}`)
+          
+          await supabase
+            .from('payment_sessions')
+            .update({
+              status: 'pending_bit',
+              raw_response: {
+                ...bitResponse,
+                _gift_card: giftCardInfo ? {
+                  id: giftCardInfo.id,
+                  code: giftCardInfo.code,
+                  appliedAmount: giftCardInfo.appliedAmount,
+                } : null,
+              },
+            })
+            .eq('id', sessionId)
+
+          return NextResponse.json({
+            success: false,
+            requires3DS: true, // Reuse the same UI logic for iframe
+            redirectUrl: redirectUrl,
+            sessionId,
+            trackId: null,
+          })
+        } else {
+          console.error(`[BIT-STEP 5] Bit Init Failed: No redirect URL found in response.`)
+          throw new Error(bitResponse.message || bitResponse.error || 'Failed to get Bit payment URL')
+        }
+      } catch (bitErr: any) {
+        console.error(`[BIT-STEP 5] EXCEPTION during Bit Init:`, bitErr.message)
+        await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+        return NextResponse.json({ success: false, error: bitErr.message || 'Bit initialization failed' }, { status: 500 })
+      }
+    }
+
+    const chargePayload = {
+      ...basePayload,
       txn_type: 'debit',
       expire_month: Number(expireMonth),
       expire_year: Number(expireYear),
       cvv: String(cvv),
-      card_number: String(cardNumber.replace(/\s/g, '')),
+      card_number: String(cardNumber!.replace(/\s/g, '')),
       payment_plan: payment_plan,
       ...tranzilaInstallments,
       activate_3ds: "Y",
@@ -377,7 +470,6 @@ export async function POST(request: NextRequest) {
         country_code: getIsoCountryCode(customerInfo.country || 'Israel'),
         zip: customerInfo.postalCode || '',
       },
-      items: tranzilaItems,
     }
 
     console.log(`[CHARGE][${logId}] === FULL PAYLOAD ===`)

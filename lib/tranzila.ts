@@ -131,6 +131,58 @@ export class TranzilaClient {
     }
   }
 
+  /**
+   * Initialize Bit payment.
+   * POST /v1/transaction/bit/init
+   */
+  async initBit(params: any): Promise<any> {
+    const apiUrl = 'https://api.tranzila.com/v1/transaction/bit/init'
+    const appKey = process.env.TRANZILA_APP_KEY || ''
+    const secret = process.env.TRANZILA_SECRET || ''
+    const time = Math.round(Date.now() / 1000)
+    const nonce = this.makeNonce(80)
+    const accessToken = this.generateAccessToken(appKey, secret, time, nonce)
+
+    console.log('[BIT-DEBUG] Method: POST', { 
+      url: apiUrl, 
+      headers: {
+        'X-tranzila-api-app-key': appKey,
+        'X-tranzila-api-request-time': String(time),
+        'X-tranzila-api-nonce': nonce,
+      }
+    })
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, application/xml, multipart/form-data',
+          'X-tranzila-api-app-key': appKey,
+          'X-tranzila-api-request-time': String(time),
+          'X-tranzila-api-nonce': nonce,
+          'X-tranzila-api-access-token': accessToken,
+        },
+        body: JSON.stringify(params),
+      })
+
+      const text = await response.text()
+      console.log('[BIT-DEBUG] Raw Response Body:', text)
+
+      if (!response.ok) {
+        console.error('[BIT-DEBUG] Response NOT OK:', response.status, response.statusText)
+        throw new Error(`Bit Init failed: ${response.statusText} (${response.status})`)
+      }
+
+      const result = JSON.parse(text)
+      console.log('[BIT-DEBUG] Parsed Result:', result)
+      return result
+    } catch (err) {
+      console.error('[BIT-DEBUG] Exception during initBit:', err)
+      throw err
+    }
+  }
+
   static isSuccess(response: any): boolean {
     if (!response) return false
 

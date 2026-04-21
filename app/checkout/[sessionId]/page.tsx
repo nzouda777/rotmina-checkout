@@ -93,13 +93,19 @@ export default function CheckoutPage() {
     giftCardRemainingBalance?: number,
     usedGiftCardCode?: string
   ) => {
-    // Force redirect to Shopify custom /pages/success instead of native order status.
+    // Priority 1: Use the URL provided by the server (already points to /pages/success with order_id)
+    if (shopifyOrderUrl) {
+      window.location.href = shopifyOrderUrl
+      return
+    }
+
+    // Priority 2: Hardcoded fallback to Shopify success page
     if (session?.shop) {
       window.location.href = `https://${session.shop}/pages/success`
       return
     }
 
-    // Fallback just in case
+    // Fallback: Local success page
     const params = new URLSearchParams({
       session: sessionId,
       confirmation: confirmationCode,
@@ -118,7 +124,7 @@ export default function CheckoutPage() {
 
   const handlePaymentError = (errorMessage: string) => {
     if (session?.shop) {
-      window.location.href = `https://${session.shop}/pages/error`
+      window.location.href = `https://${session.shop}/pages/error?error=${encodeURIComponent(errorMessage)}`
     } else {
       setError(errorMessage)
       setStep('payment')
