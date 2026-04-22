@@ -70,6 +70,8 @@ export function PaymentForm({
   const [installments, setInstallments] = useState(1)
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'bit'>('card')
   const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
 
   const close3DS = (source: string) => {
     console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
@@ -120,37 +122,41 @@ export function PaymentForm({
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
 
-    if (paymentMethod === 'bit') return true
-
-    const cardDigits = cardNumber.replace(/\s/g, '')
-    // ... rest of validation for card
-
-    if (!cardDigits || cardDigits.length < 13) {
-      newErrors.cardNumber = 'Invalid card number'
+    if (!termsAccepted) {
+      newErrors.terms = 'Please accept the terms of the agreement to proceed.'
     }
 
-    if (!cardholderName.trim()) {
-      newErrors.cardholderName = 'Cardholder name is required'
-    }
+    if (paymentMethod !== 'bit') {
+      const cardDigits = cardNumber.replace(/\s/g, '')
+      // ... rest of validation for card
 
-    if (!expiryDate || expiryDate.length < 5) {
-      newErrors.expiryDate = 'Invalid expiry date'
-    } else {
-      const [month, year] = expiryDate.split('/')
-      const currentYear = new Date().getFullYear() % 100
-      const currentMonth = new Date().getMonth() + 1
-      if (
-        parseInt(month) < 1 ||
-        parseInt(month) > 12 ||
-        parseInt(year) < currentYear ||
-        (parseInt(year) === currentYear && parseInt(month) < currentMonth)
-      ) {
-        newErrors.expiryDate = 'Card has expired'
+      if (!cardDigits || cardDigits.length < 13) {
+        newErrors.cardNumber = 'Invalid card number'
       }
-    }
 
-    if (!cvv || cvv.length < 3) {
-      newErrors.cvv = 'Invalid CVV'
+      if (!cardholderName.trim()) {
+        newErrors.cardholderName = 'Cardholder name is required'
+      }
+
+      if (!expiryDate || expiryDate.length < 5) {
+        newErrors.expiryDate = 'Invalid expiry date'
+      } else {
+        const [month, year] = expiryDate.split('/')
+        const currentYear = new Date().getFullYear() % 100
+        const currentMonth = new Date().getMonth() + 1
+        if (
+          parseInt(month) < 1 ||
+          parseInt(month) > 12 ||
+          parseInt(year) < currentYear ||
+          (parseInt(year) === currentYear && parseInt(month) < currentMonth)
+        ) {
+          newErrors.expiryDate = 'Card has expired'
+        }
+      }
+
+      if (!cvv || cvv.length < 3) {
+        newErrors.cvv = 'Invalid CVV'
+      }
     }
 
     setErrors(newErrors)
@@ -669,6 +675,38 @@ export function PaymentForm({
             }
           </button>
         </div>
+
+        {/* Terms and Conditions Checkbox */}
+        <div className="flex flex-col items-center justify-center mt-6">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="terms"
+              checked={termsAccepted}
+              onChange={(e) => {
+                setTermsAccepted(e.target.checked)
+                if (errors.terms) setErrors((prev) => ({ ...prev, terms: '' }))
+              }}
+              className="h-4 w-4 rounded border-gray-300 text-foreground focus:ring-foreground accent-foreground cursor-pointer"
+            />
+            <label htmlFor="terms" className="text-sm text-muted-foreground select-none cursor-pointer">
+              I have read and agree to{' '}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setShowTerms(true);
+                }}
+                className="underline hover:text-foreground transition-colors outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 rounded-sm"
+              >
+                the terms of the agreement
+              </button>.
+            </label>
+          </div>
+          {errors.terms && (
+            <p className="mt-2 text-sm text-destructive font-medium">{errors.terms}</p>
+          )}
+        </div>
       </form>
 
       {/* Payment Error Popup */}
@@ -743,9 +781,116 @@ export function PaymentForm({
           </div>
         </div>
       )}
+
+      {/* Terms and Conditions Modal */}
+      {showTerms && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+              <h2 className="text-xl font-bold text-foreground">Terms of Use</h2>
+              <button
+                onClick={() => setShowTerms(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-4 text-sm text-foreground overflow-x-hidden leading-relaxed">
+              <div className="whitespace-pre-wrap">
+                {TERMS_TEXT}
+              </div>
+            </div>
+            
+            <div className="px-6 py-4 border-t border-border bg-muted/30 flex justify-end">
+              <button
+                onClick={() => setShowTerms(false)}
+                className="py-2 px-6 rounded-lg bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const TERMS_TEXT = `Terms of Use
+
+1. General
+1.1 These Terms constitute a legally binding agreement between the users of the website and the website management (hereinafter: "the Site").
+1.2 Any access to the Site, browsing, registration, making a purchase, or any other use of the Site constitutes full acceptance of these Terms.
+1.3 The Site management may update these Terms from time to time at its sole discretion without prior notice.
+1.4 In case of any conflict between these Terms and any other publication, these Terms shall prevail.
+
+2. Use and Access
+2.1 The Site is accessible only to users who are 18 years or older. Minors under 18 may make purchases only with parental or guardian consent.
+2.2 The Site is intended for personal use only; commercial use is prohibited without prior written approval from the Site management.
+2.3 Any illegal activity, copyright infringement, or other harm to the Site management, other users, or third parties is strictly prohibited.
+2.4 The Site management reserves the right to block access to users who violate these Terms without prior notice.
+
+3. Content and Use of the Digital Store
+3.1 The Site contains original content, product information, publications, and updates.
+3.2 No content from the Site may be copied, reproduced, distributed, published, or used in any way without prior written permission from the Site management.
+
+4. Ordering Products and Services
+4.1 All purchases are subject to stock availability. In case of stock shortage, the customer will be notified and may choose to wait or cancel the order.
+4.2 Orders are confirmed only after full payment via credit card, Apple Pay, Google Pay, or Bit, subject to approval by the payment processor.
+4.3 Prices include VAT unless otherwise specified.
+
+5. Shipping & Pickup
+5.1 Shipping in Israel / In-Store Pickup Customers in Israel may choose home delivery or in-store pickup. Home delivery: Orders are shipped within 1–2 business days after confirmation. Customers will receive an email notification once the order is shipped. In-store pickup: Orders will be ready within 1–2 business days after confirmation. Customers will receive an email notification when the order is ready for collection. Identification may be required
+5.2 Worldwide Shipping: Products are shipped worldwide at a flat rate of 165 ILS, approximately $47–$50 USD. Price may vary depending on exchange rate. Orders are processed within 1–2 business days after payment confirmation. Customers will receive an email notification confirming that the order has been processed. Delivery typically takes 7–15 business days depending on destination. Additional local fees (customs, taxes, or import duties) may apply depending on the destination country's policies. Returns & Exchanges: Customers who wish to return an item must fill out the return form within 14 days of receiving the package. Items that have been used or worn cannot be returned or exchanged. Closing items may be exchanged only if they still carry their original label. Shipping costs for returns are the customer's responsibility unless the item is defective or incorrect. Once the returned item is received and inspected in its original condition, a full refund will be issued via the original payment method. Customers will receive an email notification once the refund has been processed. Refunds are usually completed within up to 3 business days after receiving and verifying the returned item.
+
+6. General Shipping Provisions
+6.1 Delivery is carried out by an external shipping company. If service is unavailable to a specific location, an alternative suitable location may be arranged.
+6.2 The Site management is not responsible for delays caused by external factors such as the shipping company, security emergencies, strikes, or force majeure.
+6.3 Customers must ensure that all shipping details provided are accurate.
+
+7. Cancellation, Returns & Refunds
+7.1 Customers may cancel an order before it has been shipped, For returns, customers may return a product within 14 days of receipt, provided it is unused, undamaged, and retains its original label.
+7.2 Shipping costs for returns are the customer's responsibility unless the item is defective or incorrect.
+7.3 Refunds are processed within up to 3 business days after the returned item is received and inspected. Customers will be notified via email once the refund is completed. Refunds are issued via the original payment method.
+7.4 Cancellation and Return Policy Defective Products - If a customer receives a defective product, the customer is entitled to contact the Company's customer service immediately upon receipt of the shipment and provide a clear photo of the defect via email or WhatsApp. Upon receiving the inquiry and the photo, the Company will review the case and handle it accordingly, including replacing the product, issuing a credit, or any other solution at its discretion.
+
+8. Links, Advertisements, and External Referrals
+8.1 The Site may contain links to external websites. The Site management is not responsible for the content or conduct of these websites.
+8.2 Any transaction with a third party through a link on the Site is the customer's sole responsibility.
+
+9. Ownership and Intellectual Property Rights
+9.1 All rights to content, images, designs, logos, texts, and any other elements on the Site are the exclusive property of the Site owner and are protected under intellectual property laws.
+9.2 No content from the Site may be copied, reproduced, distributed, published, sold, or used in any way without prior written permission from the Site management.
+
+10. Use of Site Content
+10.1 Users may not upload content that is offensive, illegal, or may infringe third-party rights.
+10.2 The Site management may remove any content deemed inappropriate or in violation of these Terms.
+
+11. Disclaimer and Indemnification
+11.1 The Site management is not liable for any direct or indirect damages resulting from use of the Site, technical malfunctions, or improper use.
+11.2 The Site provides information "As-Is" and does not guarantee specific results, recommendations, or professional advice.
+11.3 Users agree to indemnify the Site management for any claims, lawsuits, or damages arising from their violation of these Terms.
+
+12. Jurisdiction
+12.1 These Terms of Use and the Site's Terms and Conditions shall be governed solely by the laws of the State of Israel.
+12.2 Any dispute arising between the parties shall be subject to the exclusive jurisdiction of the competent courts located in the district where the Site owner is registered.
+
+13. Amendments
+13.1 The Site management may update the Terms of Use from time to time at its sole discretion.
+13.2 Continued use of the Site after updates constitutes acceptance of the new Terms.
+
+14. Privacy Policy
+14.1 The Website's Privacy Policy constitutes an integral part of these Terms and Conditions, and any use of the Website is subject to the provisions detailed therein.
+
+15. Contact
+15.1 For any questions or clarifications, please contact us:
+Tel: +972-55-994-6060
+Rishon Lezion ,Israel
+Email: Brand@rotmina.com`
 
 function CardBrand({ type }: { type: string }) {
   const brands: Record<string, { bg: string; text: string, src?: string }> = {
