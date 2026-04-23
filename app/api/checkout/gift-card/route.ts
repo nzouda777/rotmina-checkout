@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { validateGiftCard } from '@/lib/gift-cards'
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+const ALLOWED_ORIGINS = [
+  'https://rotmina-israel.myshopify.com',
+  'https://step-devserver.com',
+  'https://rotmina.co.il',
+  'https://www.rotmina.co.il'
+]
+
+function getCorsHeaders(request: Request | NextRequest) {
+  const origin = request.headers.get('origin')
+  const isAllowed = ALLOWED_ORIGINS.includes(origin || '')
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin! : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+  }
 }
 
 /**
@@ -25,7 +37,7 @@ export async function POST(request: NextRequest) {
     if (!code || typeof code !== 'string' || code.trim().length < 4) {
       return NextResponse.json(
         { error: 'Please enter a valid gift card code' },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400, headers: getCorsHeaders(request) }
       )
     }
 
@@ -36,21 +48,21 @@ export async function POST(request: NextRequest) {
     if (!card) {
       return NextResponse.json(
         { error: 'Gift card not found. Please check the code and try again.' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: getCorsHeaders(request) }
       )
     }
 
     if (card.status === 'disabled') {
       return NextResponse.json(
         { error: 'This gift card has been disabled.' },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400, headers: getCorsHeaders(request) }
       )
     }
 
     if (card.status === 'depleted' || card.balance <= 0) {
       return NextResponse.json(
         { error: 'This gift card has no remaining balance.' },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400, headers: getCorsHeaders(request) }
       )
     }
 
@@ -63,20 +75,20 @@ export async function POST(request: NextRequest) {
         balance: card.balance,
         currency: card.currency,
       },
-      { headers: CORS_HEADERS }
+      { headers: getCorsHeaders(request) }
     )
   } catch (error: any) {
     console.error(`[GIFT-CARD][${logId}] CRITICAL ERROR:`, error)
     return NextResponse.json(
       { error: 'Unable to validate gift card. Please try again.' },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: getCorsHeaders(request) }
     )
   }
 }
 
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(request),
   })
 }

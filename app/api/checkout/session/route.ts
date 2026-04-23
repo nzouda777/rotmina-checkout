@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://rotmina-israel.myshopify.com',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning',
-  'Access-Control-Allow-Credentials': 'true',
+const ALLOWED_ORIGINS = [
+  'https://rotmina-israel.myshopify.com',
+  'https://step-devserver.com',
+  'https://rotmina.co.il',
+  'https://www.rotmina.co.il'
+]
+
+function getCorsHeaders(request: Request | NextRequest) {
+  const origin = request.headers.get('origin')
+  const isAllowed = ALLOWED_ORIGINS.includes(origin || '')
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin! : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, ngrok-skip-browser-warning',
+    'Access-Control-Allow-Credentials': 'true',
+  }
 }
 
-function corsResponse(data: any, status: number = 200) {
+function corsResponse(request: NextRequest, data: any, status: number = 200) {
   return NextResponse.json(data, {
     status,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(request),
   })
 }
 
@@ -87,7 +98,7 @@ export async function POST(request: NextRequest) {
         hasCart: !!finalCart,
         body 
       })
-      return corsResponse({ error: 'Missing required fields' }, 400)
+      return corsResponse(request, { error: 'Missing required fields' }, 400)
     }
 
     // Force ILS locally so components don't display $ and Tranzila/Shopify act in ILS
@@ -111,15 +122,17 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Error creating session:', error)
       return corsResponse(
+        request,
         { error: 'Failed to create payment session' },
         500
       )
     }
 
-    return corsResponse({ sessionId: data.id })
+    return corsResponse(request, { sessionId: data.id })
   } catch (error) {
     console.error('Session creation error:', error)
     return corsResponse(
+      request,
       { error: 'Internal server error' },
       500
     )
@@ -133,6 +146,7 @@ export async function GET(request: NextRequest) {
 
     if (!sessionId) {
       return corsResponse(
+        request,
         { error: 'Session ID required' },
         400
       )
@@ -148,24 +162,26 @@ export async function GET(request: NextRequest) {
 
     if (error || !data) {
       return corsResponse(
+        request,
         { error: 'Session not found' },
         404
       )
     }
 
-    return corsResponse(data)
+    return corsResponse(request, data)
   } catch (error) {
     console.error('Session fetch error:', error)
     return corsResponse(
+      request,
       { error: 'Internal server error' },
       500
     )
   }
 }
 
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
   return new NextResponse(null, {
     status: 204,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(request),
   })
 }
