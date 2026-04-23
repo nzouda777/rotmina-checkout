@@ -652,31 +652,7 @@ export function PaymentForm({
           <span>Your payment information is secure and encrypted</span>
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-col-reverse sm:flex-row gap-4 items-center">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Return to information
-          </button>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full sm:flex-1 py-4 px-6 rounded-lg bg-foreground text-background font-semibold text-base hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSubmitting
-              ? 'Processing...'
-              : chargeAmount > 0
-                ? (paymentMethod === 'bit' ? 'Pay with Bit' : `Pay ${formatPrice(chargeAmount)}`)
-                : `Complete order (${formatPrice(0)} — paid by gift card)`
-            }
-          </button>
-        </div>
-
-        {/* Terms and Conditions Checkbox */}
+{/* Terms and Conditions Checkbox */}
         <div className="flex flex-col items-center justify-center mt-6">
           <div className="flex items-center gap-2">
             <input
@@ -707,6 +683,31 @@ export function PaymentForm({
             <p className="mt-2 text-sm text-destructive font-medium">{errors.terms}</p>
           )}
         </div>
+        {/* Actions */}
+        <div className="flex flex-col-reverse sm:flex-row gap-4 items-center">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Return to information
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full sm:flex-1 py-4 px-6 rounded-lg bg-foreground text-background font-semibold text-base hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting
+              ? 'Processing...'
+              : chargeAmount > 0
+                ? (paymentMethod === 'bit' ? 'Pay with Bit' : `Pay ${formatPrice(chargeAmount)}`)
+                : `Complete order (${formatPrice(0)} — paid by gift card)`
+            }
+          </button>
+        </div>
+
+        
       </form>
 
       {/* Payment Error Popup */}
