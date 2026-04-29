@@ -4,9 +4,11 @@ import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { XCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useLanguage } from '@/lib/language-context'
 
 function ErrorContent() {
   const searchParams = useSearchParams()
+  const { t } = useLanguage()
   const sessionId = searchParams.get('session')
   const errorMessage = searchParams.get('error') // ← ajout
 
@@ -18,14 +20,14 @@ function ErrorContent() {
         </div>
         
         <h1 className="text-3xl font-bold text-foreground mb-2">
-          Payment Failed
+          {t('errorPage.paymentFailed')}
         </h1>
         
         {/* Message d'erreur Tranzila si disponible */}
         <p className="text-muted-foreground mb-6">
           {errorMessage
             ? decodeURIComponent(errorMessage)
-            : 'We were unable to process your payment. Please try again or use a different payment method.'
+            : t('errorPage.defaultError')
           }
         </p>
 
@@ -34,7 +36,7 @@ function ErrorContent() {
             href={`/checkout/${sessionId}`}
             className="inline-block py-3 px-6 rounded-lg bg-foreground text-background font-semibold hover:opacity-90 transition-opacity"
           >
-            Try Again
+            {t('errorPage.tryAgain')}
           </Link>
         )}
       </div>

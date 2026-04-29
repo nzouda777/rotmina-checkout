@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShoppingBag, CreditCard, Shield, Zap } from 'lucide-react'
+import { useLanguage } from '@/lib/language-context'
 
 export default function DemoPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const { t } = useLanguage()
 
   const demoCart = {
     items: [
@@ -67,15 +69,15 @@ export default function DemoPage() {
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-muted-foreground text-sm mb-6">
               <Zap className="h-4 w-4" />
-              <span>Shopify + Tranzila Payment Integration</span>
+              <span>{t('demo.badge')}</span>
             </div>
             
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground mb-6 text-balance">
-              Beautiful Checkout Experience
+              {t('demo.heroTitle')}
             </h1>
             
             <p className="text-lg sm:text-xl text-muted-foreground mb-8 text-pretty">
-              A modern, Shopify-inspired checkout page integrated with Tranzila payment gateway for Israeli merchants.
+              {t('demo.heroDescription')}
             </p>
 
             <button
@@ -88,7 +90,7 @@ export default function DemoPage() {
               ) : (
                 <ShoppingBag className="h-5 w-5" />
               )}
-              {loading ? 'Creating Session...' : 'Try Demo Checkout'}
+              {loading ? t('demo.creatingSession') : t('demo.tryDemoCheckout')}
             </button>
           </div>
         </div>
@@ -99,18 +101,18 @@ export default function DemoPage() {
         <div className="grid md:grid-cols-3 gap-8">
           <FeatureCard
             icon={<CreditCard className="h-6 w-6" />}
-            title="Secure Payments"
-            description="PCI-compliant payment processing through Tranzila with support for all major credit cards."
+            title={t('demo.securePayments')}
+            description={t('demo.securePaymentsDesc')}
           />
           <FeatureCard
             icon={<Shield className="h-6 w-6" />}
-            title="Shopify Integration"
-            description="Seamlessly integrates with your Shopify store as an external payment gateway."
+            title={t('demo.shopifyIntegration')}
+            description={t('demo.shopifyIntegrationDesc')}
           />
           <FeatureCard
             icon={<Zap className="h-6 w-6" />}
-            title="Modern UI"
-            description="Clean, responsive design inspired by Shopify&apos;s checkout for a familiar experience."
+            title={t('demo.modernUI')}
+            description={t('demo.modernUIDesc')}
           />
         </div>
       </div>
@@ -118,7 +120,7 @@ export default function DemoPage() {
       {/* Cart Preview */}
       <div className="max-w-6xl mx-auto px-4 py-16">
         <div className="bg-muted/30 rounded-2xl border border-border p-8">
-          <h2 className="text-2xl font-bold text-foreground mb-6">Demo Cart Items</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-6">{t('demo.demoCartItems')}</h2>
           <div className="space-y-4">
             {demoCart.items.map((item) => (
               <div key={item.id} className="flex items-center gap-4 p-4 bg-background rounded-lg border border-border">
@@ -138,7 +140,7 @@ export default function DemoPage() {
             ))}
           </div>
           <div className="mt-6 pt-6 border-t border-border flex justify-between items-center">
-            <span className="text-lg font-medium text-foreground">Total</span>
+            <span className="text-lg font-medium text-foreground">{t('demo.total')}</span>
             <span className="text-2xl font-bold text-foreground">
               {new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(demoCart.total)}
             </span>

@@ -1,22 +1,28 @@
+'use client'
+
+import { useLanguage } from '@/lib/language-context'
+
 export function CheckoutFooter() {
+  const { t } = useLanguage()
+
   return (
     <footer className="border-t border-border mt-16">
       <div className="max-w-6xl mx-auto px-4 py-6">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-4">
             <a href="#" className="hover:text-foreground transition-colors">
-              Refund policy
+              {t('footer.refundPolicy')}
             </a>
             <a href="#" className="hover:text-foreground transition-colors">
-              Privacy policy
+              {t('footer.privacyPolicy')}
             </a>
             <a href="#" className="hover:text-foreground transition-colors">
-              Terms of service
+              {t('footer.termsOfService')}
             </a>
           </div>
           <div className="flex items-center gap-2">
             <Lock className="h-4 w-4" />
-            <span>Secure checkout powered by Tranzila</span>
+            <span>{t('footer.secureCheckoutPowered')}</span>
           </div>
         </div>
       </div>

@@ -9,6 +9,7 @@ import { PaymentForm } from '@/components/checkout/payment-form'
 import { GiftCardForm } from '@/components/checkout/gift-card-form'
 import { CheckoutFooter } from '@/components/checkout/checkout-footer'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
+import { useLanguage } from '@/lib/language-context'
 
 // console.log('CheckoutPage module loaded');
 
@@ -27,6 +28,7 @@ export default function CheckoutPage() {
   const params = useParams()
   const router = useRouter()
   const sessionId = params?.sessionId as string
+  const { t } = useLanguage()
   
   console.log('Session ID from useParams:', sessionId);
 
@@ -146,7 +148,7 @@ export default function CheckoutPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-foreground" />
-          <p className="text-muted-foreground">Loading checkout...</p>
+          <p className="text-muted-foreground">{t('checkout.loadingCheckout')}</p>
         </div>
       </div>
     )
@@ -156,7 +158,7 @@ export default function CheckoutPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold text-foreground mb-2">Checkout Error</h1>
+          <h1 className="text-2xl font-semibold text-foreground mb-2">{t('checkout.checkoutError')}</h1>
           <p className="text-muted-foreground">{error}</p>
         </div>
       </div>
@@ -179,14 +181,14 @@ export default function CheckoutPage() {
           <div className="flex-1 order-2 lg:order-1">
             {/* Breadcrumb */}
             <nav className="flex items-center gap-2 text-sm mb-8">
-              <span className="text-muted-foreground">Cart</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{t('checkout.cart')}</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground rtl:rotate-180" />
               <span className={step === 'information' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                Information
+                {t('checkout.information')}
               </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground rtl:rotate-180" />
               <span className={step === 'payment' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                Payment
+                {t('checkout.payment')}
               </span>
             </nav>
 
@@ -237,8 +239,8 @@ export default function CheckoutPage() {
             {step === 'processing' && (
               <div className="flex flex-col items-center justify-center py-16">
                 <div className="h-12 w-12 animate-spin rounded-full border-4 border-muted border-t-foreground mb-4" />
-                <p className="text-lg font-medium text-foreground">Processing payment...</p>
-                <p className="text-sm text-muted-foreground mt-2">Please do not close this window</p>
+                <p className="text-lg font-medium text-foreground">{t('checkout.processingPayment')}</p>
+                <p className="text-sm text-muted-foreground mt-2">{t('checkout.doNotClose')}</p>
               </div>
             )}
           </div>

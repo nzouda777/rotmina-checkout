@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Gift, X, Loader2, CheckCircle2 } from 'lucide-react'
+import { useLanguage } from '@/lib/language-context'
 
 interface GiftCardFormProps {
   currency: string
@@ -21,6 +22,7 @@ export function GiftCardForm({
   const [code, setCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const { t } = useLanguage()
 
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat('he-IL', {
@@ -31,7 +33,7 @@ export function GiftCardForm({
 
   const handleApply = async () => {
     if (!code.trim()) {
-      setError('Please enter a gift card code')
+      setError(t('giftCardForm.enterCode'))
       return
     }
 
@@ -65,7 +67,7 @@ export function GiftCardForm({
       setCode('')
       setError('')
     } catch {
-      setError('Failed to validate gift card. Please try again.')
+      setError(t('giftCardForm.failedValidation'))
     } finally {
       setIsLoading(false)
     }
@@ -92,9 +94,9 @@ export function GiftCardForm({
                 {appliedGiftCard.code}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatPrice(appliedGiftCard.appliedAmount)} applied
+                {formatPrice(appliedGiftCard.appliedAmount)} {t('giftCardForm.applied')}
                 {appliedGiftCard.balance > appliedGiftCard.appliedAmount && (
-                  <> · {formatPrice(appliedGiftCard.balance - appliedGiftCard.appliedAmount)} remaining on card</>
+                  <> · {formatPrice(appliedGiftCard.balance - appliedGiftCard.appliedAmount)} {t('giftCardForm.remainingOnCard')}</>
                 )}
               </p>
             </div>
@@ -102,7 +104,7 @@ export function GiftCardForm({
           <button
             onClick={onRemove}
             className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-            aria-label="Remove gift card"
+            aria-label={t('giftCardForm.removeGiftCard')}
           >
             <X className="h-4 w-4 text-muted-foreground hover:text-red-600" />
           </button>
@@ -110,7 +112,7 @@ export function GiftCardForm({
 
         <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-800/50">
           <p className="text-xs text-amber-600 dark:text-amber-400">
-            ⚠️ Gift card amount is charged in full immediately and is not included in installment plans.
+            {t('giftCardForm.giftCardWarning')}
           </p>
         </div>
       </div>
@@ -121,7 +123,7 @@ export function GiftCardForm({
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <Gift className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium text-foreground">Gift card</span>
+        <span className="text-sm font-medium text-foreground">{t('giftCardForm.title')}</span>
       </div>
 
       <div className="flex gap-2">
@@ -133,7 +135,7 @@ export function GiftCardForm({
             if (error) setError('')
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Enter gift card code"
+          placeholder={t('giftCardForm.placeholder')}
           disabled={isLoading}
           className={`flex-1 px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors text-sm ${
             error ? 'border-destructive' : 'border-input'
@@ -148,10 +150,10 @@ export function GiftCardForm({
           {isLoading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Checking...</span>
+              <span>{t('giftCardForm.checking')}</span>
             </>
           ) : (
-            'Apply'
+            t('giftCardForm.apply')
           )}
         </button>
       </div>

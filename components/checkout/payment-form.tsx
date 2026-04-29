@@ -5,6 +5,8 @@ import { ArrowLeft, CreditCard, Lock, Shield, Info } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
 import { redirect } from 'next/dist/server/api-utils'
 import Image from 'next/image'
+import { useLanguage } from '@/lib/language-context'
+import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
 
 interface PaymentFormProps {
   sessionId: string
@@ -72,6 +74,7 @@ export function PaymentForm({
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  const { t, lang } = useLanguage()
 
   const close3DS = (source: string) => {
     console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
@@ -123,7 +126,7 @@ export function PaymentForm({
     const newErrors: Record<string, string> = {}
 
     if (!termsAccepted) {
-      newErrors.terms = 'Please accept the terms of the agreement to proceed.'
+      newErrors.terms = t('paymentForm.acceptTermsError')
     }
 
     if (paymentMethod !== 'bit') {
@@ -131,15 +134,15 @@ export function PaymentForm({
       // ... rest of validation for card
 
       if (!cardDigits || cardDigits.length < 13) {
-        newErrors.cardNumber = 'Invalid card number'
+        newErrors.cardNumber = t('paymentForm.invalidCardNumber')
       }
 
       if (!cardholderName.trim()) {
-        newErrors.cardholderName = 'Cardholder name is required'
+        newErrors.cardholderName = t('paymentForm.cardholderRequired')
       }
 
       if (!expiryDate || expiryDate.length < 5) {
-        newErrors.expiryDate = 'Invalid expiry date'
+        newErrors.expiryDate = t('paymentForm.invalidExpiry')
       } else {
         const [month, year] = expiryDate.split('/')
         const currentYear = new Date().getFullYear() % 100
@@ -150,12 +153,12 @@ export function PaymentForm({
           parseInt(year) < currentYear ||
           (parseInt(year) === currentYear && parseInt(month) < currentMonth)
         ) {
-          newErrors.expiryDate = 'Card has expired'
+          newErrors.expiryDate = t('paymentForm.cardExpired')
         }
       }
 
       if (!cvv || cvv.length < 3) {
-        newErrors.cvv = 'Invalid CVV'
+        newErrors.cvv = t('paymentForm.invalidCvv')
       }
     }
 
@@ -273,17 +276,17 @@ export function PaymentForm({
                   }
                   // Session marked as failed — show the error from the session
                   if (sessionData.status === 'failed') {
-                    const errorMsg = sessionData.error_message || 'Payment was declined by your bank.'
+                    const errorMsg = sessionData.error_message || t('paymentForm.paymentDeclinedByBank')
                     setPaymentError(errorMsg)
                     return
                   }
                 }
               } catch {}
-              setPaymentError('Payment verification completed but order processing failed. Please contact support.')
+              setPaymentError(t('paymentForm.paymentVerificationFailed'))
             }, 2000)
           } else {
             // Extract the error message from the postMessage data
-            const errorMsg = eventData.errorMessage || eventData.error || 'Payment was declined. Please check your card balance and try again.'
+            const errorMsg = eventData.errorMessage || eventData.error || t('paymentForm.paymentDeclinedGeneric')
             setPaymentError(errorMsg)
           }
         }
@@ -337,7 +340,7 @@ export function PaymentForm({
                   if (statusPollInterval) clearInterval(statusPollInterval as any)
                   window.removeEventListener('message', messageHandler)
                   close3DS('Poll Failure')
-                  setPaymentError(data.error || 'Payment was declined. Please check your card balance and try again.')
+                  setPaymentError(data.error || t('paymentForm.paymentDeclinedGeneric'))
                 }
               }
             } catch (e) {
@@ -358,10 +361,10 @@ export function PaymentForm({
           giftCardCode
         )
       } else {
-        setPaymentError(result.error || 'Payment failed')
+        setPaymentError(result.error || t('paymentForm.paymentFailed'))
       }
     } catch {
-      setPaymentError('Payment processing failed. Please try again.')
+      setPaymentError(t('paymentForm.paymentProcessingFailed'))
     } finally {
       setIsSubmitting(false)
     }
@@ -393,11 +396,11 @@ export function PaymentForm({
         <div className="flex justify-between items-start">
           <div className="space-y-2 text-sm">
             <div className="flex gap-8">
-              <span className="text-muted-foreground w-20">Contact</span>
+              <span className="text-muted-foreground w-20">{t('paymentForm.contactLabel')}</span>
               <span className="text-foreground">{customerInfo.email}</span>
             </div>
             <div className="flex gap-8">
-              <span className="text-muted-foreground w-20">Ship to</span>
+              <span className="text-muted-foreground w-20">{t('paymentForm.shipTo')}</span>
               <span className="text-foreground">
                 {customerInfo.address}, {customerInfo.city}, {customerInfo.country}
               </span>
@@ -407,7 +410,7 @@ export function PaymentForm({
             onClick={onBack}
             className="text-sm text-foreground underline hover:no-underline"
           >
-            Change
+            {t('paymentForm.change')}
           </button>
         </div>
       </div>
@@ -423,14 +426,14 @@ export function PaymentForm({
               </p>
               {chargeAmount > 0 ? (
                 <p className="text-green-600/80 dark:text-green-400/80 mt-1">
-                  Remaining {formatPrice(chargeAmount)} will be charged to your credit card.
+                  {t('paymentForm.remainingCharged').replace('{amount}', formatPrice(chargeAmount))}
                   {maxInstallments > 1 && (
-                    <> You can split this into up to {maxInstallments} interest-free installments.</>
+                    <> {t('paymentForm.canSplitInstallments').replace('{max}', String(maxInstallments))}</>
                   )}
                 </p>
               ) : (
                 <p className="text-green-600/80 dark:text-green-400/80 mt-1">
-                  Gift card covers the entire order. No credit card charge needed.
+                  {t('paymentForm.giftCardCoversAll')}
                 </p>
               )}
             </div>
@@ -442,9 +445,9 @@ export function PaymentForm({
       <form onSubmit={handleSubmit} className="space-y-6">
         {chargeAmount > 0 && (
           <div>
-            <h2 className="text-lg font-semibold text-foreground mb-4">Payment</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-4">{t('paymentForm.paymentTitle')}</h2>
             <p className="text-sm text-muted-foreground mb-4">
-              All transactions are secure and encrypted.
+              {t('paymentForm.secureEncrypted')}
             </p>
 
             {/* Payment Method Selector */}
@@ -461,7 +464,7 @@ export function PaymentForm({
                 <div className="flex items-center gap-2">
                   <CreditCard className={`h-5 w-5 ${paymentMethod === 'card' ? 'text-foreground' : 'text-muted-foreground'}`} />
                   <span className={`text-sm font-semibold ${paymentMethod === 'card' ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    Credit Card
+                    {t('paymentForm.creditCard')}
                   </span>
                 </div>
               </button>
@@ -471,25 +474,21 @@ export function PaymentForm({
                 onClick={() => setPaymentMethod('bit')}
                 className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                   paymentMethod === 'bit'
-                    ? 'border-[#ffcc00] bg-[#ffcc00]/5 shadow-sm'
+                    ? 'border-[#2b5686] bg-gradient-to-b from-[#2b5686]/10 to-[#2eb3b8]/10 shadow-sm'
                     : 'border-border bg-background hover:border-muted-foreground/30'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <div className="relative w-12 h-5 flex items-center justify-center">
-                     <span className={`text-base font-black italic tracking-tighter ${paymentMethod === 'bit' ? 'text-[#000]' : 'text-muted-foreground'}`}>
-                       <Image src="/bit.png" alt="Bit" width={30} height={20} style={{
-                         width: '20px',
-                         height: '20px',
-                         objectFit: 'contain',
-
-                       }}/>
-                     </span>
-                     <div className={`absolute -right-2 top-0 h-2 w-2 rounded-full ${paymentMethod === 'bit' ? 'bg-[#ffcc00]' : 'bg-muted-foreground/30'}`} />
+                  <div className="relative h-6 flex items-center justify-center">
+                     <Image 
+                       src="/bit.png" 
+                       alt="Bit" 
+                       width={50} 
+                       height={30} 
+                       className={`${paymentMethod === 'bit' ? 'opacity-100' : 'opacity-50 grayscale'} transition-all`}
+                       style={{ objectFit: 'contain' }}
+                     />
                   </div>
-                  <span className={`text-sm font-semibold ${paymentMethod === 'bit' ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    Bit
-                  </span>
                 </div>
               </button>
             </div>
@@ -500,7 +499,7 @@ export function PaymentForm({
               <div className="bg-muted/50 px-4 py-3 flex items-center justify-between border-b border-border">
                 <div className="flex items-center gap-2">
                   <CreditCard className="h-5 w-5 text-foreground" />
-                  <span className="text-sm font-medium text-foreground">Credit card</span>
+                  <span className="text-sm font-medium text-foreground">{t('paymentForm.creditCardLower')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <CardBrand type="visa" />
@@ -515,14 +514,14 @@ export function PaymentForm({
               {/* Card Fields */}
               <div className="p-4 space-y-3 bg-background">
                 <div>
-                  <label htmlFor="cardNumber" className="sr-only">Card number</label>
+                  <label htmlFor="cardNumber" className="sr-only">{t('paymentForm.cardNumber')}</label>
                   <div className="relative">
                     <input
                       type="text"
                       id="cardNumber"
                       value={cardNumber}
                       onChange={handleCardNumberChange}
-                      placeholder="Card number"
+                      placeholder={t('paymentForm.cardNumber')}
                       maxLength={19}
                       className={`w-full px-4 py-3 pr-12 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                         errors.cardNumber ? 'border-destructive' : 'border-input'
@@ -538,7 +537,7 @@ export function PaymentForm({
                 </div>
 
                 <div>
-                  <label htmlFor="cardholderName" className="sr-only">Cardholder name</label>
+                  <label htmlFor="cardholderName" className="sr-only">{t('paymentForm.cardholderName')}</label>
                   <input
                     type="text"
                     id="cardholderName"
@@ -547,7 +546,7 @@ export function PaymentForm({
                       setCardholderName(e.target.value)
                       if (errors.cardholderName) setErrors((prev) => ({ ...prev, cardholderName: '' }))
                     }}
-                    placeholder="Cardholder name"
+                    placeholder={t('paymentForm.cardholderName')}
                     className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                       errors.cardholderName ? 'border-destructive' : 'border-input'
                     }`}
@@ -559,13 +558,13 @@ export function PaymentForm({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label htmlFor="expiryDate" className="sr-only">Expiration date (MM/YY)</label>
+                    <label htmlFor="expiryDate" className="sr-only">{t('paymentForm.expiryDate')}</label>
                     <input
                       type="text"
                       id="expiryDate"
                       value={expiryDate}
                       onChange={handleExpiryChange}
-                      placeholder="MM / YY"
+                      placeholder={t('paymentForm.expiryPlaceholder')}
                       maxLength={5}
                       className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                         errors.expiryDate ? 'border-destructive' : 'border-input'
@@ -576,14 +575,14 @@ export function PaymentForm({
                     )}
                   </div>
                   <div>
-                    <label htmlFor="cvv" className="sr-only">Security code</label>
+                    <label htmlFor="cvv" className="sr-only">{t('paymentForm.securityCode')}</label>
                     <div className="relative">
                       <input
                         type="text"
                         id="cvv"
                         value={cvv}
                         onChange={handleCvvChange}
-                        placeholder="CVV"
+                        placeholder={t('paymentForm.cvvPlaceholder')}
                         maxLength={4}
                         className={`w-full px-4 py-3 pr-10 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                           errors.cvv ? 'border-destructive' : 'border-input'
@@ -600,17 +599,17 @@ export function PaymentForm({
                 {/* Installments Selector */}
                 {maxInstallments > 1 && (
                   <div className="space-y-2">
-                    <label htmlFor="installments" className="sr-only">Installments</label>
+                    <label htmlFor="installments" className="sr-only">{t('paymentForm.installments')}</label>
                     <select
                       id="installments"
                       value={installments}
                       onChange={(e) => setInstallments(parseInt(e.target.value))}
                       className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                     >
-                      <option value={1}>Full payment — {formatPrice(chargeAmount)}</option>
+                      <option value={1}>{t('paymentForm.fullPayment')} — {formatPrice(chargeAmount)}</option>
                       {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 2).map((num) => (
                         <option key={num} value={num}>
-                          {num} installments — {formatPrice(chargeAmount / num)} / mo (interest-free)
+                          {num} {t('paymentForm.installments')} — {formatPrice(chargeAmount / num)} {t('paymentForm.perMonth')}
                         </option>
                       ))}
                     </select>
@@ -619,9 +618,9 @@ export function PaymentForm({
                     {installments > 1 && (
                       <div className="rounded-md bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 px-3 py-2">
                         <p className="text-xs text-blue-700 dark:text-blue-300">
-                          💳 {installments} interest-free payments of {formatPrice(perInstallment)}
+                          💳 {installments} {t('paymentForm.interestFreePayments')} {formatPrice(perInstallment)}
                           {giftCardAmount > 0 && (
-                            <> (gift card {formatPrice(giftCardAmount)} charged in full separately)</>
+                            <> ({t('paymentForm.giftCardChargedSeparately').replace('{amount}', formatPrice(giftCardAmount))})</>
                           )}
                         </p>
                       </div>
@@ -633,13 +632,13 @@ export function PaymentForm({
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border-2 border-[#ffcc00] bg-[#ffcc00]/5 p-6 text-center space-y-4">
-              <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-[#ffcc00] mb-2">
-                 <span className="text-2xl font-black italic tracking-tighter text-black">bit</span>
+            <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6 text-center space-y-4">
+              <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] mb-2 shadow-lg">
+                 <Image src="/bit.png" alt="Bit" width={48} height={28} style={{ objectFit: 'contain' }} />
               </div>
-              <h3 className="text-lg font-bold text-foreground">Pay with Bit</h3>
+              <h3 className="text-lg font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
               <p className="text-sm text-muted-foreground max-w-[280px] mx-auto">
-                After clicking the button below, a secure payment window will open with a QR code to scan from your Bit app.
+                {t('paymentForm.bitDescription')}
               </p>
             </div>
           )}
@@ -649,7 +648,7 @@ export function PaymentForm({
         {/* Security Badge */}
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <Shield className="h-4 w-4" />
-          <span>Your payment information is secure and encrypted</span>
+          <span>{t('paymentForm.paymentInfoSecure')}</span>
         </div>
 
 {/* Terms and Conditions Checkbox */}
@@ -666,7 +665,7 @@ export function PaymentForm({
               className="h-4 w-4 rounded border-gray-300 text-foreground focus:ring-foreground accent-foreground cursor-pointer"
             />
             <label htmlFor="terms" className="text-sm text-muted-foreground select-none cursor-pointer">
-              I have read and agree to{' '}
+              {t('paymentForm.agreeTerms')}{' '}
               <button
                 type="button"
                 onClick={(e) => {
@@ -675,7 +674,7 @@ export function PaymentForm({
                 }}
                 className="underline hover:text-foreground transition-colors outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 rounded-sm"
               >
-                the terms of the agreement
+                {t('paymentForm.theTerms')}
               </button>.
             </label>
           </div>
@@ -691,18 +690,22 @@ export function PaymentForm({
             className="flex items-center gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
           >
             <ArrowLeft className="h-4 w-4" />
-            Return to information
+            {t('paymentForm.returnToInfo')}
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full sm:flex-1 py-4 px-6 rounded-lg bg-foreground text-background font-semibold text-base hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-full sm:flex-1 py-4 px-6 rounded-lg font-semibold text-base transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              paymentMethod === 'bit' 
+                ? 'bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] text-white hover:opacity-90 focus:ring-[#2b5686]' 
+                : 'bg-foreground text-background hover:opacity-90 focus:ring-ring'
+            }`}
           >
             {isSubmitting
-              ? 'Processing...'
+              ? t('paymentForm.processing')
               : chargeAmount > 0
-                ? (paymentMethod === 'bit' ? 'Pay with Bit' : `Pay ${formatPrice(chargeAmount)}`)
-                : `Complete order (${formatPrice(0)} — paid by gift card)`
+                ? (paymentMethod === 'bit' ? t('paymentForm.payWithBit') : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
+                : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
             }
           </button>
         </div>
@@ -726,7 +729,7 @@ export function PaymentForm({
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-lg font-bold text-foreground">Payment Declined</h3>
+                <h3 className="text-lg font-bold text-foreground">{t('paymentForm.paymentDeclined')}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   {paymentError}
                 </p>
@@ -740,10 +743,10 @@ export function PaymentForm({
                   }}
                   className="w-full py-3 px-6 rounded-xl bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 >
-                  Try Again
+                  {t('paymentForm.tryAgain')}
                 </button>
                 <p className="text-xs text-muted-foreground">
-                  Please verify your card balance or try a different payment method.
+                  {t('paymentForm.verifyCardBalance')}
                 </p>
               </div>
             </div>
@@ -758,18 +761,18 @@ export function PaymentForm({
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
               <div className="flex items-center gap-2">
                 <Shield className="h-4 w-4 text-foreground" />
-                <span className="text-sm font-medium text-foreground">3D Secure Verification</span>
+                <span className="text-sm font-medium text-foreground">{t('paymentForm.threeDSVerification')}</span>
               </div>
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-                  <span className="text-xs text-muted-foreground">Verifying...</span>
+                  <span className="text-xs text-muted-foreground">{t('paymentForm.verifying')}</span>
                 </div>
                 <button
                   onClick={() => close3DS('User Cancel')}
                   className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
                 >
-                  Cancel
+                  {t('paymentForm.cancel')}
                 </button>
               </div>
             </div>
@@ -788,7 +791,7 @@ export function PaymentForm({
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
-              <h2 className="text-xl font-bold text-foreground">Terms of Use</h2>
+              <h2 className="text-xl font-bold text-foreground">{t('paymentForm.termsOfUse')}</h2>
               <button
                 onClick={() => setShowTerms(false)}
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -802,7 +805,7 @@ export function PaymentForm({
             
             <div className="p-6 overflow-y-auto space-y-4 text-sm text-foreground overflow-x-hidden leading-relaxed">
               <div className="whitespace-pre-wrap">
-                {TERMS_TEXT}
+                {lang === 'he' ? TERMS_TEXT_HE : TERMS_TEXT_EN}
               </div>
             </div>
             
@@ -811,7 +814,7 @@ export function PaymentForm({
                 onClick={() => setShowTerms(false)}
                 className="py-2 px-6 rounded-lg bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
-                Close
+                {t('paymentForm.close')}
               </button>
             </div>
           </div>
@@ -821,77 +824,7 @@ export function PaymentForm({
   )
 }
 
-const TERMS_TEXT = `Terms of Use
 
-1. General
-1.1 These Terms constitute a legally binding agreement between the users of the website and the website management (hereinafter: "the Site").
-1.2 Any access to the Site, browsing, registration, making a purchase, or any other use of the Site constitutes full acceptance of these Terms.
-1.3 The Site management may update these Terms from time to time at its sole discretion without prior notice.
-1.4 In case of any conflict between these Terms and any other publication, these Terms shall prevail.
-
-2. Use and Access
-2.1 The Site is accessible only to users who are 18 years or older. Minors under 18 may make purchases only with parental or guardian consent.
-2.2 The Site is intended for personal use only; commercial use is prohibited without prior written approval from the Site management.
-2.3 Any illegal activity, copyright infringement, or other harm to the Site management, other users, or third parties is strictly prohibited.
-2.4 The Site management reserves the right to block access to users who violate these Terms without prior notice.
-
-3. Content and Use of the Digital Store
-3.1 The Site contains original content, product information, publications, and updates.
-3.2 No content from the Site may be copied, reproduced, distributed, published, or used in any way without prior written permission from the Site management.
-
-4. Ordering Products and Services
-4.1 All purchases are subject to stock availability. In case of stock shortage, the customer will be notified and may choose to wait or cancel the order.
-4.2 Orders are confirmed only after full payment via credit card, Apple Pay, Google Pay, or Bit, subject to approval by the payment processor.
-4.3 Prices include VAT unless otherwise specified.
-
-5. Shipping & Pickup
-5.1 Shipping in Israel / In-Store Pickup Customers in Israel may choose home delivery or in-store pickup. Home delivery: Orders are shipped within 1–2 business days after confirmation. Customers will receive an email notification once the order is shipped. In-store pickup: Orders will be ready within 1–2 business days after confirmation. Customers will receive an email notification when the order is ready for collection. Identification may be required
-5.2 Worldwide Shipping: Products are shipped worldwide at a flat rate of 165 ILS, approximately $47–$50 USD. Price may vary depending on exchange rate. Orders are processed within 1–2 business days after payment confirmation. Customers will receive an email notification confirming that the order has been processed. Delivery typically takes 7–15 business days depending on destination. Additional local fees (customs, taxes, or import duties) may apply depending on the destination country's policies. Returns & Exchanges: Customers who wish to return an item must fill out the return form within 14 days of receiving the package. Items that have been used or worn cannot be returned or exchanged. Closing items may be exchanged only if they still carry their original label. Shipping costs for returns are the customer's responsibility unless the item is defective or incorrect. Once the returned item is received and inspected in its original condition, a full refund will be issued via the original payment method. Customers will receive an email notification once the refund has been processed. Refunds are usually completed within up to 3 business days after receiving and verifying the returned item.
-
-6. General Shipping Provisions
-6.1 Delivery is carried out by an external shipping company. If service is unavailable to a specific location, an alternative suitable location may be arranged.
-6.2 The Site management is not responsible for delays caused by external factors such as the shipping company, security emergencies, strikes, or force majeure.
-6.3 Customers must ensure that all shipping details provided are accurate.
-
-7. Cancellation, Returns & Refunds
-7.1 Customers may cancel an order before it has been shipped, For returns, customers may return a product within 14 days of receipt, provided it is unused, undamaged, and retains its original label.
-7.2 Shipping costs for returns are the customer's responsibility unless the item is defective or incorrect.
-7.3 Refunds are processed within up to 3 business days after the returned item is received and inspected. Customers will be notified via email once the refund is completed. Refunds are issued via the original payment method.
-7.4 Cancellation and Return Policy Defective Products - If a customer receives a defective product, the customer is entitled to contact the Company's customer service immediately upon receipt of the shipment and provide a clear photo of the defect via email or WhatsApp. Upon receiving the inquiry and the photo, the Company will review the case and handle it accordingly, including replacing the product, issuing a credit, or any other solution at its discretion.
-
-8. Links, Advertisements, and External Referrals
-8.1 The Site may contain links to external websites. The Site management is not responsible for the content or conduct of these websites.
-8.2 Any transaction with a third party through a link on the Site is the customer's sole responsibility.
-
-9. Ownership and Intellectual Property Rights
-9.1 All rights to content, images, designs, logos, texts, and any other elements on the Site are the exclusive property of the Site owner and are protected under intellectual property laws.
-9.2 No content from the Site may be copied, reproduced, distributed, published, sold, or used in any way without prior written permission from the Site management.
-
-10. Use of Site Content
-10.1 Users may not upload content that is offensive, illegal, or may infringe third-party rights.
-10.2 The Site management may remove any content deemed inappropriate or in violation of these Terms.
-
-11. Disclaimer and Indemnification
-11.1 The Site management is not liable for any direct or indirect damages resulting from use of the Site, technical malfunctions, or improper use.
-11.2 The Site provides information "As-Is" and does not guarantee specific results, recommendations, or professional advice.
-11.3 Users agree to indemnify the Site management for any claims, lawsuits, or damages arising from their violation of these Terms.
-
-12. Jurisdiction
-12.1 These Terms of Use and the Site's Terms and Conditions shall be governed solely by the laws of the State of Israel.
-12.2 Any dispute arising between the parties shall be subject to the exclusive jurisdiction of the competent courts located in the district where the Site owner is registered.
-
-13. Amendments
-13.1 The Site management may update the Terms of Use from time to time at its sole discretion.
-13.2 Continued use of the Site after updates constitutes acceptance of the new Terms.
-
-14. Privacy Policy
-14.1 The Website's Privacy Policy constitutes an integral part of these Terms and Conditions, and any use of the Website is subject to the provisions detailed therein.
-
-15. Contact
-15.1 For any questions or clarifications, please contact us:
-Tel: +972-55-994-6060
-Rishon Lezion ,Israel
-Email: Brand@rotmina.com`
 
 function CardBrand({ type }: { type: string }) {
   const brands: Record<string, { bg: string; text: string, src?: string }> = {

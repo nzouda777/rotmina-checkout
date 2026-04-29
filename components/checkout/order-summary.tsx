@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { CartData } from '@/lib/types'
+import { useLanguage } from '@/lib/language-context'
 
 interface OrderSummaryProps {
   cartData: CartData
@@ -12,6 +13,7 @@ interface OrderSummaryProps {
 
 export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: OrderSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true)
+  const { t } = useLanguage()
 
   const finalTotal = Math.max(cartData.total - giftCardAmount, 0)
 
@@ -32,7 +34,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
         <div className="flex items-center gap-2">
           <ShoppingCart className="h-5 w-5 text-foreground" />
           <span className="text-sm font-medium text-foreground">
-            {isExpanded ? 'Hide' : 'Show'} order summary
+            {isExpanded ? t('orderSummary.hideOrderSummary') : t('orderSummary.showOrderSummary')}
           </span>
           {isExpanded ? (
             <ChevronUp className="h-4 w-4 text-muted-foreground" />
@@ -48,7 +50,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
       {/* Order Items */}
       <div className={`${isExpanded ? 'block' : 'hidden lg:block'} p-4 lg:p-6`}>
         <h2 className="hidden lg:block text-lg font-semibold text-foreground mb-4">
-          Order summary
+          {t('orderSummary.title')}
         </h2>
 
         <div className="space-y-4">
@@ -97,18 +99,18 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
         {/* Totals */}
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Subtotal</span>
+            <span className="text-muted-foreground">{t('orderSummary.subtotal')}</span>
             <span className="text-foreground">{formatPrice(cartData.subtotal)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Shipping</span>
+            <span className="text-muted-foreground">{t('orderSummary.shipping')}</span>
             <span className="text-foreground">
-              {cartData.shipping === 0 ? 'Free' : formatPrice(cartData.shipping)}
+              {cartData.shipping === 0 ? t('orderSummary.free') : formatPrice(cartData.shipping)}
             </span>
           </div>
           {cartData.tax > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Tax</span>
+              <span className="text-muted-foreground">{t('orderSummary.tax')}</span>
               <span className="text-foreground">{formatPrice(cartData.tax)}</span>
             </div>
           )}
@@ -118,7 +120,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
             <div className="flex justify-between text-sm">
               <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
                 <GiftIcon className="h-3.5 w-3.5" />
-                Gift card{giftCardCode ? ` ${giftCardCode}` : ''}
+                {t('orderSummary.giftCard')}{giftCardCode ? ` ${giftCardCode}` : ''}
               </span>
               <span className="text-green-600 dark:text-green-400 font-medium">
                 −{formatPrice(giftCardAmount)}
@@ -130,10 +132,10 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
         {/* Total */}
         <div className="border-t border-border mt-4 pt-4">
           <div className="flex justify-between items-center">
-            <span className="text-base font-medium text-foreground">Total</span>
+            <span className="text-base font-medium text-foreground">{t('orderSummary.total')}</span>
             <div className="text-right">
               {giftCardAmount > 0 && (
-                <span className="text-sm text-muted-foreground line-through mr-2">
+                <span className="text-sm text-muted-foreground line-through ltr:mr-2 rtl:ml-2">
                   {formatPrice(cartData.total)}
                 </span>
               )}

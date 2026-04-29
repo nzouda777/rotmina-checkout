@@ -123,3 +123,21 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ─── RTL Support ─────────────────────────────────── */
+[dir="rtl"] input,
+[dir="rtl"] select,
+[dir="rtl"] textarea {
+  text-align: right;
+}
+
+[dir="rtl"] input[type="tel"],
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="text"]::placeholder {
+  text-align: right;
+}
+
+/* Flip the ArrowLeft icon in RTL mode */
+[dir="rtl"] .rtl\:rotate-180 {
+  transform: rotate(180deg);
+}

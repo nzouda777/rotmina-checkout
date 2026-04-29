@@ -3,9 +3,11 @@
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
 import { CheckCircle, Gift, Copy, Check } from 'lucide-react'
+import { useLanguage } from '@/lib/language-context'
 
 function SuccessContent() {
   const searchParams = useSearchParams()
+  const { t } = useLanguage()
   const confirmation = searchParams.get('confirmation')
   const giftCardsParam = searchParams.get('gift_cards')
   const usedGcCode = searchParams.get('used_gc')
@@ -22,16 +24,16 @@ function SuccessContent() {
         </div>
         
         <h1 className="text-3xl font-bold text-foreground mb-2">
-          Payment Successful
+          {t('success.paymentSuccessful')}
         </h1>
         
         <p className="text-muted-foreground mb-6">
-          Thank you for your purchase. Your order has been confirmed.
+          {t('success.thankYou')}
         </p>
 
         {confirmation && (
           <div className="bg-muted/50 rounded-lg p-4 mb-6">
-            <p className="text-sm text-muted-foreground mb-1">Confirmation Code</p>
+            <p className="text-sm text-muted-foreground mb-1">{t('success.confirmationCode')}</p>
             <p className="text-lg font-mono font-semibold text-foreground">{confirmation}</p>
           </div>
         )}
@@ -41,13 +43,13 @@ function SuccessContent() {
           <div className="bg-green-50/50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-lg p-4 mb-6 text-left">
             <div className="flex items-center gap-2 mb-2">
               <Gift className="h-4 w-4 text-green-600 dark:text-green-400" />
-              <p className="text-sm font-medium text-foreground">Gift Card Used</p>
+              <p className="text-sm font-medium text-foreground">{t('success.giftCardUsed')}</p>
             </div>
             <p className="text-sm text-muted-foreground">
-              You paid a portion of this order using gift card <span className="font-mono text-foreground">{usedGcCode}</span>.
+              {t('success.paidWithGiftCard')} <span className="font-mono text-foreground">{usedGcCode}</span>.
             </p>
             <p className="text-sm font-medium text-green-600 dark:text-green-400 mt-2">
-              Remaining Balance: {
+              {t('success.remainingBalance')}: {
                 new Intl.NumberFormat('he-IL', {
                   style: 'currency',
                   currency: 'ILS', // fallback to ILS if unknown
@@ -63,7 +65,7 @@ function SuccessContent() {
             <div className="flex items-center justify-center gap-2 mb-4">
               <Gift className="h-5 w-5 text-foreground" />
               <h2 className="text-lg font-semibold text-foreground">
-                {giftCardCodes.length === 1 ? 'Your Gift Card' : 'Your Gift Cards'}
+                {giftCardCodes.length === 1 ? t('success.yourGiftCard') : t('success.yourGiftCards')}
               </h2>
             </div>
 
@@ -75,15 +77,14 @@ function SuccessContent() {
 
             <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
               <p className="text-sm text-amber-700 dark:text-amber-300">
-                ⚠️ Please save {giftCardCodes.length === 1 ? 'this code' : 'these codes'} carefully. 
-                You can use {giftCardCodes.length === 1 ? 'it' : 'them'} at checkout to pay for future orders.
+                ⚠️ {giftCardCodes.length === 1 ? t('success.saveCode') : t('success.saveCodes')}
               </p>
             </div>
           </div>
         )}
 
         <p className="text-sm text-muted-foreground">
-          A confirmation email has been sent to your email address.
+          {t('success.confirmationEmailSent')}
         </p>
       </div>
     </div>
@@ -92,6 +93,7 @@ function SuccessContent() {
 
 function GiftCardCodeDisplay({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
+  const { t } = useLanguage()
 
   const handleCopy = async () => {
     try {
@@ -119,7 +121,7 @@ function GiftCardCodeDisplay({ code }: { code: string }) {
             <Gift className="h-5 w-5 text-green-600 dark:text-green-400" />
           </div>
           <div className="text-left">
-            <p className="text-xs text-muted-foreground mb-0.5">Gift Card Code</p>
+            <p className="text-xs text-muted-foreground mb-0.5">{t('success.giftCardCode')}</p>
             <p className="text-lg font-mono font-bold text-foreground tracking-wider">
               {code}
             </p>
@@ -133,12 +135,12 @@ function GiftCardCodeDisplay({ code }: { code: string }) {
           {copied ? (
             <>
               <Check className="h-4 w-4 text-green-600" />
-              <span className="text-green-600">Copied!</span>
+              <span className="text-green-600">{t('success.copied')}</span>
             </>
           ) : (
             <>
               <Copy className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Copy</span>
+              <span className="text-muted-foreground">{t('success.copy')}</span>
             </>
           )}
         </button>

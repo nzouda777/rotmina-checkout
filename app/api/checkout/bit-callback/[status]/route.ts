@@ -7,16 +7,18 @@ import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { status: string } }
+  { params }: { params: Promise<{ status: string }> }
 ) {
-  return handleBitCallback(request, params.status)
+  const { status } = await params
+  return handleBitCallback(request, status)
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { status: string } }
+  { params }: { params: Promise<{ status: string }> }
 ) {
-  return handleBitCallback(request, params.status)
+  const { status } = await params
+  return handleBitCallback(request, status)
 }
 
 async function handleBitCallback(request: NextRequest, status: string) {
