@@ -5,7 +5,9 @@ const ALLOWED_ORIGINS = [
   'https://rotmina-israel.myshopify.com',
   'https://step-devserver.com',
   'https://rotmina.co.il',
-  'https://www.rotmina.co.il'
+  'https://www.rotmina.co.il',
+  'https://rotmina.co',
+  'https://www.rotmina.co'
 ]
 
 function getCorsHeaders(request: Request | NextRequest) {
