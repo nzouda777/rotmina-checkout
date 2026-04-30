@@ -451,6 +451,7 @@ export async function POST(request: NextRequest) {
       cvv: String(cvv),
       card_number: String(cardNumber!.replace(/\s/g, '')),
       payment_plan: payment_plan,
+      p_index: sessionId,
       ...tranzilaInstallments,
       activate_3ds: "Y",
       "3ds_settings": {

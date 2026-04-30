@@ -36,18 +36,20 @@ async function handleBitCallback(request: NextRequest, status: string) {
   const { data: session, error } = await supabase
     .from('payment_sessions')
     .select('*')
-    .eq('id', sessionId)
+    .or(`id.eq.${sessionId},tranzila_transaction_id.eq.${sessionId}`)
     .single()
 
   if (error || !session) {
     return redirectToError('Session not found')
   }
 
+  const actualSessionId = session.id
+
   if (status !== 'success') {
     await supabase
       .from('payment_sessions')
       .update({ status: 'failed', error_message: 'Bit payment was not completed' })
-      .eq('id', sessionId)
+      .eq('id', actualSessionId)
     return redirectToError('Le paiement Bit a échoué ou a été annulé.', sessionId)
   }
 
@@ -139,7 +141,7 @@ async function handleBitCallback(request: NextRequest, status: string) {
           shopifyOrderUrl: shopifyOrderUrl, // Save URL for frontend polling
         }
       })
-      .eq('id', sessionId)
+      .eq('id', actualSessionId)
 
     return redirectToShopify(session, shopifyOrderId)
 

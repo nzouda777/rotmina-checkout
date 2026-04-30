@@ -58,13 +58,15 @@ async function handleCallback(request: NextRequest) {
     const { data: session, error } = await supabase
       .from('payment_sessions')
       .select('*')
-      .eq('id', sessionId)
+      .or(`id.eq.${sessionId},tranzila_transaction_id.eq.${sessionId}`)
       .single()
 
     if (error || !session) {
       console.error('[3DS-CALLBACK] Session not found:', sessionId)
       return redirectToError('Session introuvable')
     }
+
+    const actualSessionId = session.id
 
     // Éviter le double traitement
     if (session.status === 'paid') {
@@ -187,7 +189,7 @@ async function handleCallback(request: NextRequest) {
           },
           error_message: null,
         })
-        .eq('id', sessionId)
+        .eq('id', actualSessionId)
 
       // Redirect to Shopify native order status page
       return redirectToShopify(session, shopifyOrderId)
@@ -202,7 +204,7 @@ async function handleCallback(request: NextRequest) {
           raw_response: completeResponse as any,
           error_message: errorMsg,
         })
-        .eq('id', sessionId)
+        .eq('id', actualSessionId)
 
       console.log('[3DS-CALLBACK] Payment failed after 3DS Complete:', errorMsg)
       return redirectToError(errorMsg, sessionId, undefined, errorMsg)

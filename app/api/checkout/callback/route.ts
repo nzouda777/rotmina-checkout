@@ -26,20 +26,27 @@ export async function POST(request: NextRequest) {
 
     const isSuccess = responseCode === '000'
 
+    // Try to find the session ID from merchant_data first, fallback to index
+    const sessionId = params.merchant_data || index
+
     // Get current session data first
+    // We try to match by 'id' (UUID) or 'tranzila_transaction_id' (if it was stored during 3DS init)
     const { data: session, error: fetchError } = await supabase
       .from('payment_sessions')
       .select('*')
-      .eq('id', index)
+      .or(`id.eq.${sessionId},tranzila_transaction_id.eq.${sessionId}`)
       .single()
 
     if (fetchError || !session) {
-      console.error('Error fetching session:', fetchError)
+      console.error('Error fetching session:', fetchError, 'sessionId used:', sessionId)
       return NextResponse.json(
         { error: 'Session not found' },
         { status: 404 }
       )
     }
+
+    // Use the actual session ID from the database for future updates
+    const actualSessionId = session.id
 
     let shopifyOrderId = session.order_id
 
@@ -69,7 +76,7 @@ export async function POST(request: NextRequest) {
         tranzila_transaction_id: ConfirmationCode || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', index)
+      .eq('id', actualSessionId)
 
     if (updateError) {
       console.error('Error updating session:', updateError)
@@ -82,8 +89,8 @@ export async function POST(request: NextRequest) {
     // Redirect to appropriate page
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     const redirectUrl = isSuccess 
-      ? `${baseUrl}/checkout/success?session=${index}&confirmation=${ConfirmationCode}`
-      : `${baseUrl}/checkout/error?session=${index}`
+      ? `${baseUrl}/checkout/success?session=${actualSessionId}&confirmation=${ConfirmationCode}`
+      : `${baseUrl}/checkout/error?session=${actualSessionId}`
 
     return NextResponse.redirect(redirectUrl)
   } catch (error) {
