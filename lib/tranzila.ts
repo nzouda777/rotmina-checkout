@@ -291,6 +291,7 @@ export class TranzilaClient {
         '065': 'Exceeds withdrawal frequency limit',
         '091': 'Issuer unavailable',
         '096': 'System error',
+        '900': 'Transaction cancelled or declined by processor',
       }
       const code = txnResult.processor_response_code
       return processorMessages[code] || `Transaction declined (code: ${code})`
