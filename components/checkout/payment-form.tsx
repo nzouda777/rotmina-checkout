@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, CreditCard, Lock, Shield, Info } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
-import { redirect } from 'next/dist/server/api-utils'
 import Image from 'next/image'
 import { useLanguage } from '@/lib/language-context'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
@@ -88,9 +87,11 @@ export function PaymentForm({
   const maxInstallments = getMaxInstallments(chargeAmount, currency)
 
   // Reset installments if max changed and current selection is invalid
-  if (installments > maxInstallments) {
-    setInstallments(1)
-  }
+  useEffect(() => {
+    if (installments > maxInstallments) {
+      setInstallments(1)
+    }
+  }, [installments, maxInstallments])
 
   const formatCardNumber = (value: string) => {
     const digits = value.replace(/\D/g, '')
@@ -296,9 +297,10 @@ export function PaymentForm({
         // Fallback: poll session status only (NOT 3ds-complete) 
         // We add a delay before starting the first poll to allow 3DS challenge to initialize
         let statusPollInterval: NodeJS.Timeout | null = null;
+        const isMountedRef = { current: true };
         
         setTimeout(() => {
-          if (!setShow3DS) return; // Component might be unmounted
+          if (!isMountedRef.current) return; // Component might be unmounted
 
           statusPollInterval = setInterval(async () => {
             console.log(`[POLL] Fallback checking ${paymentMethod.toUpperCase()} completion...`)
@@ -523,11 +525,11 @@ export function PaymentForm({
                       onChange={handleCardNumberChange}
                       placeholder={t('paymentForm.cardNumber')}
                       maxLength={19}
-                      className={`w-full px-4 py-3 pr-18 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
+                      className={`w-full px-4 py-3 pe-16 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                         errors.cardNumber ? 'border-destructive' : 'border-input'
                       }`}
                     />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="absolute end-3 top-1/2 -translate-y-1/2">
                       <CardBrand type={getCardType(cardNumber)} />
                     </div>
                   </div>
@@ -584,11 +586,11 @@ export function PaymentForm({
                         onChange={handleCvvChange}
                         placeholder={t('paymentForm.cvvPlaceholder')}
                         maxLength={4}
-                        className={`w-full px-4 py-3 pr-10 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
+                        className={`w-full px-4 py-3 pe-10 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                           errors.cvv ? 'border-destructive' : 'border-input'
                         }`}
                       />
-                      <Lock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Lock className="absolute end-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     </div>
                     {errors.cvv && (
                       <p className="mt-1 text-sm text-destructive">{errors.cvv}</p>
@@ -689,7 +691,7 @@ export function PaymentForm({
             onClick={onBack}
             className="flex items-center gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
             {t('paymentForm.returnToInfo')}
           </button>
           <button

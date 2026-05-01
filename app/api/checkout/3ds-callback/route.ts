@@ -113,7 +113,7 @@ async function handleCallback(request: NextRequest) {
           const updatedCard = await debitGiftCard({
             code: storedGiftCard.code,
             amount: storedGiftCard.appliedAmount,
-            sessionId,
+            sessionId: actualSessionId,
           })
           remainingBalance = updatedCard.balance
           console.log(`[3DS-CALLBACK] Gift card debited successfully - remaining: ${remainingBalance}`)

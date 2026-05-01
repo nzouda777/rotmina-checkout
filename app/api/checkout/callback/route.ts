@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       .from('payment_sessions')
       .update({
         status: isSuccess ? 'paid' : 'failed',
-        tranzila_response: params,
+        raw_response: params,
         order_id: shopifyOrderId,
         tranzila_transaction_id: ConfirmationCode || null,
         updated_at: new Date().toISOString(),
