@@ -76,14 +76,14 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-4">{t('customerForm.shippingAddress')}</h2>
         <div className="space-y-3">
-          <div>
+          <div className="relative">
             <label htmlFor="country" className="sr-only">{t('customerForm.countryRegion')}</label>
             <select
               id="country"
               name="country"
               value={formData.country}
               onChange={handleChange}
-              className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+              className="w-full px-4 py-3 pe-12 appearance-none rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer"
             >
               <option value="Israel">{t('customerForm.israel')}</option>
               <option value="United States">{t('customerForm.unitedStates')}</option>
@@ -91,6 +91,11 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               <option value="France">{t('customerForm.france')}</option>
               <option value="Germany">{t('customerForm.germany')}</option>
             </select>
+            <div className="pointer-events-none absolute inset-y-0 end-4 flex items-center text-muted-foreground">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

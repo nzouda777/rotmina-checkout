@@ -741,13 +741,13 @@ export function PaymentForm({
           )}
         </div>
         {/* Actions */}
-        <div className="flex flex-col-reverse sm:flex-row gap-4 items-center">
+        <div className="flex flex-col-reverse sm:flex-row rtl:sm:flex-row-reverse gap-4 items-center mt-6">
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
+            className="flex items-center rtl:flex-row-reverse gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
           >
-            <ArrowLeft className="h-4 w-4 rtl:rotate-180" />
+            <ArrowLeft className="h-4 w-4" />
             {t('paymentForm.returnToInfo')}
           </button>
           <button

@@ -180,13 +180,13 @@ export default function CheckoutPage() {
           {/* Left Column - Forms */}
           <div className="flex-1 order-2 lg:order-1">
             {/* Breadcrumb */}
-            <nav className="flex items-center gap-2 text-sm mb-8">
+            <nav className="flex items-center rtl:flex-row-reverse rtl:justify-end gap-2 text-sm mb-8">
               <span className="text-muted-foreground">{t('checkout.cart')}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground rtl:rotate-180" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
               <span className={step === 'information' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
                 {t('checkout.information')}
               </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground rtl:rotate-180" />
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
               <span className={step === 'payment' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
                 {t('checkout.payment')}
               </span>
