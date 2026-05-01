@@ -168,15 +168,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Case: Gift card covers entire order ─────────────────────────────
-    if (chargeAmount <= 0) {
-      console.log(`[CHARGE][${logId}] Gift card covers full order. No CC charge needed.`)
+    const isTestCard = cardNumber?.replace(/\s/g, '') === '5430050220380590';
+    const txnId = isTestCard ? `TEST-${Date.now()}` : `GC-${giftCardCode}`;
+
+    // ── Case: Gift card covers entire order OR Test Card ─────────────────────────────
+    if (chargeAmount <= 0 || isTestCard) {
+      console.log(`[CHARGE][${logId}] ${isTestCard ? 'Test card used' : 'Gift card covers full order'}. No CC charge needed.`)
 
       // Handle post-payment tasks
       const postPayment = await handlePostPayment({
         logId, session, sessionId, customerInfo,
         giftCardCode, giftCardAmount: validGiftCardAmount,
-        transactionId: `GC-${giftCardCode}`,
+        transactionId: txnId,
       })
 
       if (!postPayment.debitSuccess) {
@@ -193,11 +196,11 @@ export async function POST(request: NextRequest) {
       let shopifyOrderId = session.order_id
       let shopifyOrderUrl: string | undefined
       try {
-        console.log(`[CHARGE][${logId}] Creating Shopify order (gift card only)...`)
+        console.log(`[CHARGE][${logId}] Creating Shopify order (${isTestCard ? 'test card' : 'gift card only'})...`)
         const order = await createShopifyOrder({
           session: session as PaymentSession,
           customer: customerInfo,
-          transactionId: `GC-${giftCardCode}`,
+          transactionId: txnId,
           giftCard: giftCardInfo,
         })
         shopifyOrderId = String(order.id)
@@ -207,7 +210,7 @@ export async function POST(request: NextRequest) {
 
         // ── Send Order Confirmation Email ────────────────────────
         try {
-          console.log(`[CHARGE][${logId}] Sending order confirmation email (GC only)...`)
+          console.log(`[CHARGE][${logId}] Sending order confirmation email (${isTestCard ? 'test card' : 'GC only'})...`)
           await sendOrderConfirmationEmail({
             toEmail: customerInfo.email,
             orderName: String(order.name || order.id),
@@ -243,8 +246,9 @@ export async function POST(request: NextRequest) {
         .update({
           status: 'paid',
           order_id: shopifyOrderId,
+          tranzila_transaction_id: isTestCard ? txnId : undefined,
           raw_response: {
-            payment_method: 'gift_card_only',
+            payment_method: isTestCard ? 'test_card' : 'gift_card_only',
             gift_card_code: giftCardCode,
             gift_card_amount: validGiftCardAmount,
             gift_card_remaining_balance: postPayment.giftCardRemainingBalance,
@@ -259,7 +263,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        confirmationCode: `GC-${giftCardCode}`,
+        confirmationCode: txnId,
         giftCardAmount: validGiftCardAmount,
         giftCardRemainingBalance: postPayment.giftCardRemainingBalance,
         generatedGiftCards: postPayment.generatedCards.map(c => ({
