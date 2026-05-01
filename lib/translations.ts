@@ -360,7 +360,7 @@ export const translations = {
     },
     processing: {
       en: 'Processing...',
-      he: '...מעבד',
+      he:   'מעבד...',
     },
     payWithBit: {
       en: 'Pay with Bit',
@@ -416,6 +416,10 @@ export const translations = {
     verifyCardBalance: {
       en: 'Please verify your card balance or try a different payment method.',
       he: 'נא לבדוק את יתרת הכרטיס או לנסות אמצעי תשלום אחר.',
+    },
+    returnToStore: {
+      en: 'Return to store',
+      he: 'חזרה לחנות',
     },
     // 3DS
     threeDSVerification: {

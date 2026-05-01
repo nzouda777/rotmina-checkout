@@ -12,6 +12,7 @@ interface PaymentFormProps {
   customerInfo: CustomerInfo
   total: number
   currency: string
+  shopDomain?: string
   onBack: () => void
   onSuccess: (
     confirmationCode: string,
@@ -52,6 +53,7 @@ export function PaymentForm({
   customerInfo,
   total,
   currency,
+  shopDomain,
   onBack,
   onSuccess,
   onError,
@@ -747,6 +749,12 @@ export function PaymentForm({
                 >
                   {t('paymentForm.tryAgain')}
                 </button>
+                <a
+                  href={`https://${shopDomain || 'rotmina.co'}`}
+                  className="block w-full py-3 px-6 rounded-xl border border-border text-foreground font-semibold text-sm text-center hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  {t('paymentForm.returnToStore')}
+                </a>
                 <p className="text-xs text-muted-foreground">
                   {t('paymentForm.verifyCardBalance')}
                 </p>

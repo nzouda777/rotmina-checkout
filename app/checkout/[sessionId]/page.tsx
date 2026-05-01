@@ -225,6 +225,7 @@ export default function CheckoutPage() {
                   customerInfo={customerInfo}
                   total={session.cart.total}
                   currency={session.cart.currency}
+                  shopDomain={session.shop}
                   onBack={() => setStep('information')}
                   onSuccess={handlePaymentSuccess}
                   onError={handlePaymentError}
