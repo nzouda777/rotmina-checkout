@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, CreditCard, Lock, Shield, Info } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
+import { createClient as createSupabaseClient } from '@/lib/supabase/client'
+import { RealtimeChannel } from '@supabase/supabase-js'
 import Image from 'next/image'
 import { useLanguage } from '@/lib/language-context'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
@@ -76,12 +78,26 @@ export function PaymentForm({
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
   const { t, lang } = useLanguage()
+  const channelRef = useRef<RealtimeChannel | null>(null)
 
   const close3DS = (source: string) => {
     console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
+    if (channelRef.current) {
+      channelRef.current.unsubscribe()
+      channelRef.current = null
+    }
     setShow3DS(false)
     setIsSubmitting(false)
   }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (channelRef.current) {
+        channelRef.current.unsubscribe()
+      }
+    }
+  }, [])
 
   // The amount charged to the credit card (after gift card deduction)
   const chargeAmount = Math.max(total - giftCardAmount, 0)
@@ -296,6 +312,44 @@ export function PaymentForm({
 
         window.addEventListener('message', messageHandler)
 
+        // ── Realtime Subscription: The fastest way to get updates ──────
+        const supabase = createSupabaseClient()
+        const channel = supabase
+          .channel(`session-${sessionId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'payment_sessions',
+              filter: `id=eq.${sessionId}`,
+            },
+            async (payload) => {
+              const newStatus = payload.new.status
+              console.log(`[REALTIME] Status change detected: ${newStatus}`)
+              
+              if (newStatus === 'paid') {
+                if (statusPollInterval) clearInterval(statusPollInterval)
+                window.removeEventListener('message', messageHandler)
+                
+                close3DS('Realtime Success')
+                onSuccess(
+                  payload.new.tranzila_transaction_id || 'confirmed',
+                  payload.new.raw_response?.shopifyOrderUrl
+                )
+              } else if (newStatus === 'failed') {
+                if (statusPollInterval) clearInterval(statusPollInterval)
+                window.removeEventListener('message', messageHandler)
+                
+                close3DS('Realtime Failure')
+                setPaymentError(payload.new.error_message || t('paymentForm.paymentDeclinedGeneric'))
+              }
+            }
+          )
+          .subscribe()
+        
+        channelRef.current = channel
+
         // Fallback: poll session status only (NOT 3ds-complete) 
         // We add a delay before starting the first poll to allow 3DS challenge to initialize
         let statusPollInterval: NodeJS.Timeout | null = null;
@@ -351,7 +405,7 @@ export function PaymentForm({
               console.error('[3DS] Error verifying completion:', e)
             }
           }, 5000) // Check every 5 seconds
-        }, 30000) // Start polling only after 10 seconds to avoid race conditions with initial load
+        }, 30000) // Start polling only after 30 seconds to avoid race conditions with initial load
 
         return
       }
