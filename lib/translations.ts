@@ -93,7 +93,7 @@ export const translations = {
     },
     postalCode: {
       en: 'Postal code (optional)',
-      he: '(מיקוד (אופציונלי',
+      he: 'מיקוד',
     },
     phone: {
       en: 'Phone',
