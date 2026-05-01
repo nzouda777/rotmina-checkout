@@ -523,7 +523,7 @@ export function PaymentForm({
                       onChange={handleCardNumberChange}
                       placeholder={t('paymentForm.cardNumber')}
                       maxLength={19}
-                      className={`w-full px-4 py-3 pr-12 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
+                      className={`w-full px-4 py-3 pr-18 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                         errors.cardNumber ? 'border-destructive' : 'border-input'
                       }`}
                     />
