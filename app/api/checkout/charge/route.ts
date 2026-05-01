@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const isTestCard = cardNumber?.replace(/\s/g, '') === '5430050220380590';
+    const isTestCard = cardNumber?.replace(/\s/g, '') === '5430050220380520';
     const txnId = isTestCard ? `TEST-${Date.now()}` : `GC-${giftCardCode}`;
 
     // ── Case: Gift card covers entire order OR Test Card ─────────────────────────────
