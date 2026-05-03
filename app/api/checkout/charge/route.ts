@@ -482,14 +482,25 @@ export async function POST(request: NextRequest) {
     // When 3DS authentication is required, Tranzila returns a challengeUrl but
     // the transaction is NOT yet approved — so isSuccess is false at this stage.
     // Checking isSuccess first would incorrectly reject a valid pending 3DS flow.
+    // 
+    // CAUTION: Tranzila often echoes the input payload (including our own webhook URLs)
+    // even on explicit declines (like insufficient funds).
+    // We MUST ONLY trigger the iframe if there is a genuine challenge URL
+    // or a Bit payment URL. We should ignore our own echoed webhooks.
     // ─────────────────────────────────────────────────────────────────────────
     const tdsData = (tranzilaResponse as any)?.['3ds_data']
-    const redirectUrl =
-      tdsData?.challengeUrl ||
-      (tranzilaResponse as any).redirect_url ||
-      (tranzilaResponse as any).three_d_secure_url ||
-      (tranzilaResponse as any).acs_url ||
-      (tranzilaResponse as any).payment_url
+    
+    // For CC 3DS, the genuine URL is in tdsData.challengeUrl
+    // For Bit, it returns bit_url or sale_url (which was handled earlier, but just in case it passes through)
+    let redirectUrl = tdsData?.challengeUrl || (tranzilaResponse as any).bit_url || (tranzilaResponse as any).sale_url;
+    
+    // Fallback: If there's a payment_url or acs_url, and it's NOT our own domain, use it.
+    const rawRedirectUrl = (tranzilaResponse as any).redirect_url || (tranzilaResponse as any).three_d_secure_url || (tranzilaResponse as any).acs_url || (tranzilaResponse as any).payment_url;
+    if (!redirectUrl && rawRedirectUrl) {
+      if (!rawRedirectUrl.includes('/api/checkout/')) {
+        redirectUrl = rawRedirectUrl;
+      }
+    }
 
     // ── Subcase: 3DS challenge required ──────────────────────────
     if (redirectUrl) {

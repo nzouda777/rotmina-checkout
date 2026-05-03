@@ -291,33 +291,72 @@ export function PaymentForm({
         // Give the callback route a moment to finish writing the session
         await new Promise(r => setTimeout(r, 800))
 
+        let sessionData: any = null;
         try {
           const res  = await fetch(`/api/checkout/session?id=${sessionId}`)
-          const data = res.ok ? await res.json() : null
+          sessionData = res.ok ? await res.json() : null
 
-          if (data?.status === 'paid') {
+          if (sessionData?.status === 'paid') {
             close3DS('PostMessage Success')
             onSuccess(
-              data.tranzila_transaction_id || 'confirmed',
-              data.raw_response?.shopifyOrderUrl,
-              data.raw_response?._generated_gift_cards,
-              data.raw_response?._gift_card?.remainingBalance,
+              sessionData.tranzila_transaction_id || 'confirmed',
+              sessionData.raw_response?.shopifyOrderUrl,
+              sessionData.raw_response?._generated_gift_cards,
+              sessionData.raw_response?._gift_card?.remainingBalance,
               giftCardCode,
             )
             return
           }
 
-          if (data?.status === 'failed') {
+          if (sessionData?.status === 'failed') {
             close3DS('PostMessage Failure')
-            setPaymentError(data.error_message || t('paymentForm.paymentDeclinedGeneric'))
+            setPaymentError(sessionData.error_message || t('paymentForm.paymentDeclinedGeneric'))
             return
           }
         } catch {}
 
-        // Session status ambiguous — fall back to eventData
-        if (eventData.success) {
+        // Handle Tranzila's native 3DS postMessage which has {"status":"success", "track_id":"..."}
+        const isTranzilaNativeSuccess = eventData.status === 'success' && eventData.track_id;
+        const isAppSuccess = eventData.success === true;
+        
+        if (isAppSuccess || isTranzilaNativeSuccess) {
+          // If native Tranzila success but our DB still says 'processing', we MUST force a complete!
+          if (isTranzilaNativeSuccess && sessionData?.status !== 'paid') {
+            console.log('[3DS] Tranzila native success received, but session not paid. Forcing 3ds-complete...');
+            try {
+              const completeRes = await fetch('/api/checkout/3ds-complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trackId: eventData.track_id, sessionId })
+              });
+              if (completeRes.ok) {
+                const completeData = await completeRes.json();
+                if (completeData.success) {
+                  close3DS('PostMessage Forced Complete Success');
+                  onSuccess(
+                    completeData.confirmationCode || 'confirmed',
+                    completeData.shopifyOrderUrl,
+                    completeData.generatedGiftCards,
+                    completeData.giftCardRemainingBalance,
+                    giftCardCode
+                  );
+                  return;
+                } else {
+                  close3DS('PostMessage Forced Complete Failure');
+                  setPaymentError(completeData.error || t('paymentForm.paymentDeclinedGeneric'));
+                  return;
+                }
+              }
+            } catch (err) {
+              console.error('[3DS] Failed to force complete:', err);
+            }
+          }
+
           close3DS('PostMessage Ambiguous Success')
-          onSuccess(eventData.confirmationCode || 'confirmed', undefined, undefined, undefined, giftCardCode)
+          onSuccess(
+            eventData.confirmationCode || eventData.track_id || 'confirmed', 
+            undefined, undefined, undefined, giftCardCode
+          )
         } else {
           close3DS('PostMessage Ambiguous Failure')
           setPaymentError(eventData.errorMessage || eventData.error || t('paymentForm.paymentDeclinedGeneric'))
