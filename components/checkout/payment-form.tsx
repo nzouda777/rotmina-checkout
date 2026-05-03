@@ -521,7 +521,7 @@ export function PaymentForm({
             return codes[res.Response] || `Transaction failed (code: ${res.Response})`
           }
 
-          return res.message || res.error || t('paymentForm.paymentDeclinedGeneric')
+          return res.message || res.error || "Payment failed. Please try again or refresh the page."
         }
 
         const isTzSuccess = (res: any) => {
