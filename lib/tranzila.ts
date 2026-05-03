@@ -142,7 +142,9 @@ export class TranzilaClient {
       return null
     }
 
-    const apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}&sum=${amount}`
+    const encodedSupplier = encodeURIComponent(this.config.terminalName)
+    const encodedPassword = encodeURIComponent(password)
+    const apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${encodedSupplier}&TranzilaPW=${encodedPassword}&sum=${amount}`
 
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
