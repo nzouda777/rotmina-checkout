@@ -4,6 +4,21 @@ const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-04'
 
+/**
+ * Parse a variant_id that may be a numeric string, a number, or a Shopify GID
+ * (e.g. "gid://shopify/ProductVariant/47835853152557")
+ */
+function parseVariantId(raw: string | number | undefined): number | undefined {
+  if (raw == null) return undefined
+  const str = String(raw)
+  // Extract numeric part (handles both plain numbers and GID format)
+  const numericStr = str.replace(/\D/g, '')
+  if (!numericStr) return undefined
+  const parsed = Number(numericStr)
+  if (isNaN(parsed) || parsed <= 0) return undefined
+  return parsed
+}
+
 export async function createShopifyOrder({ session, customer, transactionId, giftCard }: ShopifyOrderCreateData) {
   if (!SHOPIFY_STORE_DOMAIN || !SHOPIFY_ACCESS_TOKEN) {
     throw new Error('Missing Shopify configuration in environment variables')
@@ -46,27 +61,32 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     note += ` | Gift Card ${giftCard.code}: -${giftCard.appliedAmount} ${session.cart.currency}`
   }
 
+  // Build line items with safe variant_id parsing
+  const lineItems = session.cart.items.map((item) => {
+    // Map our Record<string, string> properties to Shopify's expected array of {name, value}
+    let lineItemProperties: { name: string; value: string }[] | undefined
+    if (item.properties && Object.keys(item.properties).length > 0) {
+      lineItemProperties = Object.entries(item.properties).map(([name, value]) => ({
+        name,
+        value: String(value),
+      }))
+    }
+
+    const variantId = parseVariantId(item.variant_id)
+
+    return {
+      ...(variantId ? { variant_id: variantId } : {}),
+      quantity: item.quantity,
+      price: String(item.price),
+      title: item.title,
+      ...(lineItemProperties ? { properties: lineItemProperties } : {}),
+    }
+  })
+
   const orderData = {
     order: {
       inventory_behaviour: 'bypass',
-      line_items: session.cart.items.map((item) => {
-        // Map our Record<string, string> properties to Shopify's expected array of {name, value}
-        let lineItemProperties: { name: string; value: string }[] | undefined
-        if (item.properties && Object.keys(item.properties).length > 0) {
-          lineItemProperties = Object.entries(item.properties).map(([name, value]) => ({
-            name,
-            value: String(value),
-          }))
-        }
-
-        return {
-          variant_id: item.variant_id ? parseInt(String(item.variant_id).replace(/\D/g, '')) : undefined,
-          quantity: item.quantity,
-          price: String(item.price),
-          title: item.title,
-          properties: lineItemProperties,
-        }
-      }),
+      line_items: lineItems,
       billing_address: {
         first_name: customer.firstName,
         last_name: customer.lastName,
@@ -74,6 +94,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         city: customer.city,
         zip: customer.postalCode,
         country: customer.country,
+        phone: customer.phone,
       },
       shipping_address: {
         first_name: customer.firstName,
@@ -82,8 +103,10 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         city: customer.city,
         zip: customer.postalCode,
         country: customer.country,
+        phone: customer.phone,
       },
       email: customer.email,
+      phone: customer.phone,
       financial_status: 'paid',
       currency: session.cart.currency,
       transactions: transactions.map(t => ({
@@ -97,6 +120,17 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     },
   }
 
+  console.log('[SHOPIFY] Creating order with payload:', JSON.stringify({
+    endpoint,
+    api_version: SHOPIFY_API_VERSION,
+    line_items_count: lineItems.length,
+    line_items: lineItems.map(li => ({ title: li.title, variant_id: li.variant_id, quantity: li.quantity, price: li.price })),
+    transactions_count: transactions.length,
+    currency: session.cart.currency,
+    total: session.cart.total,
+    customer_email: customer.email,
+  }))
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
@@ -107,11 +141,24 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
   })
 
   if (!response.ok) {
-    const errorData = await response.json()
-    console.error('Shopify Order Creation Error:', errorData)
-    throw new Error(`Failed to create Shopify order: ${JSON.stringify(errorData.errors)}`)
+    const errorText = await response.text()
+    let errorData: any
+    try { errorData = JSON.parse(errorText) } catch { errorData = errorText }
+    console.error('[SHOPIFY] Order Creation Error:', {
+      status: response.status,
+      statusText: response.statusText,
+      errors: errorData?.errors || errorData,
+      payload_summary: {
+        line_items: lineItems.map(li => ({ variant_id: li.variant_id, title: li.title })),
+        total: session.cart.total,
+        currency: session.cart.currency,
+      }
+    })
+    throw new Error(`Failed to create Shopify order (${response.status}): ${JSON.stringify(errorData?.errors || errorData)}`)
   }
 
   const data = await response.json()
+  console.log('[SHOPIFY] Order created successfully:', { id: data.order?.id, name: data.order?.name })
   return data.order
 }
+
