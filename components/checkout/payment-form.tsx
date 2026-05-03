@@ -361,44 +361,28 @@ export function PaymentForm({
           statusPollInterval = setInterval(async () => {
             console.log(`[POLL] Fallback checking ${paymentMethod.toUpperCase()} completion...`)
             try {
-              const pollUrl = paymentMethod === 'bit' 
-                ? `/api/checkout/session?id=${sessionId}`
-                : `/api/checkout/3ds-complete`
-              
-              const pollOptions = paymentMethod === 'bit'
-                ? { method: 'GET' }
-                : { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId, trackId: result.trackId })
-                  }
-
-              const statusRes = await fetch(pollUrl, pollOptions as any)
+              const pollUrl = `/api/checkout/session?id=${sessionId}`
+              const statusRes = await fetch(pollUrl, { method: 'GET' })
               
               if (statusRes.ok) {
                 const data = await statusRes.json()
                 
-                const isFinalized = paymentMethod === 'bit' 
-                  ? data.status === 'paid'
-                  : (data.success || data.alreadyProcessed)
-
-                if (isFinalized) {
+                if (data.status === 'paid') {
                   console.log(`[POLL] ${paymentMethod.toUpperCase()} success detected via poll`)
                   if (statusPollInterval) clearInterval(statusPollInterval as any)
                   window.removeEventListener('message', messageHandler)
                   
-                  const finalSession = paymentMethod === 'bit' ? data : await (await fetch(`/api/checkout/session?id=${sessionId}`)).json()
-                  
                   close3DS('Poll Success')
                   onSuccess(
-                    finalSession.tranzila_transaction_id || 'confirmed',
-                    finalSession.raw_response?.shopifyOrderUrl,
+                    data.tranzila_transaction_id || 'confirmed',
+                    data.raw_response?.shopifyOrderUrl,
                   )
-                } else if (paymentMethod !== 'bit' && !data.pending) {
+                } else if (data.status === 'failed') {
                   if (statusPollInterval) clearInterval(statusPollInterval as any)
                   window.removeEventListener('message', messageHandler)
+                  
                   close3DS('Poll Failure')
-                  setPaymentError(data.error || t('paymentForm.paymentDeclinedGeneric'))
+                  setPaymentError(data.error_message || t('paymentForm.paymentDeclinedGeneric'))
                 }
               }
             } catch (e) {

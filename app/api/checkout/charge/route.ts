@@ -146,6 +146,7 @@ export async function POST(request: NextRequest) {
       .from('payment_sessions')
       .update({ 
         status: 'processing',
+        error_message: null,
         customer: customerInfo as CustomerInfo,
       })
       .eq('id', sessionId)
@@ -484,6 +485,12 @@ export async function POST(request: NextRequest) {
     const tranzilaResponse = await tranzila.charge(chargePayload)
     console.log(`[CHARGE][${logId}] Tranzila raw response fields:`, Object.keys(tranzilaResponse))
     
+    // Check for explicit processor decline BEFORE trusting redirect urls
+    const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
+    const processorCode = (tranzilaResponse as any).transaction_result?.processor_response_code
+    const isActualDecline = processorCode && processorCode !== '000'
+    const errorMsg = TranzilaClient.getErrorMessage(tranzilaResponse)
+    
     // ── Case 1: 3DS redirect required ─────────────────────────────
     const tdsData = (tranzilaResponse as any)?.['3ds_data']
     const redirectUrl =
@@ -494,6 +501,26 @@ export async function POST(request: NextRequest) {
       (tranzilaResponse as any).payment_url
 
     console.log(`[CHARGE][${logId}] Detected redirectUrl:`, redirectUrl ? `YES (${redirectUrl.substring(0, 30)}...)` : 'NO')
+
+    // If it's explicitly declined by the processor, OR it's not a success and has no 3DS challenge URL, fail immediately.
+    // Tranzila sometimes echoes the auth_3ds_redirect url even on declines.
+    if (isActualDecline || (!isSuccess && !tdsData?.challengeUrl && !((tranzilaResponse as any).three_d_secure_url))) {
+      console.log(`[CHARGE][${logId}] Transaction explicitly declined. Skipping 3DS redirect. isSuccess=${isSuccess}, errorMsg=${errorMsg}`);
+      
+      await supabase
+        .from('payment_sessions')
+        .update({
+          status: 'failed',
+          raw_response: tranzilaResponse as any,
+          error_message: errorMsg,
+        })
+        .eq('id', sessionId)
+
+      return NextResponse.json({
+        success: false,
+        error: errorMsg,
+      })
+    }
 
     if (redirectUrl) {
       console.log(`[CHARGE][${logId}] 3DS required → returning redirect logic`) 
@@ -526,7 +553,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Case 2: Direct approval ─────────────────────────────────
-    const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
     console.log(`[CHARGE][${logId}] Direct result — success:`, isSuccess, '| Response:', tranzilaResponse.Response)
 
     let shopifyOrderId = session.order_id
