@@ -420,49 +420,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Case B2: Credit card (Tranzila Iframe SAQ A) ────────────────────────────
+    // ── Case B2: Credit card (Tranzila Hosted Fields SAQ A) ────────────────────────────
     if (paymentMethod === 'card') {
-      console.log(`[CHARGE][${logId}] Generating Tranzila Iframe URL for Credit Card`)
+      console.log(`[CHARGE][${logId}] Generating Tranzila params for Hosted Fields Credit Card`)
       const callbackUrl = `${baseUrl}/api/checkout/callback`
 
       const thtk = await tranzila.getHandshakeToken(chargeAmount)
       const terminal = process.env.TRANZILA_TERMINAL || ''
 
-      const params = new URLSearchParams()
-      if (thtk) params.append('thtk', thtk)
-      params.append('sum', String(chargeAmount))
-      params.append('currency', session.cart.currency.toUpperCase() === 'USD' ? '2' : '1')
-      params.append('cred_type', '1') // 1 is regular credit
-      params.append('tranmode', 'A') // A = Authorization & Capture
-      params.append('lang', 'il') // Hebrew interface
-      
-      // Installments
-      if (installments > 1) {
-        params.set('cred_type', '8') // 8 = Installments
-        params.append('npay', String(installments))
-        const otherAmount = Math.floor((chargeAmount / installments) * 100) / 100
-        const firstAmount = chargeAmount - otherAmount * (installments - 1)
-        params.append('fpay', String(firstAmount.toFixed(2)))
-        params.append('spay', String(otherAmount.toFixed(2)))
-      }
-
-      params.append('contact', `${customerInfo.firstName} ${customerInfo.lastName}`)
-      params.append('email', customerInfo.email)
-      params.append('phone', sanitizePhone(customerInfo.phone))
-      params.append('merchant_data', sessionId)
-      
-      // Webhooks/Redirects for Tranzila
-      params.append('success_url_address', callbackUrl)
-      params.append('fail_url_address', callbackUrl)
-      
-      const iframeUrl = `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`
-
       await supabase
         .from('payment_sessions')
         .update({
-          status: 'pending_3ds', // We reuse pending_3ds to indicate waiting for Iframe
+          status: 'pending_3ds', // We reuse pending_3ds to indicate waiting for Tranzila processing
           raw_response: {
-            iframe_generated: true,
+            hosted_fields_initiated: true,
             _gift_card: giftCardInfo
               ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
               : null,
@@ -472,9 +443,12 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: false,
-        requiresRedirect: true,
-        requires3DS: true, // For backwards compatibility with frontend logic
-        redirectUrl: iframeUrl,
+        requiresHostedFields: true,
+        thtk,
+        terminal,
+        chargeAmount,
+        currency: session.cart.currency.toUpperCase() === 'USD' ? '2' : '1',
+        callbackUrl,
         sessionId,
         paymentMethod: 'card',
       })

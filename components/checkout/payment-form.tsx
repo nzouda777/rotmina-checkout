@@ -6,6 +6,7 @@ import type { CustomerInfo } from '@/lib/types'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { RealtimeChannel } from '@supabase/supabase-js'
 import Image from 'next/image'
+import Script from 'next/script'
 import { useLanguage } from '@/lib/language-context'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
 
@@ -71,18 +72,19 @@ export function PaymentForm({
   const { t, lang } = useLanguage()
 
   // ── Refs that survive re-renders without triggering them ──────────────────
-  const isSubmittingRef  = useRef(false)
-  // FIX 1: Track whether we are actively waiting for 3DS/Bit completion.
-  // This prevents the `finally` block from resetting the submitting state
-  // while the payment modal is still open.
-  const is3DSActiveRef   = useRef(false)
-  // Track if the user explicitly cancelled the modal — prevents late poll/realtime
-  // results from triggering error popups after dismissal.
-  const cancelledRef     = useRef(false)
-  const channelRef       = useRef<RealtimeChannel | null>(null)
-  const pollIntervalRef  = useRef<NodeJS.Timeout | null>(null)
-  const pollTimeoutRef   = useRef<NodeJS.Timeout | null>(null)
+  const isSubmittingRef   = useRef(false)
+  const tzLoaded          = useRef(false)
+  const is3DSActiveRef    = useRef(false)
+  const cancelledRef      = useRef(false)
+  const channelRef        = useRef<RealtimeChannel | null>(null)
+  const pollIntervalRef   = useRef<NodeJS.Timeout | null>(null)
+  const pollTimeoutRef    = useRef<NodeJS.Timeout | null>(null)
   const messageHandlerRef = useRef<((e: MessageEvent) => void) | null>(null)
+
+  // FIX 5: hostedFields as a ref instead of state.
+  // Using useState caused re-renders that could trigger re-initialization
+  // loops and stale closure captures in charge callbacks.
+  const hostedFieldsRef = useRef<any>(null)
 
   // ── Cleanup helpers ───────────────────────────────────────────────────────
 
@@ -103,14 +105,10 @@ export function PaymentForm({
     clearPoll()
   }, [clearPoll])
 
-  // FIX 1 (continued): close3DS resets ALL state including the submitting lock
   const close3DS = useCallback((source: string) => {
     console.log(`[3DS] Closing modal (source: ${source})`)
-    // If user explicitly cancelled, mark as cancelled so late-arriving
-    // poll/realtime events do NOT show error popups.
     if (source === 'User Cancel') {
       cancelledRef.current = true
-      // Reset session status back to 'pending' so the user can retry
       fetch(`/api/checkout/session/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,15 +133,87 @@ export function PaymentForm({
     if (installments > maxInstallments) setInstallments(1)
   }, [installments, maxInstallments])
 
+  // ── FIX 4: Destroy hosted fields when switching away from card ────────────
+  // If the user switches to Bit and back, we need fresh iframes in the DOM.
+  useEffect(() => {
+    if (paymentMethod !== 'card') {
+      // There is no official destroy() on TzlaHostedFields, so we just clear
+      // our reference. The Script remains loaded; initTranzila will recreate.
+      hostedFieldsRef.current = null
+    }
+  }, [paymentMethod])
+
+  // ── Hosted Fields Initialization ──────────────────────────────────────────
+
+  const initTranzila = useCallback(() => {
+    // Guards: SDK loaded, card method selected, not already initialized, charge needed
+    if (!tzLoaded.current) return
+    if (paymentMethod !== 'card') return
+    if (hostedFieldsRef.current) return
+    if (chargeAmount <= 0) return
+    // @ts-ignore
+    if (typeof window.TzlaHostedFields === 'undefined') return
+
+    // FIX 3: Defer one tick so the DOM containers are guaranteed to be in the
+    // document. React may still be committing when onLoad / useEffect fires.
+    setTimeout(() => {
+      // Double-check containers exist before init (guard against rapid method switching)
+      if (
+        !document.querySelector('#credit_card_number') ||
+        !document.querySelector('#cvv') ||
+        !document.querySelector('#expiry')
+      ) {
+        console.warn('[TZ] Hosted field containers not found in DOM, skipping init.')
+        return
+      }
+
+      // Also abort if another method was selected while the timeout was pending
+      if (paymentMethod !== 'card' || hostedFieldsRef.current) return
+
+      try {
+        // @ts-ignore
+        const fields = window.TzlaHostedFields.create({
+          sandbox: process.env.NEXT_PUBLIC_TRANZILA_TEST_MODE === 'true',
+          styles: {
+            input: {
+              // FIX 1: move padding here — the container divs must have NO padding
+              // so that Tranzila's iframe fills the full height x width.
+              'padding': '0 12px',
+              'font-size': '16px',
+              'font-family': 'sans-serif',
+              'color': 'currentColor',
+              'width': '100%',
+              'height': '100%',
+              'background': 'transparent',
+              'border': 'none',
+              'outline': 'none',
+            },
+          },
+          fields: {
+            credit_card_number: { selector: '#credit_card_number' },
+            cvv:                { selector: '#cvv' },
+            expiry:             { selector: '#expiry' },
+          },
+        })
+        hostedFieldsRef.current = fields
+        console.log('[TZ] Hosted fields initialized.')
+      } catch (err) {
+        console.error('[TZ] Hosted fields init error:', err)
+      }
+    }, 0)
+  }, [paymentMethod, chargeAmount])
+
+  useEffect(() => {
+    initTranzila()
+  }, [initTranzila])
+
   // ── Validation ────────────────────────────────────────────────────────────
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
-
     if (!termsAccepted) {
       newErrors.terms = t('paymentForm.acceptTermsError')
     }
-
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -174,7 +244,6 @@ export function PaymentForm({
           } else if (data.status === 'failed') {
             clearPoll()
             clearListeners()
-            // Only show error if user hasn't cancelled
             if (!cancelledRef.current) {
               close3DS('Poll Failure')
               setPaymentError(data.error_message || t('paymentForm.paymentDeclinedGeneric'))
@@ -187,10 +256,9 @@ export function PaymentForm({
     }, delayMs)
   }, [sessionId, giftCardCode, clearPoll, clearListeners, close3DS, onSuccess, t])
 
-  // ── Active 3DS Polling (forces backend to check Tranzila status) ─────────
+  // ── Active 3DS Polling ────────────────────────────────────────────────────
 
   const start3DSActivePolling = useCallback((trackId: string) => {
-    // Start immediately, check every 4 seconds
     pollIntervalRef.current = setInterval(async () => {
       if (cancelledRef.current) { clearPoll(); return }
       console.log('[POLL] Actively checking 3DS completion via /api/checkout/3ds-complete...')
@@ -202,24 +270,13 @@ export function PaymentForm({
         })
         if (!res.ok) return
         const data = await res.json()
-        
+
         if (data.success) {
-          console.log('[POLL] 3DS Active Poll Success!')
-          clearPoll()
-          clearListeners()
+          clearPoll(); clearListeners()
           close3DS('Active Poll Success')
-          onSuccess(
-            data.confirmationCode || 'confirmed',
-            data.shopifyOrderUrl,
-            data.generatedGiftCards,
-            data.giftCardRemainingBalance,
-            giftCardCode
-          )
+          onSuccess(data.confirmationCode || 'confirmed', data.shopifyOrderUrl, data.generatedGiftCards, data.giftCardRemainingBalance, giftCardCode)
         } else if (!data.pending && data.error) {
-          console.log('[POLL] 3DS Active Poll Failure:', data.error)
-          clearPoll()
-          clearListeners()
-          // Only show error if user hasn't cancelled
+          clearPoll(); clearListeners()
           if (!cancelledRef.current) {
             close3DS('Active Poll Failure')
             setPaymentError(data.error || t('paymentForm.paymentDeclinedGeneric'))
@@ -233,7 +290,7 @@ export function PaymentForm({
     }, 4000)
   }, [sessionId, giftCardCode, clearPoll, clearListeners, close3DS, onSuccess, t])
 
-  // ── Realtime subscription (shared between card 3DS and Bit) ──────────────
+  // ── Realtime subscription ─────────────────────────────────────────────────
 
   const startRealtimeSubscription = useCallback(() => {
     const supabase = createSupabaseClient()
@@ -248,8 +305,7 @@ export function PaymentForm({
           console.log(`[REALTIME] Status: ${newStatus}`)
 
           if (newStatus === 'paid') {
-            clearListeners()
-            close3DS('Realtime Success')
+            clearListeners(); close3DS('Realtime Success')
             onSuccess(
               payload.new.tranzila_transaction_id || 'confirmed',
               payload.new.raw_response?.shopifyOrderUrl,
@@ -259,7 +315,6 @@ export function PaymentForm({
             )
           } else if (newStatus === 'failed') {
             clearListeners()
-            // Only show error if user hasn't cancelled the modal
             if (!cancelledRef.current) {
               close3DS('Realtime Failure')
               setPaymentError(payload.new.error_message || t('paymentForm.paymentDeclinedGeneric'))
@@ -272,10 +327,9 @@ export function PaymentForm({
     channelRef.current = channel
   }, [sessionId, giftCardCode, clearListeners, close3DS, onSuccess, t])
 
-  // ── Open the 3DS / Bit modal and set up all listeners ────────────────────
+  // ── Open the 3DS / Bit modal ──────────────────────────────────────────────
 
   const open3DSModal = useCallback((redirectUrl: string, method: 'card' | 'bit', trackId?: string) => {
-    // Reset cancelled flag when opening a new modal
     cancelledRef.current = false
     is3DSActiveRef.current = true
     setThreeDSUrl(redirectUrl)
@@ -283,8 +337,6 @@ export function PaymentForm({
 
     startRealtimeSubscription()
 
-    // PostMessage listener — used for BOTH card 3DS and Bit
-    // 3DS callback and Bit callback both send postMessage with type '3DS_COMPLETE'
     const messageHandler = async (event: MessageEvent) => {
       if (cancelledRef.current) return
 
@@ -299,27 +351,18 @@ export function PaymentForm({
       console.log(`[${method.toUpperCase()}] PostMessage received:`, eventData)
       clearListeners()
 
-      // Give the callback route a moment to finish writing the session
       await new Promise(r => setTimeout(r, 800))
 
-      // Check session status from DB first (most reliable source of truth)
-      let sessionData: any = null;
+      let sessionData: any = null
       try {
         const res  = await fetch(`/api/checkout/session?id=${sessionId}`)
         sessionData = res.ok ? await res.json() : null
 
         if (sessionData?.status === 'paid') {
           close3DS('PostMessage Success')
-          onSuccess(
-            sessionData.tranzila_transaction_id || 'confirmed',
-            sessionData.raw_response?.shopifyOrderUrl,
-            sessionData.raw_response?._generated_gift_cards,
-            sessionData.raw_response?._gift_card?.remainingBalance,
-            giftCardCode,
-          )
+          onSuccess(sessionData.tranzila_transaction_id || 'confirmed', sessionData.raw_response?.shopifyOrderUrl, sessionData.raw_response?._generated_gift_cards, sessionData.raw_response?._gift_card?.remainingBalance, giftCardCode)
           return
         }
-
         if (sessionData?.status === 'failed') {
           close3DS('PostMessage Failure')
           setPaymentError(sessionData.error_message || t('paymentForm.paymentDeclinedGeneric'))
@@ -327,48 +370,36 @@ export function PaymentForm({
         }
       } catch {}
 
-      // Handle Tranzila's native 3DS postMessage which has {"status":"success", "track_id":"..."}
-      const isTranzilaNativeSuccess = eventData.status === 'success' && eventData.track_id;
-      const isAppSuccess = eventData.success === true;
-      
+      const isTranzilaNativeSuccess = eventData.status === 'success' && eventData.track_id
+      const isAppSuccess = eventData.success === true
+
       if (isAppSuccess || isTranzilaNativeSuccess) {
-        // If native Tranzila success but our DB still says 'processing', we MUST force a complete!
         if (isTranzilaNativeSuccess && sessionData?.status !== 'paid') {
-          console.log(`[${method.toUpperCase()}] Native success received, but session not paid. Forcing 3ds-complete...`);
+          console.log(`[${method.toUpperCase()}] Native success received, but session not paid. Forcing 3ds-complete...`)
           try {
             const completeRes = await fetch('/api/checkout/3ds-complete', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ trackId: eventData.track_id, sessionId })
-            });
+            })
             if (completeRes.ok) {
-              const completeData = await completeRes.json();
+              const completeData = await completeRes.json()
               if (completeData.success) {
-                close3DS('PostMessage Forced Complete Success');
-                onSuccess(
-                  completeData.confirmationCode || 'confirmed',
-                  completeData.shopifyOrderUrl,
-                  completeData.generatedGiftCards,
-                  completeData.giftCardRemainingBalance,
-                  giftCardCode
-                );
-                return;
+                close3DS('PostMessage Forced Complete Success')
+                onSuccess(completeData.confirmationCode || 'confirmed', completeData.shopifyOrderUrl, completeData.generatedGiftCards, completeData.giftCardRemainingBalance, giftCardCode)
+                return
               } else {
-                close3DS('PostMessage Forced Complete Failure');
-                setPaymentError(completeData.error || t('paymentForm.paymentDeclinedGeneric'));
-                return;
+                close3DS('PostMessage Forced Complete Failure')
+                setPaymentError(completeData.error || t('paymentForm.paymentDeclinedGeneric'))
+                return
               }
             }
           } catch (err) {
-            console.error(`[${method.toUpperCase()}] Failed to force complete:`, err);
+            console.error(`[${method.toUpperCase()}] Failed to force complete:`, err)
           }
         }
-
         close3DS('PostMessage Ambiguous Success')
-        onSuccess(
-          eventData.confirmationCode || eventData.track_id || 'confirmed', 
-          undefined, undefined, undefined, giftCardCode
-        )
+        onSuccess(eventData.confirmationCode || eventData.track_id || 'confirmed', undefined, undefined, undefined, giftCardCode)
       } else {
         close3DS('PostMessage Ambiguous Failure')
         setPaymentError(eventData.errorMessage || eventData.error || t('paymentForm.paymentDeclinedGeneric'))
@@ -379,17 +410,12 @@ export function PaymentForm({
     window.addEventListener('message', messageHandler)
 
     if (method === 'card') {
-      // If we have a trackId, actively poll the complete endpoint!
-      // This is necessary because Tranzila sometimes hangs on a JSON string in the iframe
-      // and neither redirects nor sends a postMessage.
       if (trackId) {
         start3DSActivePolling(trackId)
       } else {
-        // Fallback poll starts after 30 s if no trackId is available
         startSessionPolling(30_000)
       }
     } else {
-      // Bit: postMessage + Realtime + poll (start sooner, user needs to scan QR)
       startSessionPolling(10_000)
     }
   }, [sessionId, giftCardCode, close3DS, clearListeners, startRealtimeSubscription, startSessionPolling, start3DSActivePolling, onSuccess, t])
@@ -424,28 +450,78 @@ export function PaymentForm({
       const result = await response.json()
       console.log('[PAYMENT-FORM] API response:', result)
 
-      // ── FIX 3: accept BOTH field names for the redirect case.
-      //    Server sends `requires3DS` for card 3DS and `requiresRedirect` for Bit.
-      //    Both mean: "open the modal and wait for async completion".
       const needsModal = (result.requires3DS || result.requiresRedirect) && result.redirectUrl
 
       if (needsModal) {
-        // FIX 1: mark 3DS as active so `finally` does NOT reset isSubmitting.
-        // The modal stays open; close3DS() will reset it when complete or cancelled.
         is3DSActiveRef.current = true
         open3DSModal(result.redirectUrl, result.paymentMethod === 'bit' ? 'bit' : 'card', result.trackId)
         return
       }
 
-      // Direct result path
+      if (result.requiresHostedFields) {
+        // FIX 5: use the ref instead of state
+        if (!hostedFieldsRef.current) {
+          setPaymentError("Payment system is not ready. Please try again or refresh the page.")
+          setIsSubmitting(false)
+          isSubmittingRef.current = false
+          return
+        }
+
+        const tzParams: any = {
+          terminal_name: result.terminal,
+          sum: String(result.chargeAmount),
+          currency: result.currency,
+          cred_type: installments > 1 ? '8' : '1',
+          tranmode: 'A',
+          contact: `${customerInfo.firstName} ${customerInfo.lastName}`,
+          email: customerInfo.email,
+          phone: customerInfo.phone.replace(/\D/g, ''),
+          merchant_data: sessionId,
+          success_url_address: result.callbackUrl,
+          fail_url_address: result.callbackUrl,
+        }
+
+        if (result.thtk) tzParams.thtk = result.thtk
+
+        if (installments > 1) {
+          tzParams.npay = String(installments)
+          const otherAmount = Math.floor((result.chargeAmount / installments) * 100) / 100
+          const firstAmount = result.chargeAmount - otherAmount * (installments - 1)
+          tzParams.fpay = String(firstAmount.toFixed(2))
+          tzParams.spay = String(otherAmount.toFixed(2))
+        }
+
+        startRealtimeSubscription()
+        startSessionPolling(30000)
+        is3DSActiveRef.current = true
+
+        try {
+          // FIX 5: call via ref
+          hostedFieldsRef.current.charge(tzParams, (tzResult: any) => {
+            console.log('[HOSTED-FIELDS] charge result:', tzResult)
+            if (tzResult.success || tzResult.Response === '000') {
+              console.log("[HOSTED-FIELDS] Success received, waiting for backend validation...")
+            } else {
+              setPaymentError(tzResult.message || tzResult.error || t('paymentForm.paymentDeclinedGeneric'))
+              setIsSubmitting(false)
+              isSubmittingRef.current = false
+              is3DSActiveRef.current = false
+              clearListeners()
+            }
+          })
+        } catch (err) {
+          console.error("Hosted fields charge error", err)
+          setPaymentError("Failed to initiate payment. Please try again.")
+          setIsSubmitting(false)
+          isSubmittingRef.current = false
+          is3DSActiveRef.current = false
+          clearListeners()
+        }
+        return
+      }
+
       if (result.success) {
-        onSuccess(
-          result.confirmationCode,
-          result.shopifyOrderUrl,
-          result.generatedGiftCards,
-          result.giftCardRemainingBalance,
-          giftCardCode,
-        )
+        onSuccess(result.confirmationCode, result.shopifyOrderUrl, result.generatedGiftCards, result.giftCardRemainingBalance, giftCardCode)
       } else {
         setPaymentError(result.error || t('paymentForm.paymentFailed'))
       }
@@ -453,8 +529,6 @@ export function PaymentForm({
     } catch {
       setPaymentError(t('paymentForm.paymentProcessingFailed'))
     } finally {
-      // FIX 1: Only reset submitting state if we are NOT waiting for 3DS/Bit.
-      // If is3DSActiveRef is true, the modal handles cleanup via close3DS().
       if (!is3DSActiveRef.current) {
         setIsSubmitting(false)
         isSubmittingRef.current = false
@@ -473,6 +547,40 @@ export function PaymentForm({
 
   return (
     <div className="space-y-6">
+      <Script
+        src="https://hf.tranzila.com/assets/js/thostedf.js"
+        strategy="afterInteractive"
+        onLoad={() => {
+          tzLoaded.current = true
+          initTranzila()
+        }}
+      />
+
+      {/*
+        FIX 1 + 2: Global style for Tranzila-injected iframes.
+        Without this, the iframes Tranzila injects have no explicit dimensions
+        and are NOT clickable. This forces them to fill their container div
+        and sets pointer-events: auto so clicks reach the iframe document.
+      */}
+      <style>{`
+        #credit_card_number iframe,
+        #cvv iframe,
+        #expiry iframe {
+          display: block !important;
+          width: 100% !important;
+          height: 100% !important;
+          pointer-events: auto !important;
+          border: none !important;
+        }
+        /* Ensure the containers themselves pass pointer events through */
+        #credit_card_number,
+        #cvv,
+        #expiry {
+          cursor: text;
+          pointer-events: auto;
+        }
+      `}</style>
+
       {/* Contact Summary */}
       <div className="rounded-lg border border-border bg-muted/30 p-4">
         <div className="flex justify-between items-start">
@@ -549,7 +657,7 @@ export function PaymentForm({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('bit')}
-                className={`hidden flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                   paymentMethod === 'bit'
                     ? 'border-[#2b5686] bg-gradient-to-b from-[#2b5686]/10 to-[#2eb3b8]/10 shadow-sm'
                     : 'border-border bg-background hover:border-muted-foreground/30'
@@ -568,7 +676,6 @@ export function PaymentForm({
                   </div>
                 </div>
               </button>
-
             </div>
 
             {paymentMethod === 'card' ? (
@@ -581,13 +688,44 @@ export function PaymentForm({
                 </div>
 
                 <div className="p-4 space-y-4 bg-background">
-                  <div className="rounded-md bg-blue-50/50 dark:bg-blue-900/10 p-4 border border-blue-100 dark:border-blue-800/50">
-                    <div className="flex gap-3 text-sm text-blue-800 dark:text-blue-300">
-                      <Lock className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-                      <p>
-                        Pour assurer une sécurité maximale, les informations de votre carte seront saisies
-                        directement sur les serveurs sécurisés de notre partenaire bancaire à l'étape suivante.
-                      </p>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('paymentForm.cardNumber') || 'Card Number'}
+                      </label>
+                      {/*
+                        FIX 1: NO px-3 py-2 here — padding must come from Tranzila's
+                        `styles.input.padding` config (set to '0 12px' above).
+                        With padding on this div, the injected iframe is offset and
+                        click events land on the div border, not inside the iframe.
+                      */}
+                      <div
+                        id="credit_card_number"
+                        className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
+                        style={{ minHeight: '44px' }}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('paymentForm.expiryDate') || 'Expiry Date'}
+                        </label>
+                        <div
+                          id="expiry"
+                          className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
+                          style={{ minHeight: '44px' }}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('paymentForm.cvvPlaceholder') || 'CVV'}
+                        </label>
+                        <div
+                          id="cvv"
+                          className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
+                          style={{ minHeight: '44px' }}
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -699,11 +837,7 @@ export function PaymentForm({
         </div>
       </form>
 
-      {/* ── 3DS / Bit challenge modal ────────────────────────────────────────
-          z-[100] — always renders below the error popup layer (z-[110]).
-          It is mutually exclusive with the error popup because:
-          - Error popup only renders when `!show3DS && paymentError` (FIX 2)
-          - close3DS() always clears show3DS BEFORE setPaymentError is called   */}
+      {/* 3DS / Bit modal */}
       {show3DS && threeDSUrl && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative w-full max-w-lg bg-background rounded-xl shadow-2xl border border-border overflow-hidden">
@@ -739,9 +873,7 @@ export function PaymentForm({
         </div>
       )}
 
-      {/* ── Payment Error Popup ──────────────────────────────────────────────
-          FIX 2: `!show3DS` guard ensures this is NEVER shown while the 3DS/Bit
-          modal is open. Error is shown only after close3DS() has run.          */}
+      {/* Payment Error Popup */}
       {!show3DS && paymentError && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative w-full max-w-md mx-4 bg-background rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -823,7 +955,6 @@ function CardBrand({ type }: { type: string }) {
   }
 
   const brand = brands[type] || brands.generic
-
   if (type === 'generic') return <CreditCard className="h-6 w-6 text-muted-foreground" />
 
   return (
