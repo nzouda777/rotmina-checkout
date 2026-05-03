@@ -229,6 +229,48 @@ export function PaymentForm({
     }, delayMs)
   }, [sessionId, giftCardCode, clearPoll, clearListeners, close3DS, onSuccess, t])
 
+  // ── Active 3DS Polling (forces backend to check Tranzila status) ─────────
+
+  const start3DSActivePolling = useCallback((trackId: string) => {
+    // Start immediately, check every 4 seconds
+    pollIntervalRef.current = setInterval(async () => {
+      console.log('[POLL] Actively checking 3DS completion via /api/checkout/3ds-complete...')
+      try {
+        const res = await fetch('/api/checkout/3ds-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackId, sessionId })
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        
+        if (data.success) {
+          console.log('[POLL] 3DS Active Poll Success!')
+          clearPoll()
+          clearListeners()
+          close3DS('Active Poll Success')
+          onSuccess(
+            data.confirmationCode || 'confirmed',
+            data.shopifyOrderUrl,
+            data.generatedGiftCards,
+            data.giftCardRemainingBalance,
+            giftCardCode
+          )
+        } else if (!data.pending && data.error) {
+          console.log('[POLL] 3DS Active Poll Failure:', data.error)
+          clearPoll()
+          clearListeners()
+          close3DS('Active Poll Failure')
+          setPaymentError(data.error || t('paymentForm.paymentDeclinedGeneric'))
+        } else {
+          console.log('[POLL] 3DS Still pending...')
+        }
+      } catch (e) {
+        console.error('[POLL] Error in 3DS active poll:', e)
+      }
+    }, 4000)
+  }, [sessionId, giftCardCode, clearPoll, clearListeners, close3DS, onSuccess, t])
+
   // ── Realtime subscription (shared between card 3DS and Bit) ──────────────
 
   const startRealtimeSubscription = useCallback(() => {
@@ -267,7 +309,7 @@ export function PaymentForm({
 
   // ── Open the 3DS / Bit modal and set up all listeners ────────────────────
 
-  const open3DSModal = useCallback((redirectUrl: string, method: 'card' | 'bit') => {
+  const open3DSModal = useCallback((redirectUrl: string, method: 'card' | 'bit', trackId?: string) => {
     is3DSActiveRef.current = true
     setThreeDSUrl(redirectUrl)
     setShow3DS(true)
@@ -275,7 +317,7 @@ export function PaymentForm({
     startRealtimeSubscription()
 
     if (method === 'card') {
-      // PostMessage listener for 3DS iframe response
+      // PostMessage listener for 3DS iframe response (Fallback)
       const messageHandler = async (event: MessageEvent) => {
         let eventData = event.data
         try {
@@ -366,13 +408,20 @@ export function PaymentForm({
       messageHandlerRef.current = messageHandler
       window.addEventListener('message', messageHandler)
 
-      // Fallback poll starts after 30 s (3DS timeout buffer)
-      startSessionPolling(30_000)
+      // If we have a trackId, actively poll the complete endpoint!
+      // This is necessary because Tranzila sometimes hangs on a JSON string in the iframe
+      // and neither redirects nor sends a postMessage.
+      if (trackId) {
+        start3DSActivePolling(trackId)
+      } else {
+        // Fallback poll starts after 30 s if no trackId is available
+        startSessionPolling(30_000)
+      }
     } else {
       // Bit: no postMessage — only Realtime + poll (start sooner, user needs to scan QR)
       startSessionPolling(10_000)
     }
-  }, [sessionId, giftCardCode, close3DS, clearListeners, startRealtimeSubscription, startSessionPolling, onSuccess, t])
+  }, [sessionId, giftCardCode, close3DS, clearListeners, startRealtimeSubscription, startSessionPolling, start3DSActivePolling, onSuccess, t])
 
   // ── Main submit handler ───────────────────────────────────────────────────
 
@@ -429,7 +478,7 @@ export function PaymentForm({
         // FIX 1: mark 3DS as active so `finally` does NOT reset isSubmitting.
         // The modal stays open; close3DS() will reset it when complete or cancelled.
         is3DSActiveRef.current = true
-        open3DSModal(result.redirectUrl, result.paymentMethod === 'bit' ? 'bit' : 'card')
+        open3DSModal(result.redirectUrl, result.paymentMethod === 'bit' ? 'bit' : 'card', result.trackId)
         return
       }
 
