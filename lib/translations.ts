@@ -421,10 +421,14 @@ export const translations = {
       en: 'Return to store',
       he: 'חזרה לחנות',
     },
-    // 3DS
+    // 3DS and Iframe
     threeDSVerification: {
       en: '3D Secure Verification',
       he: 'אימות 3D Secure',
+    },
+    securePayment: {
+      en: 'Secure Payment',
+      he: 'תשלום מאובטח',
     },
     verifying: {
       en: 'Verifying...',

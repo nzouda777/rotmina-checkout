@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       ? `${baseUrl}/checkout/success?session=${actualSessionId}&confirmation=${ConfirmationCode}`
       : `${baseUrl}/checkout/error?session=${actualSessionId}`
 
-    return NextResponse.redirect(redirectUrl)
+    return breakoutRedirect(redirectUrl, actualSessionId, isSuccess ? undefined : 'Payment failed')
   } catch (error) {
     console.error('Callback processing error:', error)
     return NextResponse.json(
@@ -100,6 +100,42 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+function breakoutRedirect(url: string, sessionId?: string, errorMessage?: string) {
+  const safeError = (errorMessage || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')
+  return new NextResponse(
+    `<html>
+      <body>
+        <script>
+          try {
+            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url') || "${url}".includes('/pages/success');
+            var result = {
+              type: '3DS_COMPLETE', // Reusing the same message type so the frontend listens to it
+              success: isSuccess,
+              url: "${url}",
+              sessionId: "${sessionId || ''}",
+              errorMessage: "${safeError}"
+            };
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(result, '*');
+            } else if (window.opener) {
+              window.opener.postMessage(result, '*');
+              window.close();
+            } else {
+              window.location.href = "${url}";
+            }
+          } catch(e) {
+            window.location.href = "${url}";
+          }
+        </script>
+        <p>Processing complete. Redirecting...</p>
+      </body>
+    </html>`,
+    {
+      headers: { 'Content-Type': 'text/html' },
+    }
+  )
 }
 
 export async function GET(request: NextRequest) {

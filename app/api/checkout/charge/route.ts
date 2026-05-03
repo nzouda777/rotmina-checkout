@@ -289,9 +289,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Case B: Credit card or Bit payment required ───────────────
-    if (paymentMethod === 'card' && (!cardNumber || !expiryDate || !cvv)) {
+    // For SAQ A, we no longer check for cardNumber, expiryDate, cvv here
+    // because they will be entered securely inside the Tranzila Iframe.
+    if (paymentMethod === 'card' && !chargeAmount) {
       await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
-      return NextResponse.json({ error: 'Missing required credit card information' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid charge amount' }, { status: 400 })
     }
 
     const tranzila = createTranzilaClient()
@@ -418,107 +420,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Case B2: Credit card with 3DS ────────────────────────────
-    const callbackUrl = `${baseUrl}/api/checkout/3ds-callback`
+    // ── Case B2: Credit card (Tranzila Iframe SAQ A) ────────────────────────────
+    if (paymentMethod === 'card') {
+      console.log(`[CHARGE][${logId}] Generating Tranzila Iframe URL for Credit Card`)
+      const callbackUrl = `${baseUrl}/api/checkout/callback`
 
-    const [month, year] = expiryDate.split('/')
-    const expireMonth = parseInt(month, 10)
-    const expireYear = parseInt(`20${year}`, 10)
+      const thtk = await tranzila.getHandshakeToken(chargeAmount)
+      const terminal = process.env.TRANZILA_TERMINAL || ''
 
-    // Installment calculation
-    let payment_plan = 1
-    let tranzilaInstallments = {}
-
-    if (installments > 1) {
-      payment_plan = 8
-      const otherAmount = Math.floor((chargeAmount / installments) * 100) / 100
-      const firstAmount = chargeAmount - otherAmount * (installments - 1)
-      tranzilaInstallments = {
-        installments_number: installments,
-        first_installment_amount: Number(firstAmount.toFixed(2)),
-        other_installments_amount: Number(otherAmount.toFixed(2)),
+      const params = new URLSearchParams()
+      if (thtk) params.append('thtk', thtk)
+      params.append('sum', String(chargeAmount))
+      params.append('currency', session.cart.currency.toUpperCase() === 'USD' ? '2' : '1')
+      params.append('cred_type', '1') // 1 is regular credit
+      params.append('tranmode', 'A') // A = Authorization & Capture
+      params.append('lang', 'il') // Hebrew interface
+      
+      // Installments
+      if (installments > 1) {
+        params.set('cred_type', '8') // 8 = Installments
+        params.append('npay', String(installments))
+        const otherAmount = Math.floor((chargeAmount / installments) * 100) / 100
+        const firstAmount = chargeAmount - otherAmount * (installments - 1)
+        params.append('fpay', String(firstAmount.toFixed(2)))
+        params.append('spay', String(otherAmount.toFixed(2)))
       }
-      console.log(`[CHARGE][${logId}] Installments: ${installments}x | First: ${firstAmount.toFixed(2)} | Others: ${otherAmount.toFixed(2)}`)
-    }
 
-    const chargePayload = {
-      terminal_name: process.env.TRANZILA_TERMINAL || '',
-      txn_currency_code: session.cart.currency.toUpperCase(),
-      items: tranzilaItems,
-      txn_type: 'debit',
-      expire_month: Number(expireMonth),
-      expire_year: Number(expireYear),
-      cvv: String(cvv),
-      card_number: String(cardNumber!.replace(/\s/g, '')),
-      payment_plan,
-      ...tranzilaInstallments,
-      activate_3ds: 'Y',
-      '3ds_settings': {
-        browser: { ...browserData, ip: clientIp },
-        force_txn_on_3ds_fail: 'Y',
-        force_challenge: 0,
-        auth_3ds_redirect: {
-          url: `${callbackUrl}?merchant_data=${sessionId}`,
-        },
-      },
-      client: {
-        email: customerInfo.email,
-        name: cardholderName || `${customerInfo.firstName} ${customerInfo.lastName}`,
-        address_line_1: customerInfo.address,
-        city: customerInfo.city,
-        phone_number: sanitizePhone(customerInfo.phone),
-        country_code: getIsoCountryCode(customerInfo.country || 'Israel'),
-        zip: customerInfo.postalCode || '',
-      },
-    }
-
-    console.log(`[CHARGE][${logId}] Calling Tranzila (charging ${chargeAmount} ${session.cart.currency})...`)
-    const tranzilaResponse = await tranzila.charge(chargePayload)
-    console.log(`[CHARGE][${logId}] Tranzila response keys:`, Object.keys(tranzilaResponse))
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // IMPORTANT: Check for 3DS redirect URL FIRST, before evaluating isSuccess.
-    //
-    // When 3DS authentication is required, Tranzila returns a challengeUrl but
-    // the transaction is NOT yet approved — so isSuccess is false at this stage.
-    // Checking isSuccess first would incorrectly reject a valid pending 3DS flow.
-    // 
-    // CAUTION: Tranzila often echoes the input payload (including our own webhook URLs)
-    // even on explicit declines (like insufficient funds).
-    // We MUST ONLY trigger the iframe if there is a genuine challenge URL
-    // or a Bit payment URL. We should ignore our own echoed webhooks.
-    // ─────────────────────────────────────────────────────────────────────────
-    const tdsData = (tranzilaResponse as any)?.['3ds_data']
-    
-    // For CC 3DS, the genuine URL is in tdsData.challengeUrl
-    // For Bit, it returns bit_url or sale_url (which was handled earlier, but just in case it passes through)
-    let redirectUrl = tdsData?.challengeUrl || (tranzilaResponse as any).bit_url || (tranzilaResponse as any).sale_url;
-    
-    // Fallback: If there's a payment_url or acs_url, and it's NOT our own domain, use it.
-    const rawRedirectUrl = (tranzilaResponse as any).redirect_url || (tranzilaResponse as any).three_d_secure_url || (tranzilaResponse as any).acs_url || (tranzilaResponse as any).payment_url;
-    if (!redirectUrl && rawRedirectUrl) {
-      if (!rawRedirectUrl.includes('/api/checkout/')) {
-        redirectUrl = rawRedirectUrl;
-      }
-    }
-
-    // ── Subcase: 3DS challenge required ──────────────────────────
-    if (redirectUrl) {
-      const trackId =
-        tdsData?.track_id ||
-        tranzilaResponse.transaction_id ||
-        tranzilaResponse.index ||
-        null
-
-      console.log(`[CHARGE][${logId}] 3DS challenge required → trackId: ${trackId}`)
+      params.append('contact', `${customerInfo.firstName} ${customerInfo.lastName}`)
+      params.append('email', customerInfo.email)
+      params.append('phone', sanitizePhone(customerInfo.phone))
+      params.append('merchant_data', sessionId)
+      
+      // Webhooks/Redirects for Tranzila
+      params.append('success_url_address', callbackUrl)
+      params.append('fail_url_address', callbackUrl)
+      
+      const iframeUrl = `https://direct.tranzila.com/${terminal}/iframenew.php?${params.toString()}`
 
       await supabase
         .from('payment_sessions')
         .update({
-          status: 'pending_3ds',
-          tranzila_transaction_id: trackId,
+          status: 'pending_3ds', // We reuse pending_3ds to indicate waiting for Iframe
           raw_response: {
-            ...(tranzilaResponse as any),
+            iframe_generated: true,
             _gift_card: giftCardInfo
               ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
               : null,
@@ -528,88 +472,13 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: false,
-        requires3DS: true,
-        redirectUrl,
+        requiresRedirect: true,
+        requires3DS: true, // For backwards compatibility with frontend logic
+        redirectUrl: iframeUrl,
         sessionId,
-        trackId,
         paymentMethod: 'card',
       })
     }
-
-    // ── Subcase: Direct result (no 3DS challenge) ─────────────────
-    const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
-    const errorMsg = TranzilaClient.getErrorMessage(tranzilaResponse)
-
-    console.log(`[CHARGE][${logId}] Direct result → isSuccess: ${isSuccess}`)
-
-    if (!isSuccess) {
-      console.warn(`[CHARGE][${logId}] Transaction declined: ${errorMsg}`)
-      await supabase
-        .from('payment_sessions')
-        .update({
-          status: 'failed',
-          raw_response: tranzilaResponse as any,
-          error_message: errorMsg,
-        })
-        .eq('id', sessionId)
-
-      return NextResponse.json({ success: false, error: errorMsg })
-    }
-
-    // ── Direct approval: create order and notify ──────────────────
-    const txnId = String(tranzilaResponse.ConfirmationCode || tranzilaResponse.index || `TRX-${Date.now()}`)
-
-    const postPayment = await handlePostPayment({
-      logId, session, sessionId, customerInfo,
-      giftCardCode, giftCardAmount: validGiftCardAmount,
-      transactionId: txnId,
-    })
-
-    let shopifyOrderId = session.order_id
-    let shopifyOrderUrl: string | undefined
-
-    try {
-      const orderResult = await createOrderAndNotify({
-        logId, session, customerInfo, transactionId: txnId, giftCardInfo,
-      })
-      shopifyOrderId = orderResult.shopifyOrderId
-      shopifyOrderUrl = orderResult.shopifyOrderUrl
-    } catch (err) {
-      console.error(`[CHARGE][${logId}] Shopify order creation failed:`, err)
-    }
-
-    await supabase
-      .from('payment_sessions')
-      .update({
-        status: 'paid',
-        raw_response: {
-          ...(tranzilaResponse as any),
-          _gift_card: giftCardInfo
-            ? { code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount, remainingBalance: postPayment.giftCardRemainingBalance }
-            : null,
-          _generated_gift_cards: postPayment.generatedCards.map(c => ({
-            code: c.code, amount: c.original_amount, currency: c.currency,
-          })),
-        },
-        order_id: shopifyOrderId,
-        tranzila_transaction_id: tranzilaResponse.transaction_id || tranzilaResponse.ConfirmationCode || tranzilaResponse.index || null,
-        error_message: null,
-      })
-      .eq('id', sessionId)
-
-    console.log(`[CHARGE][${logId}] Payment completed successfully`)
-
-    return NextResponse.json({
-      success: true,
-      confirmationCode: txnId,
-      message: 'Payment processed successfully',
-      giftCardAmount: validGiftCardAmount > 0 ? validGiftCardAmount : undefined,
-      giftCardRemainingBalance: postPayment.giftCardRemainingBalance,
-      generatedGiftCards: postPayment.generatedCards.map(c => ({
-        code: c.code, amount: c.original_amount, currency: c.currency,
-      })),
-      shopifyOrderUrl,
-    })
 
   } catch (error: any) {
     console.error(`[CHARGE] CRITICAL ERROR:`, error)

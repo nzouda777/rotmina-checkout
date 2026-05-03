@@ -132,6 +132,33 @@ export class TranzilaClient {
   }
 
   /**
+   * Generates a Transaction Handshake Token (thtk) for secure iFrame usage.
+   * GET /v1/handshake/create
+   */
+  async getHandshakeToken(amount: number): Promise<string | null> {
+    const password = process.env.TRANZILA_TERMINAL_PASSWORD
+    if (!password || password === 'your_terminal_password') {
+      console.log('[TRANZILA] Handshake password not configured, skipping thtk generation.')
+      return null
+    }
+
+    const apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}&sum=${amount}`
+
+    try {
+      const response = await fetch(apiUrl, { method: 'GET' })
+      const text = await response.text()
+      if (response.ok && text && !text.includes('Error')) {
+        return text.trim()
+      }
+      console.warn(`[TRANZILA] Handshake failed, fallback to none. Response: ${text}`)
+      return null
+    } catch (e) {
+      console.error('[TRANZILA] Handshake error:', e)
+      return null
+    }
+  }
+
+  /**
    * Initialize Bit payment.
    * POST /v1/transaction/bit/init
    */

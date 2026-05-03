@@ -59,10 +59,6 @@ export function PaymentForm({
   giftCardCode,
   giftCardAmount = 0,
 }: PaymentFormProps) {
-  const [cardNumber, setCardNumber]       = useState('')
-  const [cardholderName, setCardholderName] = useState('')
-  const [expiryDate, setExpiryDate]       = useState('')
-  const [cvv, setCvv]                     = useState('')
   const [errors, setErrors]               = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting]   = useState(false)
   const [show3DS, setShow3DS]             = useState(false)
@@ -139,35 +135,6 @@ export function PaymentForm({
     if (installments > maxInstallments) setInstallments(1)
   }, [installments, maxInstallments])
 
-  // ── Input formatters ──────────────────────────────────────────────────────
-
-  const formatCardNumber = (value: string) => {
-    const digits = value.replace(/\D/g, '')
-    const groups = digits.match(/.{1,4}/g)
-    return groups ? groups.join(' ').substring(0, 19) : ''
-  }
-
-  const formatExpiryDate = (value: string) => {
-    const digits = value.replace(/\D/g, '')
-    if (digits.length >= 2) return digits.substring(0, 2) + '/' + digits.substring(2, 4)
-    return digits
-  }
-
-  const handleCardNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCardNumber(formatCardNumber(e.target.value))
-    if (errors.cardNumber) setErrors(p => ({ ...p, cardNumber: '' }))
-  }
-
-  const handleExpiryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setExpiryDate(formatExpiryDate(e.target.value))
-    if (errors.expiryDate) setErrors(p => ({ ...p, expiryDate: '' }))
-  }
-
-  const handleCvvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCvv(e.target.value.replace(/\D/g, '').substring(0, 4))
-    if (errors.cvv) setErrors(p => ({ ...p, cvv: '' }))
-  }
-
   // ── Validation ────────────────────────────────────────────────────────────
 
   const validate = (): boolean => {
@@ -175,33 +142,6 @@ export function PaymentForm({
 
     if (!termsAccepted) {
       newErrors.terms = t('paymentForm.acceptTermsError')
-    }
-
-    if (paymentMethod !== 'bit') {
-      const cardDigits = cardNumber.replace(/\s/g, '')
-      if (!cardDigits || cardDigits.length < 13)
-        newErrors.cardNumber = t('paymentForm.invalidCardNumber')
-
-      if (!cardholderName.trim())
-        newErrors.cardholderName = t('paymentForm.cardholderRequired')
-
-      if (!expiryDate || expiryDate.length < 5) {
-        newErrors.expiryDate = t('paymentForm.invalidExpiry')
-      } else {
-        const [month, year] = expiryDate.split('/')
-        const currentYear  = new Date().getFullYear() % 100
-        const currentMonth = new Date().getMonth() + 1
-        if (
-          parseInt(month) < 1 || parseInt(month) > 12 ||
-          parseInt(year) < currentYear ||
-          (parseInt(year) === currentYear && parseInt(month) < currentMonth)
-        ) {
-          newErrors.expiryDate = t('paymentForm.cardExpired')
-        }
-      }
-
-      if (!cvv || cvv.length < 3)
-        newErrors.cvv = t('paymentForm.invalidCvv')
     }
 
     setErrors(newErrors)
@@ -466,18 +406,6 @@ export function PaymentForm({
     setIsSubmitting(true)
     setPaymentError(null)
 
-    const browserData = {
-      java_enabled:   navigator.javaEnabled() ? 1 : 0,
-      language:       navigator.language || 'en-US',
-      color_depth:    window.screen.colorDepth || 24,
-      screen_height:  window.screen.height || 1080,
-      screen_width:   window.screen.width || 1920,
-      time_zone:      new Date().getTimezoneOffset(),
-      user_agent:     navigator.userAgent,
-      accept_header:  'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      window_size:    '04',
-    }
-
     try {
       const response = await fetch('/api/checkout/charge', {
         method:  'POST',
@@ -485,11 +413,6 @@ export function PaymentForm({
         body:    JSON.stringify({
           sessionId,
           customerInfo,
-          cardNumber:     chargeAmount > 0 ? cardNumber.replace(/\s/g, '') : undefined,
-          expiryDate:     chargeAmount > 0 ? expiryDate : undefined,
-          cvv:            chargeAmount > 0 ? cvv : undefined,
-          cardholderName: (chargeAmount > 0 && paymentMethod === 'card') ? cardholderName : undefined,
-          browserData:    (chargeAmount > 0 && paymentMethod === 'card') ? browserData : undefined,
           installments:   paymentMethod === 'card' ? installments : 1,
           paymentMethod,
           giftCardId:     giftCardId   || undefined,
@@ -544,15 +467,6 @@ export function PaymentForm({
   const formatPrice = (amount: number) =>
     new Intl.NumberFormat('he-IL', { style: 'currency', currency }).format(amount)
 
-  const getCardType = (number: string): string => {
-    const cleaned = number.replace(/\s/g, '')
-    if (/^4/.test(cleaned))      return 'visa'
-    if (/^5[1-5]/.test(cleaned)) return 'mastercard'
-    if (/^3[47]/.test(cleaned))  return 'amex'
-    if (/^6(?:011|5)/.test(cleaned)) return 'discover'
-    return 'generic'
-  }
-
   const perInstallment = installments > 1 ? chargeAmount / installments : chargeAmount
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -574,7 +488,7 @@ export function PaymentForm({
               </span>
             </div>
           </div>
-          <button onClick={onBack} className="text-sm text-foreground underline hover:no-underline">
+          <button onClick={onBack} className="bg-transparent text-sm text-foreground underline hover:no-underline">
             {t('paymentForm.change')}
           </button>
         </div>
@@ -635,7 +549,7 @@ export function PaymentForm({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('bit')}
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                className={`hidden flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
                   paymentMethod === 'bit'
                     ? 'border-[#2b5686] bg-gradient-to-b from-[#2b5686]/10 to-[#2eb3b8]/10 shadow-sm'
                     : 'border-border bg-background hover:border-muted-foreground/30'
@@ -654,6 +568,7 @@ export function PaymentForm({
                   </div>
                 </div>
               </button>
+
             </div>
 
             {paymentMethod === 'card' ? (
@@ -663,88 +578,16 @@ export function PaymentForm({
                     <CreditCard className="h-5 w-5 text-foreground" />
                     <span className="text-sm font-medium text-foreground">{t('paymentForm.creditCardLower')}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <CardBrand type="visa" />
-                    <CardBrand type="mastercard" />
-                    <CardBrand type="amex" />
-                    <CardBrand type="discover" />
-                    <CardBrand type="diners" />
-                  </div>
                 </div>
 
-                <div className="p-4 space-y-3 bg-background">
-                  <div>
-                    <label htmlFor="cardNumber" className="sr-only">{t('paymentForm.cardNumber')}</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        id="cardNumber"
-                        value={cardNumber}
-                        onChange={handleCardNumberChange}
-                        placeholder={t('paymentForm.cardNumber')}
-                        maxLength={19}
-                        className={`w-full px-4 py-3 pe-16 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                          errors.cardNumber ? 'border-destructive' : 'border-input'
-                        }`}
-                      />
-                      <div className="absolute end-3 top-1/2 -translate-y-1/2">
-                        <CardBrand type={getCardType(cardNumber)} />
-                      </div>
-                    </div>
-                    {errors.cardNumber && <p className="mt-1 text-sm text-destructive">{errors.cardNumber}</p>}
-                  </div>
-
-                  <div>
-                    <label htmlFor="cardholderName" className="sr-only">{t('paymentForm.cardholderName')}</label>
-                    <input
-                      type="text"
-                      id="cardholderName"
-                      value={cardholderName}
-                      onChange={e => {
-                        setCardholderName(e.target.value)
-                        if (errors.cardholderName) setErrors(p => ({ ...p, cardholderName: '' }))
-                      }}
-                      placeholder={t('paymentForm.cardholderName')}
-                      className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                        errors.cardholderName ? 'border-destructive' : 'border-input'
-                      }`}
-                    />
-                    {errors.cardholderName && <p className="mt-1 text-sm text-destructive">{errors.cardholderName}</p>}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="expiryDate" className="sr-only">{t('paymentForm.expiryDate')}</label>
-                      <input
-                        type="text"
-                        id="expiryDate"
-                        value={expiryDate}
-                        onChange={handleExpiryChange}
-                        placeholder={t('paymentForm.expiryPlaceholder')}
-                        maxLength={5}
-                        className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                          errors.expiryDate ? 'border-destructive' : 'border-input'
-                        }`}
-                      />
-                      {errors.expiryDate && <p className="mt-1 text-sm text-destructive">{errors.expiryDate}</p>}
-                    </div>
-                    <div>
-                      <label htmlFor="cvv" className="sr-only">{t('paymentForm.securityCode')}</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          id="cvv"
-                          value={cvv}
-                          onChange={handleCvvChange}
-                          placeholder={t('paymentForm.cvvPlaceholder')}
-                          maxLength={4}
-                          className={`w-full px-4 py-3 pe-10 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                            errors.cvv ? 'border-destructive' : 'border-input'
-                          }`}
-                        />
-                        <Lock className="absolute end-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      </div>
-                      {errors.cvv && <p className="mt-1 text-sm text-destructive">{errors.cvv}</p>}
+                <div className="p-4 space-y-4 bg-background">
+                  <div className="rounded-md bg-blue-50/50 dark:bg-blue-900/10 p-4 border border-blue-100 dark:border-blue-800/50">
+                    <div className="flex gap-3 text-sm text-blue-800 dark:text-blue-300">
+                      <Lock className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                      <p>
+                        Pour assurer une sécurité maximale, les informations de votre carte seront saisies
+                        directement sur les serveurs sécurisés de notre partenaire bancaire à l'étape suivante.
+                      </p>
                     </div>
                   </div>
 
@@ -870,7 +713,7 @@ export function PaymentForm({
                 <span className="text-sm font-medium text-foreground">
                   {paymentMethod === 'bit'
                     ? t('paymentForm.bitVerification')
-                    : t('paymentForm.threeDSVerification')}
+                    : t('paymentForm.securePayment')}
                 </span>
               </div>
               <div className="flex items-center gap-4">
