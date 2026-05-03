@@ -70,6 +70,7 @@ export function PaymentForm({
   const [cvv, setCvv] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const isSubmittingRef = useRef(false)
   const [show3DS, setShow3DS] = useState(false)
   const [threeDSUrl, setThreeDSUrl] = useState('')
   const [installments, setInstallments] = useState(1)
@@ -82,12 +83,17 @@ export function PaymentForm({
 
   const close3DS = (source: string) => {
     console.log(`[PAYMENT-FORM] Closing 3DS modal (source: ${source})`)
-    if (channelRef.current) {
-      channelRef.current.unsubscribe()
-      channelRef.current = null
+    try {
+      if (channelRef.current) {
+        channelRef.current.unsubscribe()
+        channelRef.current = null
+      }
+    } catch (e) {
+      console.error('[3DS] Error unsubscribing from channel:', e)
     }
     setShow3DS(false)
     setIsSubmitting(false)
+    isSubmittingRef.current = false
   }
 
   // Cleanup on unmount
@@ -187,9 +193,12 @@ export function PaymentForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmittingRef.current) return
     if (!validate()) return
 
+    isSubmittingRef.current = true
     setIsSubmitting(true)
+    setPaymentError(null)
 
     const browserData = {
       java_enabled: navigator.javaEnabled() ? 1 : 0,
@@ -409,6 +418,7 @@ export function PaymentForm({
       setPaymentError(t('paymentForm.paymentProcessingFailed'))
     } finally {
       setIsSubmitting(false)
+      isSubmittingRef.current = false
     }
   }
 

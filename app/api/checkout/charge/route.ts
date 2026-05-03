@@ -487,25 +487,13 @@ export async function POST(request: NextRequest) {
     
     // Check for explicit processor decline BEFORE trusting redirect urls
     const isSuccess = TranzilaClient.isSuccess(tranzilaResponse)
-    const processorCode = (tranzilaResponse as any).transaction_result?.processor_response_code
-    const isActualDecline = processorCode && processorCode !== '000'
     const errorMsg = TranzilaClient.getErrorMessage(tranzilaResponse)
     
-    // ── Case 1: 3DS redirect required ─────────────────────────────
-    const tdsData = (tranzilaResponse as any)?.['3ds_data']
-    const redirectUrl =
-      tdsData?.challengeUrl ||
-      (tranzilaResponse as any).redirect_url ||
-      (tranzilaResponse as any).three_d_secure_url ||
-      (tranzilaResponse as any).acs_url ||
-      (tranzilaResponse as any).payment_url
-
-    console.log(`[CHARGE][${logId}] Detected redirectUrl:`, redirectUrl ? `YES (${redirectUrl.substring(0, 30)}...)` : 'NO')
-
-    // If it's explicitly declined by the processor, OR it's not a success and has no 3DS challenge URL, fail immediately.
-    // Tranzila sometimes echoes the auth_3ds_redirect url even on declines.
-    if (isActualDecline || (!isSuccess && !tdsData?.challengeUrl && !((tranzilaResponse as any).three_d_secure_url))) {
-      console.log(`[CHARGE][${logId}] Transaction explicitly declined. Skipping 3DS redirect. isSuccess=${isSuccess}, errorMsg=${errorMsg}`);
+    // If the transaction is not successful (e.g. declined, invalid card, insufficient funds),
+    // we MUST fail immediately. We should not attempt 3DS redirect, even if Tranzila
+    // echoes back the 3DS URL in the response.
+    if (!isSuccess) {
+      console.log(`[CHARGE][${logId}] Transaction failed/declined. Skipping 3DS redirect. errorMsg=${errorMsg}`);
       
       await supabase
         .from('payment_sessions')
@@ -521,6 +509,17 @@ export async function POST(request: NextRequest) {
         error: errorMsg,
       })
     }
+
+    // ── Case 1: 3DS redirect required ─────────────────────────────
+    const tdsData = (tranzilaResponse as any)?.['3ds_data']
+    const redirectUrl =
+      tdsData?.challengeUrl ||
+      (tranzilaResponse as any).redirect_url ||
+      (tranzilaResponse as any).three_d_secure_url ||
+      (tranzilaResponse as any).acs_url ||
+      (tranzilaResponse as any).payment_url
+
+    console.log(`[CHARGE][${logId}] Detected redirectUrl:`, redirectUrl ? `YES (${redirectUrl.substring(0, 30)}...)` : 'NO')
 
     if (redirectUrl) {
       console.log(`[CHARGE][${logId}] 3DS required → returning redirect logic`) 
