@@ -483,6 +483,54 @@ export function PaymentForm({
 
         if (result.thtk) tzParams.thtk = result.thtk
 
+        // Helper to extract the exact error from Tranzila's payload
+        const parseTranzilaError = (res: any): string => {
+          if (!res) return t('paymentForm.paymentDeclinedGeneric')
+          
+          if (res.error_code && res.error_code !== 0) {
+            let msg = res.message || 'Validation error'
+            if (res.mismatch_info && Array.isArray(res.mismatch_info)) {
+              msg += ' (' + res.mismatch_info.map((m: any) => `${(m.data_path || []).join('.')}: ${m.keyword}`).join(', ') + ')'
+            }
+            return msg
+          }
+
+          const txnResult = res.transaction_result
+          if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
+            const codes: Record<string, string> = {
+              '001': 'Refer to card issuer', '002': 'Refer to card issuer', '003': 'Invalid merchant',
+              '004': 'Pick up card', '005': 'Do not honor', '012': 'Invalid transaction',
+              '013': 'Invalid amount', '014': 'Invalid card number', '041': 'Lost card',
+              '043': 'Stolen card', '051': 'Insufficient funds', '054': 'Expired card',
+              '055': 'Incorrect PIN', '057': 'Transaction not permitted', '061': 'Exceeds withdrawal limit',
+              '091': 'Issuer unavailable', '096': 'System error'
+            }
+            return codes[txnResult.processor_response_code] || `Card declined (code: ${txnResult.processor_response_code})`
+          }
+
+          if (Array.isArray(res.errors) && res.errors.length > 0) {
+            return res.errors.map((e: any) => e.message || e.code).join(', ')
+          }
+
+          if (res.error && typeof res.error === 'string') return res.error
+
+          if (res.Response && res.Response !== '000') {
+            const codes: Record<string, string> = {
+              '033': 'Invalid card / test mode mismatch', '06': 'CVV error', '017': 'Card expired'
+            }
+            return codes[res.Response] || `Transaction failed (code: ${res.Response})`
+          }
+
+          return res.message || res.error || t('paymentForm.paymentDeclinedGeneric')
+        }
+
+        const isTzSuccess = (res: any) => {
+          if (res.success === true) return true
+          if (res.Response === '000') return true
+          if (res.error_code === 0 && (!res.transaction_result || res.transaction_result.processor_response_code === '000')) return true
+          return false
+        }
+
         if (installments > 1) {
           tzParams.npay = String(installments)
           const otherAmount = Math.floor((result.chargeAmount / installments) * 100) / 100
@@ -499,10 +547,10 @@ export function PaymentForm({
           // FIX 5: call via ref
           hostedFieldsRef.current.charge(tzParams, (tzResult: any) => {
             console.log('[HOSTED-FIELDS] charge result:', tzResult)
-            if (tzResult.success || tzResult.Response === '000') {
+            if (isTzSuccess(tzResult)) {
               console.log("[HOSTED-FIELDS] Success received, waiting for backend validation...")
             } else {
-              setPaymentError(tzResult.message || tzResult.error || t('paymentForm.paymentDeclinedGeneric'))
+              setPaymentError(parseTranzilaError(tzResult))
               setIsSubmitting(false)
               isSubmittingRef.current = false
               is3DSActiveRef.current = false
