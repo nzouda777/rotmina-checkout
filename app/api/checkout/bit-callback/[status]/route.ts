@@ -160,24 +160,29 @@ function redirectToShopify(session: any, shopifyOrderId?: string | null) {
 function redirectToError(message: string, sessionId?: string, shop?: string) {
   const shopifyDomain = shop || 'rotmina.myshopify.com'
   const targetUrl = `https://${shopifyDomain}/pages/error?error=${encodeURIComponent(message)}`
-  return breakoutRedirect(targetUrl, sessionId)
+  return breakoutRedirect(targetUrl, sessionId, message)
 }
 
-function breakoutRedirect(url: string, sessionId?: string) {
+function breakoutRedirect(url: string, sessionId?: string, errorMessage?: string) {
+  const safeError = (errorMessage || '').replace(/'/g, "\\'").replace(/"/g, '&quot;')
   return new NextResponse(
     `<html>
       <body>
         <script>
           try {
-            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url');
+            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url') || "${url}".includes('/pages/success');
             var result = {
-              type: '3DS_COMPLETE', // Reuse same type for frontend compatibility
+              type: '3DS_COMPLETE',
               success: isSuccess,
               url: "${url}",
-              sessionId: "${sessionId || ''}"
+              sessionId: "${sessionId || ''}",
+              errorMessage: "${safeError}"
             };
             if (window.parent && window.parent !== window) {
               window.parent.postMessage(result, '*');
+            } else if (window.opener) {
+              window.opener.postMessage(result, '*');
+              window.close();
             } else {
               window.location.href = "${url}";
             }

@@ -80,6 +80,9 @@ export function PaymentForm({
   // This prevents the `finally` block from resetting the submitting state
   // while the payment modal is still open.
   const is3DSActiveRef   = useRef(false)
+  // Track if the user explicitly cancelled the modal — prevents late poll/realtime
+  // results from triggering error popups after dismissal.
+  const cancelledRef     = useRef(false)
   const channelRef       = useRef<RealtimeChannel | null>(null)
   const pollIntervalRef  = useRef<NodeJS.Timeout | null>(null)
   const pollTimeoutRef   = useRef<NodeJS.Timeout | null>(null)
@@ -107,13 +110,24 @@ export function PaymentForm({
   // FIX 1 (continued): close3DS resets ALL state including the submitting lock
   const close3DS = useCallback((source: string) => {
     console.log(`[3DS] Closing modal (source: ${source})`)
+    // If user explicitly cancelled, mark as cancelled so late-arriving
+    // poll/realtime events do NOT show error popups.
+    if (source === 'User Cancel') {
+      cancelledRef.current = true
+      // Reset session status back to 'pending' so the user can retry
+      fetch(`/api/checkout/session/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      }).catch((err) => console.error('[3DS] Failed to reset session:', err))
+    }
     is3DSActiveRef.current = false
     clearListeners()
     setShow3DS(false)
     setThreeDSUrl('')
     setIsSubmitting(false)
     isSubmittingRef.current = false
-  }, [clearListeners])
+  }, [clearListeners, sessionId])
 
   // Unmount cleanup
   useEffect(() => () => clearListeners(), [clearListeners])
@@ -199,6 +213,7 @@ export function PaymentForm({
   const startSessionPolling = useCallback((delayMs: number) => {
     pollTimeoutRef.current = setTimeout(() => {
       pollIntervalRef.current = setInterval(async () => {
+        if (cancelledRef.current) { clearPoll(); return }
         console.log('[POLL] Checking session status...')
         try {
           const res  = await fetch(`/api/checkout/session?id=${sessionId}`)
@@ -219,8 +234,11 @@ export function PaymentForm({
           } else if (data.status === 'failed') {
             clearPoll()
             clearListeners()
-            close3DS('Poll Failure')
-            setPaymentError(data.error_message || t('paymentForm.paymentDeclinedGeneric'))
+            // Only show error if user hasn't cancelled
+            if (!cancelledRef.current) {
+              close3DS('Poll Failure')
+              setPaymentError(data.error_message || t('paymentForm.paymentDeclinedGeneric'))
+            }
           }
         } catch (e) {
           console.error('[POLL] Error:', e)
@@ -234,6 +252,7 @@ export function PaymentForm({
   const start3DSActivePolling = useCallback((trackId: string) => {
     // Start immediately, check every 4 seconds
     pollIntervalRef.current = setInterval(async () => {
+      if (cancelledRef.current) { clearPoll(); return }
       console.log('[POLL] Actively checking 3DS completion via /api/checkout/3ds-complete...')
       try {
         const res = await fetch('/api/checkout/3ds-complete', {
@@ -260,8 +279,11 @@ export function PaymentForm({
           console.log('[POLL] 3DS Active Poll Failure:', data.error)
           clearPoll()
           clearListeners()
-          close3DS('Active Poll Failure')
-          setPaymentError(data.error || t('paymentForm.paymentDeclinedGeneric'))
+          // Only show error if user hasn't cancelled
+          if (!cancelledRef.current) {
+            close3DS('Active Poll Failure')
+            setPaymentError(data.error || t('paymentForm.paymentDeclinedGeneric'))
+          }
         } else {
           console.log('[POLL] 3DS Still pending...')
         }
@@ -281,6 +303,7 @@ export function PaymentForm({
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'payment_sessions', filter: `id=eq.${sessionId}` },
         (payload) => {
+          if (cancelledRef.current) return
           const newStatus = payload.new.status
           console.log(`[REALTIME] Status: ${newStatus}`)
 
@@ -296,9 +319,11 @@ export function PaymentForm({
             )
           } else if (newStatus === 'failed') {
             clearListeners()
-            close3DS('Realtime Failure')
-            // FIX 2: only set error AFTER show3DS is false (close3DS already did that)
-            setPaymentError(payload.new.error_message || t('paymentForm.paymentDeclinedGeneric'))
+            // Only show error if user hasn't cancelled the modal
+            if (!cancelledRef.current) {
+              close3DS('Realtime Failure')
+              setPaymentError(payload.new.error_message || t('paymentForm.paymentDeclinedGeneric'))
+            }
           }
         }
       )
@@ -310,104 +335,110 @@ export function PaymentForm({
   // ── Open the 3DS / Bit modal and set up all listeners ────────────────────
 
   const open3DSModal = useCallback((redirectUrl: string, method: 'card' | 'bit', trackId?: string) => {
+    // Reset cancelled flag when opening a new modal
+    cancelledRef.current = false
     is3DSActiveRef.current = true
     setThreeDSUrl(redirectUrl)
     setShow3DS(true)
 
     startRealtimeSubscription()
 
-    if (method === 'card') {
-      // PostMessage listener for 3DS iframe response (Fallback)
-      const messageHandler = async (event: MessageEvent) => {
-        let eventData = event.data
-        try {
-          if (typeof eventData === 'string') eventData = JSON.parse(eventData)
-        } catch {}
+    // PostMessage listener — used for BOTH card 3DS and Bit
+    // 3DS callback and Bit callback both send postMessage with type '3DS_COMPLETE'
+    const messageHandler = async (event: MessageEvent) => {
+      if (cancelledRef.current) return
 
-        if (eventData?.type !== '3DS_COMPLETE' && !eventData?.track_id) return
-        if (eventData.sessionId && eventData.sessionId !== sessionId) return
+      let eventData = event.data
+      try {
+        if (typeof eventData === 'string') eventData = JSON.parse(eventData)
+      } catch {}
 
-        console.log('[3DS] PostMessage received:', eventData)
-        clearListeners()
+      if (eventData?.type !== '3DS_COMPLETE' && !eventData?.track_id) return
+      if (eventData.sessionId && eventData.sessionId !== sessionId) return
 
-        // Give the callback route a moment to finish writing the session
-        await new Promise(r => setTimeout(r, 800))
+      console.log(`[${method.toUpperCase()}] PostMessage received:`, eventData)
+      clearListeners()
 
-        let sessionData: any = null;
-        try {
-          const res  = await fetch(`/api/checkout/session?id=${sessionId}`)
-          sessionData = res.ok ? await res.json() : null
+      // Give the callback route a moment to finish writing the session
+      await new Promise(r => setTimeout(r, 800))
 
-          if (sessionData?.status === 'paid') {
-            close3DS('PostMessage Success')
-            onSuccess(
-              sessionData.tranzila_transaction_id || 'confirmed',
-              sessionData.raw_response?.shopifyOrderUrl,
-              sessionData.raw_response?._generated_gift_cards,
-              sessionData.raw_response?._gift_card?.remainingBalance,
-              giftCardCode,
-            )
-            return
-          }
+      // Check session status from DB first (most reliable source of truth)
+      let sessionData: any = null;
+      try {
+        const res  = await fetch(`/api/checkout/session?id=${sessionId}`)
+        sessionData = res.ok ? await res.json() : null
 
-          if (sessionData?.status === 'failed') {
-            close3DS('PostMessage Failure')
-            setPaymentError(sessionData.error_message || t('paymentForm.paymentDeclinedGeneric'))
-            return
-          }
-        } catch {}
-
-        // Handle Tranzila's native 3DS postMessage which has {"status":"success", "track_id":"..."}
-        const isTranzilaNativeSuccess = eventData.status === 'success' && eventData.track_id;
-        const isAppSuccess = eventData.success === true;
-        
-        if (isAppSuccess || isTranzilaNativeSuccess) {
-          // If native Tranzila success but our DB still says 'processing', we MUST force a complete!
-          if (isTranzilaNativeSuccess && sessionData?.status !== 'paid') {
-            console.log('[3DS] Tranzila native success received, but session not paid. Forcing 3ds-complete...');
-            try {
-              const completeRes = await fetch('/api/checkout/3ds-complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ trackId: eventData.track_id, sessionId })
-              });
-              if (completeRes.ok) {
-                const completeData = await completeRes.json();
-                if (completeData.success) {
-                  close3DS('PostMessage Forced Complete Success');
-                  onSuccess(
-                    completeData.confirmationCode || 'confirmed',
-                    completeData.shopifyOrderUrl,
-                    completeData.generatedGiftCards,
-                    completeData.giftCardRemainingBalance,
-                    giftCardCode
-                  );
-                  return;
-                } else {
-                  close3DS('PostMessage Forced Complete Failure');
-                  setPaymentError(completeData.error || t('paymentForm.paymentDeclinedGeneric'));
-                  return;
-                }
-              }
-            } catch (err) {
-              console.error('[3DS] Failed to force complete:', err);
-            }
-          }
-
-          close3DS('PostMessage Ambiguous Success')
+        if (sessionData?.status === 'paid') {
+          close3DS('PostMessage Success')
           onSuccess(
-            eventData.confirmationCode || eventData.track_id || 'confirmed', 
-            undefined, undefined, undefined, giftCardCode
+            sessionData.tranzila_transaction_id || 'confirmed',
+            sessionData.raw_response?.shopifyOrderUrl,
+            sessionData.raw_response?._generated_gift_cards,
+            sessionData.raw_response?._gift_card?.remainingBalance,
+            giftCardCode,
           )
-        } else {
-          close3DS('PostMessage Ambiguous Failure')
-          setPaymentError(eventData.errorMessage || eventData.error || t('paymentForm.paymentDeclinedGeneric'))
+          return
         }
+
+        if (sessionData?.status === 'failed') {
+          close3DS('PostMessage Failure')
+          setPaymentError(sessionData.error_message || t('paymentForm.paymentDeclinedGeneric'))
+          return
+        }
+      } catch {}
+
+      // Handle Tranzila's native 3DS postMessage which has {"status":"success", "track_id":"..."}
+      const isTranzilaNativeSuccess = eventData.status === 'success' && eventData.track_id;
+      const isAppSuccess = eventData.success === true;
+      
+      if (isAppSuccess || isTranzilaNativeSuccess) {
+        // If native Tranzila success but our DB still says 'processing', we MUST force a complete!
+        if (isTranzilaNativeSuccess && sessionData?.status !== 'paid') {
+          console.log(`[${method.toUpperCase()}] Native success received, but session not paid. Forcing 3ds-complete...`);
+          try {
+            const completeRes = await fetch('/api/checkout/3ds-complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ trackId: eventData.track_id, sessionId })
+            });
+            if (completeRes.ok) {
+              const completeData = await completeRes.json();
+              if (completeData.success) {
+                close3DS('PostMessage Forced Complete Success');
+                onSuccess(
+                  completeData.confirmationCode || 'confirmed',
+                  completeData.shopifyOrderUrl,
+                  completeData.generatedGiftCards,
+                  completeData.giftCardRemainingBalance,
+                  giftCardCode
+                );
+                return;
+              } else {
+                close3DS('PostMessage Forced Complete Failure');
+                setPaymentError(completeData.error || t('paymentForm.paymentDeclinedGeneric'));
+                return;
+              }
+            }
+          } catch (err) {
+            console.error(`[${method.toUpperCase()}] Failed to force complete:`, err);
+          }
+        }
+
+        close3DS('PostMessage Ambiguous Success')
+        onSuccess(
+          eventData.confirmationCode || eventData.track_id || 'confirmed', 
+          undefined, undefined, undefined, giftCardCode
+        )
+      } else {
+        close3DS('PostMessage Ambiguous Failure')
+        setPaymentError(eventData.errorMessage || eventData.error || t('paymentForm.paymentDeclinedGeneric'))
       }
+    }
 
-      messageHandlerRef.current = messageHandler
-      window.addEventListener('message', messageHandler)
+    messageHandlerRef.current = messageHandler
+    window.addEventListener('message', messageHandler)
 
+    if (method === 'card') {
       // If we have a trackId, actively poll the complete endpoint!
       // This is necessary because Tranzila sometimes hangs on a JSON string in the iframe
       // and neither redirects nor sends a postMessage.
@@ -418,7 +449,7 @@ export function PaymentForm({
         startSessionPolling(30_000)
       }
     } else {
-      // Bit: no postMessage — only Realtime + poll (start sooner, user needs to scan QR)
+      // Bit: postMessage + Realtime + poll (start sooner, user needs to scan QR)
       startSessionPolling(10_000)
     }
   }, [sessionId, giftCardCode, close3DS, clearListeners, startRealtimeSubscription, startSessionPolling, start3DSActivePolling, onSuccess, t])
@@ -431,6 +462,7 @@ export function PaymentForm({
     if (!validate()) return
 
     isSubmittingRef.current = true
+    cancelledRef.current = false
     setIsSubmitting(true)
     setPaymentError(null)
 
