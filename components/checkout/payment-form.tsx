@@ -147,51 +147,69 @@ export function PaymentForm({
     if (installments > maxInstallments) setInstallments(1)
   }, [installments, maxInstallments])
 
-  // ── FIX 4: Destroy hosted fields when switching away from card ────────────
-  // If the user switches to Bit and back, we need fresh iframes in the DOM.
-  useEffect(() => {
-    if (paymentMethod !== 'card') {
-      // There is no official destroy() on TzlaHostedFields, so we just clear
-      // our reference. The Script remains loaded; initTranzila will recreate.
-      hostedFieldsRef.current = null
-    }
-  }, [paymentMethod])
-
   // ── Hosted Fields Initialization ──────────────────────────────────────────
+  // One shared instance handles both card AND Bit fields.
+  // Both containers (#credit_card_number, #cvv, #expiry, #bit_container) are
+  // always present in the DOM (hidden via CSS when not active) so the SDK
+  // can find them in a single create() call regardless of which method is shown.
 
   const initTranzila = useCallback(() => {
-    // Guards: SDK loaded, card method selected, not already initialized, charge needed
-    if (!tzLoaded.current) return
-    if (paymentMethod !== 'card') return
-    if (hostedFieldsRef.current) return
-    if (chargeAmount <= 0) return
+    if (!tzLoaded.current) {
+      console.log('[TZ] initTranzila: SDK not yet loaded')
+      return
+    }
+    if (hostedFieldsRef.current) {
+      console.log('[TZ] initTranzila: already initialized, skipping')
+      return
+    }
+    if (chargeAmount <= 0) {
+      console.log('[TZ] initTranzila: chargeAmount is 0, skipping')
+      return
+    }
     // @ts-ignore
-    if (typeof window.TzlaHostedFields === 'undefined') return
+    if (typeof window.TzlaHostedFields === 'undefined') {
+      console.warn('[TZ] initTranzila: TzlaHostedFields not on window yet')
+      return
+    }
 
-    // FIX 3: Defer one tick so the DOM containers are guaranteed to be in the
-    // document. React may still be committing when onLoad / useEffect fires.
+    const sandboxMode = process.env.NEXT_PUBLIC_TRANZILA_TEST_MODE === 'true'
+    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount}`)
+
+    // Defer one tick so React has finished committing all DOM nodes.
     setTimeout(() => {
-      // Double-check containers exist before init (guard against rapid method switching)
-      if (
-        !document.querySelector('#credit_card_number') ||
-        !document.querySelector('#cvv') ||
-        !document.querySelector('#expiry')
-      ) {
-        console.warn('[TZ] Hosted field containers not found in DOM, skipping init.')
+      if (hostedFieldsRef.current) return // guard against double-init
+
+      const cardContainersOk =
+        !!document.querySelector('#credit_card_number') &&
+        !!document.querySelector('#cvv') &&
+        !!document.querySelector('#expiry')
+
+      const bitContainerOk = !!document.querySelector('#bit_container')
+
+      console.log(`[TZ] DOM check — card containers: ${cardContainersOk} | bit container: ${bitContainerOk}`)
+
+      if (!cardContainersOk && !bitContainerOk) {
+        console.warn('[TZ] No hosted field containers found in DOM, skipping init.')
         return
       }
 
-      // Also abort if another method was selected while the timeout was pending
-      if (paymentMethod !== 'card' || hostedFieldsRef.current) return
-
       try {
+        const fieldsConfig: Record<string, { selector: string }> = {}
+        if (cardContainersOk) {
+          fieldsConfig.credit_card_number = { selector: '#credit_card_number' }
+          fieldsConfig.cvv                = { selector: '#cvv' }
+          fieldsConfig.expiry             = { selector: '#expiry' }
+        }
+        if (bitContainerOk) {
+          // 'bit_button' is the Tranzila hosted-fields Bit selector key.
+          fieldsConfig.bit_button = { selector: '#bit_container' }
+        }
+
         // @ts-ignore
-        const fields = window.TzlaHostedFields.create({
-          sandbox: process.env.NEXT_PUBLIC_TRANZILA_TEST_MODE === 'true',
+        const instance = window.TzlaHostedFields.create({
+          sandbox: sandboxMode,
           styles: {
             input: {
-              // FIX 1: move padding here — the container divs must have NO padding
-              // so that Tranzila's iframe fills the full height x width.
               'padding': '0 12px',
               'font-size': '16px',
               'font-family': 'sans-serif',
@@ -203,19 +221,15 @@ export function PaymentForm({
               'outline': 'none',
             },
           },
-          fields: {
-            credit_card_number: { selector: '#credit_card_number' },
-            cvv:                { selector: '#cvv' },
-            expiry:             { selector: '#expiry' },
-          },
+          fields: fieldsConfig,
         })
-        hostedFieldsRef.current = fields
-        console.log('[TZ] Hosted fields initialized.')
+        hostedFieldsRef.current = instance
+        console.log('[TZ] ✅ Hosted fields initialized — fields:', Object.keys(fieldsConfig).join(', '))
       } catch (err) {
         console.error('[TZ] Hosted fields init error:', err)
       }
     }, 0)
-  }, [paymentMethod, chargeAmount])
+  }, [chargeAmount])
 
   useEffect(() => {
     initTranzila()
@@ -441,16 +455,117 @@ export function PaymentForm({
         startSessionPolling(30_000)
       }
     } else {
-      startSessionPolling(10_000)
+      // Bit: the payment happens on the user's phone, so the iframe on desktop
+      // may never navigate. Poll immediately and frequently so the modal closes
+      // as soon as the backend webhook/notify updates the session.
+      console.log('[BIT] Starting immediate polling (Bit payment — phone-based flow)')
+      startSessionPolling(0)
     }
   }, [sessionId, giftCardCode, close3DS, clearListeners, startRealtimeSubscription, startSessionPolling, start3DSActivePolling, onSuccess, t])
 
   // ── Main submit handler ───────────────────────────────────────────────────
 
+  // ── Tranzila error helpers (shared between card and Bit) ─────────────────
+
+  const TRANZILA_CODE_MAP: Record<string, string> = {
+    '001': 'Card blocked – please contact your bank',
+    '002': 'Card reported stolen – contact your bank',
+    '003': 'Contact your credit company',
+    '004': 'Transaction refused by bank',
+    '005': 'Card rejected by bank (do not honor)',
+    '006': 'CVV or ID verification error',
+    '007': 'Contact your credit company',
+    '009': 'Transaction not permitted',
+    '010': 'Transaction not approved',
+    '011': 'Invalid transaction amount',
+    '012': 'Invalid card number',
+    '013': 'Invalid amount',
+    '014': 'Invalid card number or terminal',
+    '015': 'Terminal not found',
+    '017': 'Card has expired',
+    '033': 'Currency mismatch or test/live mode configuration error',
+    '041': 'Lost card – contact your bank',
+    '043': 'Stolen card – contact your bank',
+    '051': 'Insufficient funds on card',
+    '054': 'Card has expired',
+    '055': 'Incorrect PIN',
+    '057': 'Transaction not permitted to this cardholder',
+    '058': 'Transaction not permitted on this terminal',
+    '061': 'Card withdrawal limit exceeded',
+    '062': 'Restricted card',
+    '065': 'Card usage frequency limit exceeded',
+    '091': 'Card issuer unavailable – please try again',
+    '096': 'Payment system error – please try again',
+  }
+
+  const parseTranzilaError = useCallback((res: any): string => {
+    if (!res) {
+      console.warn('[PARSE-ERROR] tzResult is null/undefined')
+      return 'Payment failed. Please try again.'
+    }
+    console.log('[PARSE-ERROR] Raw result:', JSON.stringify(res))
+
+    if (typeof res.error_code === 'number' && res.error_code !== 0) {
+      let msg = res.message || `API error (code: ${res.error_code})`
+      if (Array.isArray(res.mismatch_info) && res.mismatch_info.length > 0) {
+        msg += ' (' + res.mismatch_info.map((m: any) => `${(m.data_path || []).join('.')}: ${m.keyword}`).join(', ') + ')'
+      }
+      console.log('[PARSE-ERROR] error_code path →', msg)
+      return msg
+    }
+    const txnResult = res.transaction_result
+    if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
+      const code = txnResult.processor_response_code
+      const msg = TRANZILA_CODE_MAP[code] || `Card declined (code: ${code})`
+      console.log('[PARSE-ERROR] processor_response_code:', code, '→', msg)
+      return msg
+    }
+    if (Array.isArray(res.errors) && res.errors.length > 0) {
+      const msg = res.errors.map((e: any) => e.message || e.code || 'Unknown').join(', ')
+      console.log('[PARSE-ERROR] errors[] →', msg)
+      return msg
+    }
+    if (res.Response && res.Response !== '000') {
+      const msg = TRANZILA_CODE_MAP[res.Response] || `Transaction failed (code: ${res.Response})`
+      console.log('[PARSE-ERROR] legacy Response:', res.Response, '→', msg)
+      return msg
+    }
+    if (res.error && typeof res.error === 'string') { console.log('[PARSE-ERROR] error field →', res.error); return res.error }
+    if (res.message && typeof res.message === 'string') { console.log('[PARSE-ERROR] message field →', res.message); return res.message }
+
+    console.warn('[PARSE-ERROR] No pattern matched. Full result:', JSON.stringify(res))
+    return 'Payment failed. Please try again or use a different card.'
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const isTzSuccess = useCallback((res: any): boolean => {
+    if (!res) return false
+    if (res.success === true) return true
+    if (res.Response === '000') return true
+    if (
+      typeof res.error_code === 'number' &&
+      res.error_code === 0 &&
+      (!res.transaction_result || res.transaction_result.processor_response_code === '000')
+    ) return true
+    return false
+  }, [])
+
+  // ── Main submit handler ───────────────────────────────────────────────────
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isSubmittingRef.current) return
-    if (!validate()) return
+    const submitId = Math.random().toString(36).slice(2, 7)
+
+    console.log(`[PAY][${submitId}] STEP 0 — handleSubmit called | method=${paymentMethod} | amount=${chargeAmount} | sessionId=${sessionId}`)
+
+    if (isSubmittingRef.current) {
+      console.warn(`[PAY][${submitId}] Already submitting, ignoring duplicate`)
+      return
+    }
+    if (!validate()) {
+      console.warn(`[PAY][${submitId}] Validation failed`)
+      return
+    }
 
     isSubmittingRef.current = true
     cancelledRef.current = false
@@ -458,6 +573,8 @@ export function PaymentForm({
     setPaymentError(null)
 
     try {
+      // ── STEP 1: Call /api/checkout/charge ─────────────────────────────────
+      console.log(`[PAY][${submitId}] STEP 1 — Calling /api/checkout/charge...`)
       const response = await fetch('/api/checkout/charge', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -472,181 +589,117 @@ export function PaymentForm({
         }),
       })
 
+      // ── STEP 2: Parse API response ────────────────────────────────────────
+      console.log(`[PAY][${submitId}] STEP 2 — API HTTP status: ${response.status}`)
       const result = await response.json()
-      console.log('[PAYMENT-FORM] API response:', result)
+      console.log(`[PAY][${submitId}] STEP 2 — API response body:`, JSON.stringify(result))
 
+      if (!response.ok) {
+        console.error(`[PAY][${submitId}] STEP 2 — API returned error status ${response.status}`)
+        setPaymentError(result.error || 'Payment request failed. Please try again.')
+        setIsSubmitting(false)
+        isSubmittingRef.current = false
+        return
+      }
+
+      // ── STEP 3: 3DS redirect (card only, legacy path) ─────────────────────
       const needsModal = (result.requires3DS || result.requiresRedirect) && result.redirectUrl
-
       if (needsModal) {
+        console.log(`[PAY][${submitId}] STEP 3 — 3DS/redirect modal needed | url: ${result.redirectUrl}`)
         is3DSActiveRef.current = true
         open3DSModal(result.redirectUrl, result.paymentMethod === 'bit' ? 'bit' : 'card', result.trackId)
         return
       }
 
+      // ── STEP 4: Gift-card-only / test-card instant success ────────────────
+      if (result.success && !result.requiresHostedFields) {
+        console.log(`[PAY][${submitId}] STEP 4 — Instant success (GC-only or test card) | confirmationCode: ${result.confirmationCode}`)
+        onSuccess(result.confirmationCode, result.shopifyOrderUrl, result.generatedGiftCards, result.giftCardRemainingBalance, giftCardCode)
+        return
+      }
+
+      // ── STEP 5: Hosted Fields path (card + Bit) ───────────────────────────
       if (result.requiresHostedFields) {
-        // FIX 5: use the ref instead of state
+        console.log(`[PAY][${submitId}] STEP 5 — requiresHostedFields=true | isBit=${!!result.isBit}`)
+        console.log(`[PAY][${submitId}] STEP 5 — hostedFieldsRef.current: ${hostedFieldsRef.current ? 'READY' : 'NULL ⚠️'}`)
+        console.log(`[PAY][${submitId}] STEP 5 — terminal="${result.terminal}" | thtk=${result.thtk ? 'present' : 'MISSING ⚠️'} | currency=${result.currency} | chargeAmount=${result.chargeAmount}`)
+
         if (!hostedFieldsRef.current) {
-          setPaymentError("Payment system is not ready. Please try again or refresh the page.")
+          console.error(`[PAY][${submitId}] STEP 5 — ❌ Hosted fields NOT initialized! SDK may not have loaded yet.`)
+          setPaymentError('Payment system is not ready. Please wait a moment and try again.')
           setIsSubmitting(false)
           isSubmittingRef.current = false
           return
         }
 
+        // ── STEP 6: Build tzParams ──────────────────────────────────────────
+        const isBitPayment = !!result.isBit
         const tzParams: any = {
           terminal_name: result.terminal,
-          sum: String(result.chargeAmount),
-          currency: result.currency,
-          cred_type: installments > 1 ? '8' : '1',
-          tranmode: 'A',
-          contact: `${customerInfo.firstName} ${customerInfo.lastName}`,
-          email: customerInfo.email,
-          phone: customerInfo.phone.replace(/\D/g, ''),
+          sum:           String(result.chargeAmount),
+          currency:      result.currency,
+          contact:       `${customerInfo.firstName} ${customerInfo.lastName}`,
+          email:         customerInfo.email,
+          phone:         customerInfo.phone.replace(/\D/g, ''),
           merchant_data: sessionId,
-          success_url_address: result.callbackUrl,
-          fail_url_address: result.callbackUrl,
         }
 
         if (result.thtk) tzParams.thtk = result.thtk
 
-        // ── Error code → human-readable message (mirrors callback/route.ts) ──
-        const TRANZILA_CODE_MAP: Record<string, string> = {
-          '001': 'Card blocked – please contact your bank',
-          '002': 'Card reported stolen – contact your bank',
-          '003': 'Contact your credit company',
-          '004': 'Transaction refused by bank',
-          '005': 'Card rejected by bank (do not honor)',
-          '006': 'CVV or ID verification error',
-          '007': 'Contact your credit company',
-          '009': 'Transaction not permitted',
-          '010': 'Transaction not approved',
-          '011': 'Invalid transaction amount',
-          '012': 'Invalid card number',
-          '013': 'Invalid amount',
-          '014': 'Invalid card number or terminal',
-          '015': 'Terminal not found',
-          '017': 'Card has expired',
-          '033': 'Currency mismatch or test/live mode configuration error',
-          '041': 'Lost card – contact your bank',
-          '043': 'Stolen card – contact your bank',
-          '051': 'Insufficient funds on card',
-          '054': 'Card has expired',
-          '055': 'Incorrect PIN',
-          '057': 'Transaction not permitted to this cardholder',
-          '058': 'Transaction not permitted on this terminal',
-          '061': 'Card withdrawal limit exceeded',
-          '062': 'Restricted card',
-          '065': 'Card usage frequency limit exceeded',
-          '091': 'Card issuer unavailable – please try again',
-          '096': 'Payment system error – please try again',
-        }
-
-        // Helper to extract the exact error from Tranzila's payload
-        const parseTranzilaError = (res: any): string => {
-          if (!res) {
-            console.warn('[PARSE-ERROR] tzResult is null/undefined')
-            return 'Payment failed. Please try again.'
-          }
-
-          console.log('[PARSE-ERROR] Parsing Tranzila result:', JSON.stringify(res))
-
-          // API-level error (validation, auth issues) — error_code !== 0
-          if (typeof res.error_code === 'number' && res.error_code !== 0) {
-            let msg = res.message || `API error (code: ${res.error_code})`
-            if (Array.isArray(res.mismatch_info) && res.mismatch_info.length > 0) {
-              const details = res.mismatch_info
-                .map((m: any) => `${(m.data_path || []).join('.')}: ${m.keyword}`)
-                .join(', ')
-              msg += ` (${details})`
-            }
-            console.log('[PARSE-ERROR] API error_code:', res.error_code, '→', msg)
-            return msg
-          }
-
-          // Processor-level decline via transaction_result (newer Tranzila format)
-          const txnResult = res.transaction_result
-          if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
-            const code = txnResult.processor_response_code
-            const msg = TRANZILA_CODE_MAP[code] || `Card declined (code: ${code})`
-            console.log('[PARSE-ERROR] processor_response_code:', code, '→', msg)
-            return msg
-          }
-
-          // Validation / schema errors array
-          if (Array.isArray(res.errors) && res.errors.length > 0) {
-            const msg = res.errors.map((e: any) => e.message || e.code || 'Unknown error').join(', ')
-            console.log('[PARSE-ERROR] errors array →', msg)
-            return msg
-          }
-
-          // Legacy Tranzila Response code (direct hosted-fields form-post format)
-          if (res.Response && res.Response !== '000') {
-            const msg = TRANZILA_CODE_MAP[res.Response] || `Transaction failed (code: ${res.Response})`
-            console.log('[PARSE-ERROR] legacy Response code:', res.Response, '→', msg)
-            return msg
-          }
-
-          // Generic string error fields
-          if (res.error && typeof res.error === 'string') {
-            console.log('[PARSE-ERROR] error field →', res.error)
-            return res.error
-          }
-          if (res.message && typeof res.message === 'string') {
-            console.log('[PARSE-ERROR] message field →', res.message)
-            return res.message
-          }
-
-          console.warn('[PARSE-ERROR] No specific error found, full tzResult:', JSON.stringify(res))
-          return 'Payment failed. Please try again or use a different card.'
-        }
-
-        // Determine whether the hosted-fields charge callback indicates success.
-        // Note: error_code=0 with no transaction_result means "initiated, await callback".
-        const isTzSuccess = (res: any): boolean => {
-          if (!res) return false
-          if (res.success === true) return true
-          if (res.Response === '000') return true
-          if (
-            typeof res.error_code === 'number' &&
-            res.error_code === 0 &&
-            (!res.transaction_result || res.transaction_result.processor_response_code === '000')
-          ) return true
-          return false
-        }
-
-        if (installments > 1) {
-          tzParams.npay = String(installments)
-          const otherAmount = Math.floor((result.chargeAmount / installments) * 100) / 100
-          const firstAmount = result.chargeAmount - otherAmount * (installments - 1)
-          tzParams.fpay = String(firstAmount.toFixed(2))
-          tzParams.spay = String(otherAmount.toFixed(2))
+        if (isBitPayment) {
+          // Bit via hosted fields — SDK renders the Bit button in #bit_container.
+          // Use the dedicated bit-callback routes so Tranzila's server-to-server
+          // notify webhook hits the right handler and marks the session paid.
+          tzParams.payment_method      = 'bit'
+          tzParams.success_url_address = result.callbackSuccessUrl
+          tzParams.fail_url_address    = result.callbackFailUrl
+          if (result.callbackNotifyUrl) tzParams.notify_url = result.callbackNotifyUrl
+          console.log(`[PAY][${submitId}] STEP 6 — Bit tzParams built:`, JSON.stringify({ ...tzParams, thtk: tzParams.thtk ? '***' : null }))
         } else {
-          tzParams.maxpay = '1'
+          // Card — installments, cred_type, tranmode, single callback URL
+          tzParams.success_url_address = result.callbackUrl
+          tzParams.fail_url_address    = result.callbackUrl
+          tzParams.cred_type = installments > 1 ? '8' : '1'
+          tzParams.tranmode  = 'A'
+          if (installments > 1) {
+            tzParams.npay = String(installments)
+            const other = Math.floor((result.chargeAmount / installments) * 100) / 100
+            const first = result.chargeAmount - other * (installments - 1)
+            tzParams.fpay = String(first.toFixed(2))
+            tzParams.spay = String(other.toFixed(2))
+          } else {
+            tzParams.maxpay = '1'
+          }
+          console.log(`[PAY][${submitId}] STEP 6 — Card tzParams built:`, JSON.stringify({
+            ...tzParams,
+            thtk: tzParams.thtk ? `${String(tzParams.thtk).slice(0, 8)}…` : null,
+          }))
         }
 
-        console.log('[HOSTED-FIELDS] tzParams being sent to Tranzila:', {
-          ...tzParams,
-          thtk: tzParams.thtk ? `${String(tzParams.thtk).slice(0, 8)}…` : null,
-        })
-
+        // ── STEP 7: Start realtime + polling before charge() ───────────────
+        console.log(`[PAY][${submitId}] STEP 7 — Starting realtime subscription + session polling`)
         startRealtimeSubscription()
-        // Reduce initial polling delay: callback usually fires within 5–10s
-        startSessionPolling(15_000)
+        // Bit: immediate poll (phone-based). Card: 15 s delay (callback comes after Tranzila processes)
+        startSessionPolling(isBitPayment ? 0 : 15_000)
         is3DSActiveRef.current = true
 
+        // ── STEP 8: Call hostedFieldsRef.current.charge() ─────────────────
+        console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.charge()...`)
         try {
           hostedFieldsRef.current.charge(tzParams, (tzResult: any) => {
-            console.log('[HOSTED-FIELDS] Raw charge callback received:', JSON.stringify(tzResult))
+            // ── STEP 9: charge() callback ──────────────────────────────────
+            console.log(`[PAY][${submitId}] STEP 9 — charge() callback fired`)
+            console.log(`[PAY][${submitId}] STEP 9 — Raw tzResult:`, JSON.stringify(tzResult))
 
             const success = isTzSuccess(tzResult)
-            console.log(`[HOSTED-FIELDS] isTzSuccess: ${success}`)
+            console.log(`[PAY][${submitId}] STEP 9 — isTzSuccess: ${success}`)
 
             if (success) {
-              console.log('[HOSTED-FIELDS] ✅ Charge initiated successfully – awaiting backend confirmation via realtime/poll')
-              // Don't call onSuccess yet; wait for the backend callback to update the session
-              // (realtime subscription + polling are already running)
+              console.log(`[PAY][${submitId}] STEP 9 — ✅ Charge accepted by SDK — awaiting backend webhook/callback to confirm session`)
+              // Session will be confirmed via Supabase realtime or polling
             } else {
               const errorMsg = parseTranzilaError(tzResult)
-              console.log(`[HOSTED-FIELDS] ❌ Charge failed: "${errorMsg}" | hint: "${getErrorHint(errorMsg)}"`)
+              console.log(`[PAY][${submitId}] STEP 9 — ❌ Charge DECLINED: "${errorMsg}" | hint: "${getErrorHint(errorMsg)}"`)
               setPaymentError(errorMsg)
               setIsSubmitting(false)
               isSubmittingRef.current = false
@@ -654,8 +707,9 @@ export function PaymentForm({
               clearListeners()
             }
           })
-        } catch (err) {
-          console.error('[HOSTED-FIELDS] Exception calling .charge():', err)
+          console.log(`[PAY][${submitId}] STEP 8 — charge() called successfully (callback is pending)`)
+        } catch (err: any) {
+          console.error(`[PAY][${submitId}] STEP 8 — ❌ Exception thrown by charge():`, err?.message || err)
           setPaymentError('Failed to initiate payment. Please refresh the page and try again.')
           setIsSubmitting(false)
           isSubmittingRef.current = false
@@ -665,16 +719,16 @@ export function PaymentForm({
         return
       }
 
-      if (result.success) {
-        onSuccess(result.confirmationCode, result.shopifyOrderUrl, result.generatedGiftCards, result.giftCardRemainingBalance, giftCardCode)
-      } else {
-        setPaymentError(result.error || t('paymentForm.paymentFailed'))
-      }
+      // ── Fallback: unexpected response shape ──────────────────────────────
+      console.error(`[PAY][${submitId}] STEP ? — Unexpected API response (no requiresHostedFields, no success, no redirect):`, JSON.stringify(result))
+      setPaymentError(result.error || t('paymentForm.paymentFailed'))
 
-    } catch {
+    } catch (err: any) {
+      console.error(`[PAY][${submitId}] CATCH — Unhandled exception:`, err?.message || err)
       setPaymentError(t('paymentForm.paymentProcessingFailed'))
     } finally {
       if (!is3DSActiveRef.current) {
+        console.log(`[PAY][${submitId}] FINALLY — Not in 3DS/HF active state, resetting submit lock`)
         setIsSubmitting(false)
         isSubmittingRef.current = false
       }
@@ -708,19 +762,18 @@ export function PaymentForm({
         and sets pointer-events: auto so clicks reach the iframe document.
       */}
       <style>{`
+        /* Card + Bit hosted-field iframes must fill their container and be clickable */
         #credit_card_number iframe,
         #cvv iframe,
-        #expiry iframe {
+        #expiry iframe,
+        #bit_container iframe {
           display: block !important;
           width: 100% !important;
           height: 100% !important;
           pointer-events: auto !important;
           border: none !important;
         }
-        /* Ensure the containers themselves pass pointer events through */
-        #credit_card_number,
-        #cvv,
-        #expiry {
+        #credit_card_number, #cvv, #expiry, #bit_container {
           cursor: text;
           pointer-events: auto;
         }
@@ -823,7 +876,8 @@ export function PaymentForm({
               </button>
             </div>
 
-            {paymentMethod === 'card' ? (
+            {/* ── Card section — always in DOM, visible only when card is selected ── */}
+            <div style={{ display: paymentMethod === 'card' ? 'block' : 'none' }}>
               <div className="rounded-lg border border-border overflow-hidden">
                 <div className="bg-muted/50 px-4 py-3 flex items-center justify-between border-b border-border">
                   <div className="flex items-center gap-2">
@@ -838,12 +892,7 @@ export function PaymentForm({
                       <label className="block text-sm font-medium text-foreground mb-1">
                         {t('paymentForm.cardNumber') || 'Card Number'}
                       </label>
-                      {/*
-                        FIX 1: NO px-3 py-2 here — padding must come from Tranzila's
-                        `styles.input.padding` config (set to '0 12px' above).
-                        With padding on this div, the injected iframe is offset and
-                        click events land on the div border, not inside the iframe.
-                      */}
+                      {/* No padding here — Tranzila's styles.input.padding handles it */}
                       <div
                         id="credit_card_number"
                         className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
@@ -904,17 +953,29 @@ export function PaymentForm({
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6 text-center space-y-4">
-                <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] mb-2 shadow-lg">
-                  <Image src="/bit.png" alt="Bit" width={48} height={28} style={{ objectFit: 'contain' }} />
+            </div>
+
+            {/* ── Bit section — always in DOM, visible only when bit is selected ── */}
+            {/* #bit_container is where TzlaHostedFields renders the Bit payment button */}
+            <div style={{ display: paymentMethod === 'bit' ? 'block' : 'none' }}>
+              <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6 space-y-4">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
+                    <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
+                  </div>
                 </div>
-                <h3 className="text-lg font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
-                <p className="text-sm text-muted-foreground max-w-[280px] mx-auto">
-                  {t('paymentForm.bitDescription')}
-                </p>
+                {/* Tranzila hosted-fields Bit button renders here */}
+                <div
+                  id="bit_container"
+                  className="w-full rounded-lg overflow-hidden bg-background border border-[#2b5686]/30"
+                  style={{ minHeight: '56px' }}
+                />
               </div>
-            )}
+            </div>
           </div>
         )}
 

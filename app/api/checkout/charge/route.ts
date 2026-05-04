@@ -26,10 +26,6 @@ function getIsoCountryCode(country: string): string {
   return mapping[country] || country
 }
 
-function sanitizePhone(phone: string): string {
-  return phone.replace(/\D/g, '')
-}
-
 // ─── Post-payment tasks ───────────────────────────────────────────────────────
 
 interface PostPaymentResult {
@@ -336,103 +332,75 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Case B1: Bit payment ──────────────────────────────────────
+    // ── Case B1: Bit payment via Hosted Fields ────────────────────
     if (paymentMethod === 'bit') {
-      const callbackUrl = `${baseUrl}/api/checkout/bit-callback`
-      console.log(`[CHARGE][${logId}] Initiating Bit payment | callback: ${callbackUrl}`)
-
-      const bitItems = tranzilaItems.map((item: any) => ({
-        code: item.code || '',
-        name: item.name,
-        type: 'I',
-        units_number: Number(item.units_number),
-        unit_type: 1,
-        unit_price: Number(item.unit_price),
-        price_type: 'G',
-        currency_code: session.cart.currency.toUpperCase(),
-        to_txn_currency_exchange_rate: 1,
-      }))
-
-      const bitPayload = {
-        terminal_name: process.env.TRANZILA_TERMINAL || '',
-        txn_currency_code: session.cart.currency.toUpperCase(),
-        txn_type: 'debit',
-        success_url: `${callbackUrl}/success?merchant_data=${sessionId}`,
-        failure_url: `${callbackUrl}/failure?merchant_data=${sessionId}`,
-        notify_url: `${callbackUrl}/notify?merchant_data=${sessionId}`,
-        client: {
-          name: `${customerInfo.firstName} ${customerInfo.lastName}`,
-          email: customerInfo.email,
-          address_line_1: customerInfo.address,
-          city: customerInfo.city,
-          zip: customerInfo.postalCode || '',
-          phone: sanitizePhone(customerInfo.phone),
-        },
-        items: bitItems,
-        response_language: 'english',
-        created_by_system: 'rotmani-checkout',
-      }
-
-      try {
-        const bitResponse = await tranzila.initBit(bitPayload)
-        console.log(`[CHARGE][${logId}] Bit API response received`)
-
-        const redirectUrl = bitResponse.bit_url || bitResponse.sale_url
-
-        if (!redirectUrl) {
-          throw new Error(bitResponse.message || bitResponse.error || 'Failed to get Bit payment URL')
-        }
-
-        console.log(`[CHARGE][${logId}] Bit URL obtained successfully`)
-
-        await supabase
-          .from('payment_sessions')
-          .update({
-            status: 'pending_bit',
-            raw_response: {
-              ...bitResponse,
-              _gift_card: giftCardInfo ? {
-                id: giftCardInfo.id,
-                code: giftCardInfo.code,
-                appliedAmount: giftCardInfo.appliedAmount,
-              } : null,
-            },
-          })
-          .eq('id', sessionId)
-
-        return NextResponse.json({
-          success: false,
-          requiresRedirect: true,   // ← renamed from requires3DS to avoid confusion
-          redirectUrl,
-          sessionId,
-          paymentMethod: 'bit',
-        })
-      } catch (bitErr: any) {
-        console.error(`[CHARGE][${logId}] Bit init failed:`, bitErr.message)
-        await supabase
-          .from('payment_sessions')
-          .update({ status: 'failed', error_message: bitErr.message })
-          .eq('id', sessionId)
-        return NextResponse.json(
-          { success: false, error: bitErr.message || 'Bit initialization failed' },
-          { status: 500 }
-        )
-      }
-    }
-
-    // ── Case B2: Credit card (Tranzila Hosted Fields SAQ A) ────────────────────────────
-    if (paymentMethod === 'card') {
-      console.log(`[CHARGE][${logId}] Generating Tranzila params for Hosted Fields Credit Card`)
-      const callbackUrl = `${baseUrl}/api/checkout/callback`
-
+      const bitCallbackBase = `${baseUrl}/api/checkout/bit-callback`
       const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
-      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
       const terminal = process.env.TRANZILA_TERMINAL || ''
+
+      console.log(`[CHARGE][${logId}] Initiating Bit via Hosted Fields | terminal=${terminal || 'MISSING!'} | currency=${session.cart.currency} → ${currencyCode} | amount=${chargeAmount}`)
+
+      let thtk: string | null = null
+      try {
+        thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+        console.log(`[CHARGE][${logId}] Bit thtk: ${thtk ? `obtained (${String(thtk).slice(0, 8)}…)` : 'NULL — payment may fail without it'}`)
+      } catch (thtkErr: any) {
+        console.warn(`[CHARGE][${logId}] Bit thtk fetch failed (non-fatal):`, thtkErr.message)
+      }
 
       await supabase
         .from('payment_sessions')
         .update({
-          status: 'pending_3ds', // We reuse pending_3ds to indicate waiting for Tranzila processing
+          status: 'pending_bit',
+          raw_response: {
+            bit_hosted_fields_initiated: true,
+            _gift_card: giftCardInfo
+              ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
+              : null,
+          },
+        })
+        .eq('id', sessionId)
+
+      console.log(`[CHARGE][${logId}] Returning requiresHostedFields (Bit) response`)
+      return NextResponse.json({
+        success: false,
+        requiresHostedFields: true,
+        isBit: true,
+        thtk,
+        terminal,
+        chargeAmount,
+        currency: currencyCode,
+        callbackSuccessUrl: `${bitCallbackBase}/success?merchant_data=${sessionId}`,
+        callbackFailUrl:    `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
+        callbackNotifyUrl:  `${bitCallbackBase}/notify?merchant_data=${sessionId}`,
+        sessionId,
+        paymentMethod: 'bit',
+      })
+    }
+
+    // ── Case B2: Credit card (Tranzila Hosted Fields SAQ A) ──────────────────
+    if (paymentMethod === 'card') {
+      console.log(`[CHARGE][${logId}] Initiating Hosted Fields for card payment`)
+      const callbackUrl = `${baseUrl}/api/checkout/callback`
+
+      const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
+      console.log(`[CHARGE][${logId}] Currency: ${session.cart.currency} → Tranzila code: ${currencyCode}`)
+
+      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+      console.log(`[CHARGE][${logId}] Handshake token (thtk): ${thtk ? `obtained (${String(thtk).slice(0, 8)}…)` : 'NULL — payment may fail without it'}`)
+
+      const terminal = process.env.TRANZILA_TERMINAL || ''
+      console.log(`[CHARGE][${logId}] Terminal: ${terminal || 'MISSING!'} | callbackUrl: ${callbackUrl}`)
+      console.log(`[CHARGE][${logId}] chargeAmount: ${chargeAmount} | installments: ${installments}`)
+
+      if (!terminal) {
+        console.error(`[CHARGE][${logId}] CRITICAL: TRANZILA_TERMINAL env var is not set!`)
+      }
+
+      await supabase
+        .from('payment_sessions')
+        .update({
+          status: 'pending_3ds',
           raw_response: {
             hosted_fields_initiated: true,
             _gift_card: giftCardInfo
@@ -442,17 +410,19 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', sessionId)
 
-      return NextResponse.json({
+      const responsePayload = {
         success: false,
         requiresHostedFields: true,
         thtk,
         terminal,
         chargeAmount,
-        currency: session.cart.currency.toUpperCase() === 'USD' ? '2' : '1',
+        currency: currencyCode,
         callbackUrl,
         sessionId,
         paymentMethod: 'card',
-      })
+      }
+      console.log(`[CHARGE][${logId}] Returning requiresHostedFields response (thtk present: ${!!thtk})`)
+      return NextResponse.json(responsePayload)
     }
 
   } catch (error: any) {

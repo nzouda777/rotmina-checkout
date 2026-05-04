@@ -430,6 +430,10 @@ export const translations = {
       en: 'Secure Payment',
       he: 'תשלום מאובטח',
     },
+    bitVerification: {
+      en: 'Bit Payment',
+      he: 'תשלום ב-Bit',
+    },
     verifying: {
       en: 'Verifying...',
       he: '...מאמת',
