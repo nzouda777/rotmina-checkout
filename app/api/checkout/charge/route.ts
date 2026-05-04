@@ -199,10 +199,10 @@ export async function POST(request: NextRequest) {
       .update({ status: 'processing', error_message: null, customer: customerInfo as CustomerInfo })
       .eq('id', sessionId)
 
-    // ── Amount calculation ────────────────────────────────────────
     const orderTotal = Number(session.cart.total)
     const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, orderTotal)
-    const chargeAmount = Math.max(orderTotal - validGiftCardAmount, 0)
+    const rawChargeAmount = Math.max(orderTotal - validGiftCardAmount, 0)
+    const chargeAmount = Math.round(rawChargeAmount * 100) / 100
 
     console.log(`[CHARGE][${logId}] Total: ${orderTotal} | GC: ${validGiftCardAmount} | CC charge: ${chargeAmount}`)
 
@@ -425,7 +425,8 @@ export async function POST(request: NextRequest) {
       console.log(`[CHARGE][${logId}] Generating Tranzila params for Hosted Fields Credit Card`)
       const callbackUrl = `${baseUrl}/api/checkout/callback`
 
-      const thtk = await tranzila.getHandshakeToken(chargeAmount)
+      const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
+      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
       const terminal = process.env.TRANZILA_TERMINAL || ''
 
       await supabase

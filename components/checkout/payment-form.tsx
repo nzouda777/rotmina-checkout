@@ -537,6 +537,8 @@ export function PaymentForm({
           const firstAmount = result.chargeAmount - otherAmount * (installments - 1)
           tzParams.fpay = String(firstAmount.toFixed(2))
           tzParams.spay = String(otherAmount.toFixed(2))
+        } else {
+          tzParams.maxpay = '1'
         }
 
         startRealtimeSubscription()
