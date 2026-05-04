@@ -46,6 +46,20 @@ function getMaxInstallments(amount: number, currency: string): number {
   return 2
 }
 
+function getErrorHint(msg: string): string {
+  const lower = msg.toLowerCase()
+  if (lower.includes('expired') || lower.includes('expiry')) return 'Check that your card expiry date is correct.'
+  if (lower.includes('cvv') || lower.includes('cvc') || lower.includes('id verification')) return 'Check that your CVV / security code is correct.'
+  if (lower.includes('insufficient') || lower.includes('funds')) return 'Check your card balance or try a different card.'
+  if (lower.includes('stolen') || lower.includes('lost') || lower.includes('blocked') || lower.includes('restricted')) return 'Contact your bank to resolve this issue.'
+  if (lower.includes('pin')) return 'Check that your PIN is correct.'
+  if (lower.includes('limit') || lower.includes('frequency')) return 'You may have reached your card usage limit – try a different card.'
+  if (lower.includes('not permitted')) return 'Your card may not support this transaction type.'
+  if (lower.includes('unavailable') || lower.includes('system error') || lower.includes('try again')) return 'This is a temporary issue. Please wait a moment and try again.'
+  if (lower.includes('test') || lower.includes('mode') || lower.includes('mismatch')) return 'There is a configuration issue. Please contact support.'
+  return 'Please verify your card details or try a different payment method.'
+}
+
 export function PaymentForm({
   sessionId,
   customerInfo,
@@ -230,7 +244,10 @@ export function PaymentForm({
           if (!res.ok) return
           const data = await res.json()
 
+          console.log(`[POLL] Session status: ${data.status} | error_message: ${data.error_message ?? 'none'}`)
+
           if (data.status === 'paid') {
+            console.log('[POLL] ✅ Payment confirmed! txnId:', data.tranzila_transaction_id)
             clearPoll()
             clearListeners()
             close3DS('Poll Success')
@@ -242,11 +259,13 @@ export function PaymentForm({
               giftCardCode,
             )
           } else if (data.status === 'failed') {
+            const errMsg = data.error_message || t('paymentForm.paymentDeclinedGeneric')
+            console.log(`[POLL] ❌ Payment failed. error_message: "${errMsg}"`)
             clearPoll()
             clearListeners()
             if (!cancelledRef.current) {
               close3DS('Poll Failure')
-              setPaymentError(data.error_message || t('paymentForm.paymentDeclinedGeneric'))
+              setPaymentError(errMsg)
             }
           }
         } catch (e) {
@@ -293,6 +312,7 @@ export function PaymentForm({
   // ── Realtime subscription ─────────────────────────────────────────────────
 
   const startRealtimeSubscription = useCallback(() => {
+    console.log(`[REALTIME] Subscribing to session-${sessionId}`)
     const supabase = createSupabaseClient()
     const channel = supabase
       .channel(`session-${sessionId}`)
@@ -304,7 +324,10 @@ export function PaymentForm({
           const newStatus = payload.new.status
           console.log(`[REALTIME] Status: ${newStatus}`)
 
+          console.log(`[REALTIME] Status changed to: ${newStatus} | error_message: ${payload.new.error_message ?? 'none'}`)
+
           if (newStatus === 'paid') {
+            console.log('[REALTIME] ✅ Payment confirmed! txnId:', payload.new.tranzila_transaction_id)
             clearListeners(); close3DS('Realtime Success')
             onSuccess(
               payload.new.tranzila_transaction_id || 'confirmed',
@@ -314,10 +337,12 @@ export function PaymentForm({
               giftCardCode,
             )
           } else if (newStatus === 'failed') {
+            const errMsg = payload.new.error_message || t('paymentForm.paymentDeclinedGeneric')
+            console.log(`[REALTIME] ❌ Payment failed. error_message: "${errMsg}"`)
             clearListeners()
             if (!cancelledRef.current) {
               close3DS('Realtime Failure')
-              setPaymentError(payload.new.error_message || t('paymentForm.paymentDeclinedGeneric'))
+              setPaymentError(errMsg)
             }
           }
         }
@@ -483,51 +508,108 @@ export function PaymentForm({
 
         if (result.thtk) tzParams.thtk = result.thtk
 
+        // ── Error code → human-readable message (mirrors callback/route.ts) ──
+        const TRANZILA_CODE_MAP: Record<string, string> = {
+          '001': 'Card blocked – please contact your bank',
+          '002': 'Card reported stolen – contact your bank',
+          '003': 'Contact your credit company',
+          '004': 'Transaction refused by bank',
+          '005': 'Card rejected by bank (do not honor)',
+          '006': 'CVV or ID verification error',
+          '007': 'Contact your credit company',
+          '009': 'Transaction not permitted',
+          '010': 'Transaction not approved',
+          '011': 'Invalid transaction amount',
+          '012': 'Invalid card number',
+          '013': 'Invalid amount',
+          '014': 'Invalid card number or terminal',
+          '015': 'Terminal not found',
+          '017': 'Card has expired',
+          '033': 'Currency mismatch or test/live mode configuration error',
+          '041': 'Lost card – contact your bank',
+          '043': 'Stolen card – contact your bank',
+          '051': 'Insufficient funds on card',
+          '054': 'Card has expired',
+          '055': 'Incorrect PIN',
+          '057': 'Transaction not permitted to this cardholder',
+          '058': 'Transaction not permitted on this terminal',
+          '061': 'Card withdrawal limit exceeded',
+          '062': 'Restricted card',
+          '065': 'Card usage frequency limit exceeded',
+          '091': 'Card issuer unavailable – please try again',
+          '096': 'Payment system error – please try again',
+        }
+
         // Helper to extract the exact error from Tranzila's payload
         const parseTranzilaError = (res: any): string => {
-          if (!res) return t('paymentForm.paymentDeclinedGeneric')
-          
-          if (res.error_code && res.error_code !== 0) {
-            let msg = res.message || 'Validation error'
-            if (res.mismatch_info && Array.isArray(res.mismatch_info)) {
-              msg += ' (' + res.mismatch_info.map((m: any) => `${(m.data_path || []).join('.')}: ${m.keyword}`).join(', ') + ')'
+          if (!res) {
+            console.warn('[PARSE-ERROR] tzResult is null/undefined')
+            return 'Payment failed. Please try again.'
+          }
+
+          console.log('[PARSE-ERROR] Parsing Tranzila result:', JSON.stringify(res))
+
+          // API-level error (validation, auth issues) — error_code !== 0
+          if (typeof res.error_code === 'number' && res.error_code !== 0) {
+            let msg = res.message || `API error (code: ${res.error_code})`
+            if (Array.isArray(res.mismatch_info) && res.mismatch_info.length > 0) {
+              const details = res.mismatch_info
+                .map((m: any) => `${(m.data_path || []).join('.')}: ${m.keyword}`)
+                .join(', ')
+              msg += ` (${details})`
             }
+            console.log('[PARSE-ERROR] API error_code:', res.error_code, '→', msg)
             return msg
           }
 
+          // Processor-level decline via transaction_result (newer Tranzila format)
           const txnResult = res.transaction_result
           if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
-            const codes: Record<string, string> = {
-              '001': 'Refer to card issuer', '002': 'Refer to card issuer', '003': 'Invalid merchant',
-              '004': 'Pick up card', '005': 'Do not honor', '012': 'Invalid transaction',
-              '013': 'Invalid amount', '014': 'Invalid card number', '041': 'Lost card',
-              '043': 'Stolen card', '051': 'Insufficient funds', '054': 'Expired card',
-              '055': 'Incorrect PIN', '057': 'Transaction not permitted', '061': 'Exceeds withdrawal limit',
-              '091': 'Issuer unavailable', '096': 'System error'
-            }
-            return codes[txnResult.processor_response_code] || `Card declined (code: ${txnResult.processor_response_code})`
+            const code = txnResult.processor_response_code
+            const msg = TRANZILA_CODE_MAP[code] || `Card declined (code: ${code})`
+            console.log('[PARSE-ERROR] processor_response_code:', code, '→', msg)
+            return msg
           }
 
+          // Validation / schema errors array
           if (Array.isArray(res.errors) && res.errors.length > 0) {
-            return res.errors.map((e: any) => e.message || e.code).join(', ')
+            const msg = res.errors.map((e: any) => e.message || e.code || 'Unknown error').join(', ')
+            console.log('[PARSE-ERROR] errors array →', msg)
+            return msg
           }
 
-          if (res.error && typeof res.error === 'string') return res.error
-
+          // Legacy Tranzila Response code (direct hosted-fields form-post format)
           if (res.Response && res.Response !== '000') {
-            const codes: Record<string, string> = {
-              '033': 'Invalid card / test mode mismatch', '06': 'CVV error', '017': 'Card expired'
-            }
-            return codes[res.Response] || `Transaction failed (code: ${res.Response})`
+            const msg = TRANZILA_CODE_MAP[res.Response] || `Transaction failed (code: ${res.Response})`
+            console.log('[PARSE-ERROR] legacy Response code:', res.Response, '→', msg)
+            return msg
           }
 
-          return res.message || res.error || "Payment failed. Please try again or refresh the page."
+          // Generic string error fields
+          if (res.error && typeof res.error === 'string') {
+            console.log('[PARSE-ERROR] error field →', res.error)
+            return res.error
+          }
+          if (res.message && typeof res.message === 'string') {
+            console.log('[PARSE-ERROR] message field →', res.message)
+            return res.message
+          }
+
+          console.warn('[PARSE-ERROR] No specific error found, full tzResult:', JSON.stringify(res))
+          return 'Payment failed. Please try again or use a different card.'
         }
 
-        const isTzSuccess = (res: any) => {
+        // Determine whether the hosted-fields charge callback indicates success.
+        // Note: error_code=0 with no transaction_result means "initiated, await callback".
+        const isTzSuccess = (res: any): boolean => {
+          if (!res) return false
           if (res.success === true) return true
           if (res.Response === '000') return true
-          if (res.error_code === 0 && (!res.transaction_result || res.transaction_result.processor_response_code === '000')) return true
+          if (
+            typeof res.error_code === 'number' &&
+            res.error_code === 0 &&
+            (!res.transaction_result || res.transaction_result.processor_response_code === '000')
+          ) return true
           return false
         }
 
@@ -541,18 +623,31 @@ export function PaymentForm({
           tzParams.maxpay = '1'
         }
 
+        console.log('[HOSTED-FIELDS] tzParams being sent to Tranzila:', {
+          ...tzParams,
+          thtk: tzParams.thtk ? `${String(tzParams.thtk).slice(0, 8)}…` : null,
+        })
+
         startRealtimeSubscription()
-        startSessionPolling(30000)
+        // Reduce initial polling delay: callback usually fires within 5–10s
+        startSessionPolling(15_000)
         is3DSActiveRef.current = true
 
         try {
-          // FIX 5: call via ref
           hostedFieldsRef.current.charge(tzParams, (tzResult: any) => {
-            console.log('[HOSTED-FIELDS] charge result:', tzResult)
-            if (isTzSuccess(tzResult)) {
-              console.log("[HOSTED-FIELDS] Success received, waiting for backend validation...")
+            console.log('[HOSTED-FIELDS] Raw charge callback received:', JSON.stringify(tzResult))
+
+            const success = isTzSuccess(tzResult)
+            console.log(`[HOSTED-FIELDS] isTzSuccess: ${success}`)
+
+            if (success) {
+              console.log('[HOSTED-FIELDS] ✅ Charge initiated successfully – awaiting backend confirmation via realtime/poll')
+              // Don't call onSuccess yet; wait for the backend callback to update the session
+              // (realtime subscription + polling are already running)
             } else {
-              setPaymentError(parseTranzilaError(tzResult))
+              const errorMsg = parseTranzilaError(tzResult)
+              console.log(`[HOSTED-FIELDS] ❌ Charge failed: "${errorMsg}" | hint: "${getErrorHint(errorMsg)}"`)
+              setPaymentError(errorMsg)
               setIsSubmitting(false)
               isSubmittingRef.current = false
               is3DSActiveRef.current = false
@@ -560,8 +655,8 @@ export function PaymentForm({
             }
           })
         } catch (err) {
-          console.error("Hosted fields charge error", err)
-          setPaymentError("Failed to initiate payment. Please try again.")
+          console.error('[HOSTED-FIELDS] Exception calling .charge():', err)
+          setPaymentError('Failed to initiate payment. Please refresh the page and try again.')
           setIsSubmitting(false)
           isSubmittingRef.current = false
           is3DSActiveRef.current = false
@@ -951,7 +1046,7 @@ export function PaymentForm({
                 >
                   {t('paymentForm.returnToStore')}
                 </a>
-                <p className="text-xs text-muted-foreground">{t('paymentForm.verifyCardBalance')}</p>
+                <p className="text-xs text-muted-foreground">{paymentError ? getErrorHint(paymentError) : t('paymentForm.verifyCardBalance')}</p>
               </div>
             </div>
           </div>
