@@ -639,7 +639,7 @@ export function PaymentForm({
 
         // Common base (same for card and Bit)
         const baseContact = {
-          terminal_name: result.terminal,
+          terminal:      result.terminal,
           sum:           String(result.chargeAmount),
           currency:      result.currency,
           contact:       `${customerInfo.firstName} ${customerInfo.lastName}`,
