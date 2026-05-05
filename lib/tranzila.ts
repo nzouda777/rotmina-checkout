@@ -135,17 +135,19 @@ export class TranzilaClient {
    * Generates a Transaction Handshake Token (thtk) for secure iFrame usage.
    * GET /v1/handshake/create
    */
-  async getHandshakeToken(): Promise<string | null> {
+  async getHandshakeToken(sum?: number, currency?: string): Promise<string | null> {
     const password = process.env.TRANZILA_TERMINAL_PASSWORD
     if (!password || password === 'your_terminal_password') {
       console.log('[TRANZILA] Handshake password not configured, skipping thtk generation.')
       return null
     }
 
-    // Terminal-level token — no sum/currency so it's not tied to a specific amount.
-    // Amount-specific tokens caused 10017 when the SDK's internal currency format
-    // differed from the format used in the handshake URL.
-    const apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}`
+    // Tranzila requires sum + currency for this terminal's handshake configuration.
+    // currency is the Tranzila numeric code: "1" = ILS, "2" = USD.
+    let apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}`
+    if (sum !== undefined && currency !== undefined) {
+      apiUrl += `&sum=${sum}&currency=${currency}`
+    }
 
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
