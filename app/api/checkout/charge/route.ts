@@ -332,27 +332,85 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Case B1: Bit payment via REST API (initBit) ────────────────────
+    // ── Case B1: Bit payment — Hosted Fields first, REST API fallback ──────────
     if (paymentMethod === 'bit') {
       const bitCallbackBase = `${baseUrl}/api/checkout/bit-callback`
       const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
       const terminal = process.env.TRANZILA_TERMINAL || ''
 
-      console.log(`[CHARGE][${logId}] Initiating Bit via REST API | terminal=${terminal} | amount=${chargeAmount}`)
+      // Generate thtk. If available, use Hosted Fields (chargeBit via SDK).
+      // If not available (password not configured), fall back to REST API redirect.
+      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+      console.log(`[CHARGE][${logId}] Bit | terminal=${terminal} | amount=${chargeAmount} | thtk=${thtk ? 'present' : 'null → REST API fallback'}`)
 
+      if (thtk) {
+        // ── Hosted Fields path: SDK chargeBit() ────────────────────────
+        await supabase
+          .from('payment_sessions')
+          .update({
+            status: 'pending_bit',
+            raw_response: {
+              bit_hf_initiated: true,
+              _gift_card: giftCardInfo
+                ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
+                : null,
+            },
+          })
+          .eq('id', sessionId)
+
+        return NextResponse.json({
+          success: false,
+          requiresHostedFields: true,
+          isBit: true,
+          thtk,
+          terminal,
+          chargeAmount,
+          currency: currencyCode,
+          callbackSuccessUrl: `${bitCallbackBase}/success?merchant_data=${sessionId}`,
+          callbackFailUrl: `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
+          callbackNotifyUrl: `${bitCallbackBase}/notify?merchant_data=${sessionId}`,
+          sessionId,
+          paymentMethod: 'bit',
+        })
+      }
+
+      // ── REST API fallback: server-side initBit ──────────────────────────────
       try {
         const bitParams = {
           terminal_name: terminal,
-          sum: chargeAmount,
+          sum: String(chargeAmount),
           currency: currencyCode,
           success_url: `${bitCallbackBase}/success?merchant_data=${sessionId}`,
-          failure_url: `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
+          fail_url: `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
           notify_url: `${bitCallbackBase}/notify?merchant_data=${sessionId}`,
           merchant_data: sessionId,
         }
 
         const bitResult = await tranzila.initBit(bitParams)
-        console.log(`[CHARGE][${logId}] Bit init result:`, bitResult)
+        console.log(`[CHARGE][${logId}] Bit REST init result:`, JSON.stringify(bitResult))
+
+        const bitUrl =
+          bitResult.url ||
+          bitResult.redirect_url ||
+          bitResult.payment_url ||
+          bitResult.bit_url ||
+          bitResult.deep_link
+
+        if (!bitUrl) {
+          const errMsg =
+            String(
+              bitResult.error ||
+              bitResult.message ||
+              (Array.isArray(bitResult.errors) && bitResult.errors[0]?.message) ||
+              'Bit payment initialization failed — no redirect URL returned'
+            )
+          console.error(`[CHARGE][${logId}] Bit REST init no URL. Full result: ${JSON.stringify(bitResult)}`)
+          await supabase
+            .from('payment_sessions')
+            .update({ status: 'failed', error_message: errMsg })
+            .eq('id', sessionId)
+          return NextResponse.json({ error: errMsg }, { status: 500 })
+        }
 
         await supabase
           .from('payment_sessions')
@@ -370,13 +428,17 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
           success: false,
-          requiresHostedFields: false, // Bit MUST use redirect, Hosted Fields is not supported
-          redirectUrl: bitResult.url || bitResult.redirect_url,
+          requiresHostedFields: false,
+          redirectUrl: bitUrl,
           paymentMethod: 'bit',
           sessionId,
         })
       } catch (bitErr: any) {
-        console.error(`[CHARGE][${logId}] Bit init failed:`, bitErr.message)
+        console.error(`[CHARGE][${logId}] Bit REST init failed:`, bitErr.message)
+        await supabase
+          .from('payment_sessions')
+          .update({ status: 'failed', error_message: bitErr.message })
+          .eq('id', sessionId)
         return NextResponse.json({ error: 'Bit payment initialization failed', detail: bitErr.message }, { status: 500 })
       }
     }

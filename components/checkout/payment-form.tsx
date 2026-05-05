@@ -593,12 +593,13 @@ export function PaymentForm({
         return
       }
 
-      // ── STEP 3: 3DS redirect (card only, legacy path) ─────────────────────
-      const needsModal = (result.requires3DS || result.requiresRedirect) && result.redirectUrl
-      if (needsModal) {
-        console.log(`[PAY][${submitId}] STEP 3 — 3DS/redirect modal needed | url: ${result.redirectUrl}`)
-        is3DSActiveRef.current = true
-        open3DSModal(result.redirectUrl, result.paymentMethod === 'bit' ? 'bit' : 'card', result.trackId)
+      // ── STEP 3: 3DS redirect or Bit REST API redirect ─────────────────────
+      const needs3DSModal = (result.requires3DS || result.requiresRedirect) && result.redirectUrl
+      const needsBitRedirect = result.paymentMethod === 'bit' && !result.requiresHostedFields && result.redirectUrl
+      if (needs3DSModal || needsBitRedirect) {
+        console.log(`[PAY][${submitId}] STEP 3 — ${needsBitRedirect ? 'Bit REST redirect' : '3DS redirect'} | url: ${result.redirectUrl}`)
+        // open3DSModal handles realtime + polling internally
+        open3DSModal(result.redirectUrl, needsBitRedirect ? 'bit' : 'card', result.trackId)
         return
       }
 
