@@ -491,14 +491,18 @@ export function PaymentForm({
   }
 
   const parseTranzilaError = useCallback((res: any, isBit?: boolean): string => {
-    if (res === false || !res) {
-      // SDK fires callback with null/false when Tranzila rejects the request
-      // server-side (e.g. error 10017 invalid thtk). The actual error isn't
-      // forwarded by the SDK so we show a contextual message.
-      console.warn('[PARSE-ERROR] tzResult is false/null/undefined — SDK received a server-side rejection (likely invalid/missing thtk or terminal configuration error)')
+    if (!res || res === false) {
+      console.warn('[PARSE-ERROR] tzResult is null/false — SDK did not return a response object')
       return isBit
         ? 'Bit payment could not be initiated. Please try again or use card payment.'
         : 'Card payment was declined. Please verify your details or try Bit payment.'
+    }
+    // SDK failure indicator: {error: 'bt_failed'} with no further details
+    if (res?.error === 'bt_failed') {
+      console.warn('[PARSE-ERROR] SDK returned bt_failed — charge rejected at gateway level (check thtk / sandbox mode / terminal config)')
+      return isBit
+        ? 'Bit payment failed. Please try again.'
+        : 'Card payment failed. Please try again or contact support.'
     }
     console.log('[PARSE-ERROR] Raw result:', JSON.stringify(res))
 
@@ -711,23 +715,28 @@ export function PaymentForm({
         const sdkMethod = isBitPayment ? 'chargeBit' : 'charge'
         console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.${sdkMethod}()...`)
         try {
+          // SDK callback signature: (err, response)
+          // success → err=null, response=<Tranzila response object>
+          // failure → err={error:'bt_failed'} | false, response=<response or undefined>
           const sdkCall = isBitPayment
             ? (cb: any) => hostedFieldsRef.current.chargeBit(tzBitParams, cb)
             : (cb: any) => hostedFieldsRef.current.charge(tzParams, cb)
-          sdkCall((tzResult: any) => {
+          sdkCall((err: any, response: any) => {
             // ── STEP 9: charge() callback ──────────────────────────────────
-            console.log(`[PAY][${submitId}] STEP 9 — charge() callback fired`)
-            console.log(`[PAY][${submitId}] STEP 9 — Raw tzResult:`, JSON.stringify(tzResult))
+            // response = Tranzila API result on success; err = error indicator on failure
+            const tzResult = response ?? err
+            console.log(`[PAY][${submitId}] STEP 9 — SDK callback | err=${JSON.stringify(err)} | response=${JSON.stringify(response)}`)
 
-            const success = isTzSuccess(tzResult)
-            console.log(`[PAY][${submitId}] STEP 9 — isTzSuccess: ${success} | isBit: ${isBitPayment}`)
+            // success = err is null/falsy AND response indicates approval
+            const success = !err && isTzSuccess(tzResult)
+            console.log(`[PAY][${submitId}] STEP 9 — success: ${success} | isBit: ${isBitPayment}`)
 
             if (success) {
               // SDK confirmed the charge. For card, the backend callback updates
               // the session. For Bit, chargeBit() fires only after the user completes
               // payment on their phone — the notify webhook already marked it paid.
               // Realtime/polling will detect the paid status and redirect.
-              console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — session paid via webhook/callback`)
+              console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — waiting for webhook/callback to confirm`)
             } else {
               const errorMsg = parseTranzilaError(tzResult, isBitPayment)
               console.log(`[PAY][${submitId}] STEP 9 — ❌ ${isBitPayment ? 'Bit' : 'Card'} charge DECLINED: "${errorMsg}"`)

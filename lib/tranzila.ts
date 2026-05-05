@@ -135,28 +135,30 @@ export class TranzilaClient {
    * Generates a Transaction Handshake Token (thtk) for secure iFrame usage.
    * GET /v1/handshake/create
    */
-  async getHandshakeToken(amount: number, currency: string = '1'): Promise<string | null> {
+  async getHandshakeToken(): Promise<string | null> {
     const password = process.env.TRANZILA_TERMINAL_PASSWORD
     if (!password || password === 'your_terminal_password') {
       console.log('[TRANZILA] Handshake password not configured, skipping thtk generation.')
       return null
     }
 
-    const apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}&sum=${amount}&currency=${currency}`
+    // Terminal-level token — no sum/currency so it's not tied to a specific amount.
+    // Amount-specific tokens caused 10017 when the SDK's internal currency format
+    // differed from the format used in the handshake URL.
+    const apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}`
 
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
       const text = await response.text()
       console.log(`[TRANZILA] Handshake status=${response.status} | body=${text.substring(0, 120)}`)
       if (response.ok && text && !text.toLowerCase().includes('error')) {
-        // Tranzila returns the handshake response as "thtk=<token>" (key=value format).
-        // The SDK and REST API expect only the token value, not the "thtk=" prefix.
+        // Tranzila returns "thtk=<token>" — strip the key prefix before returning.
         const raw = text.trim()
         const token = raw.startsWith('thtk=') ? raw.slice(5) : raw
-        console.log(`[TRANZILA] Handshake token extracted (first 10 chars): ${token.substring(0, 10)}…`)
+        console.log(`[TRANZILA] Handshake token (first 10): ${token.substring(0, 10)}…`)
         return token
       }
-      console.error(`[TRANZILA] Handshake failed, fallback to none. Response: ${text}`)
+      console.error(`[TRANZILA] Handshake failed. Response: ${text}`)
       return null
     } catch (e) {
       console.error('[TRANZILA] Handshake error:', e)

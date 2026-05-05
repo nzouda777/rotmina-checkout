@@ -340,7 +340,7 @@ export async function POST(request: NextRequest) {
 
       // Generate thtk. If available, use Hosted Fields (chargeBit via SDK).
       // If not available (password not configured), fall back to REST API redirect.
-      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+      const thtk = await tranzila.getHandshakeToken()
       console.log(`[CHARGE][${logId}] Bit | terminal=${terminal} | amount=${chargeAmount} | thtk=${thtk ? 'present' : 'null → REST API fallback'}`)
 
       if (thtk) {
@@ -454,7 +454,7 @@ export async function POST(request: NextRequest) {
       const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
       console.log(`[CHARGE][${logId}] Currency: ${session.cart.currency} → Tranzila code: ${currencyCode}`)
 
-      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+      const thtk = await tranzila.getHandshakeToken()
 
       const terminal = process.env.TRANZILA_TERMINAL || ''
       console.log(`[CHARGE][${logId}] Terminal: ${terminal || 'MISSING!'} | callbackUrl: ${callbackUrl}`)
