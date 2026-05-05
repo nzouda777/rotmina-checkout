@@ -455,7 +455,6 @@ export async function POST(request: NextRequest) {
       console.log(`[CHARGE][${logId}] Currency: ${session.cart.currency} → Tranzila code: ${currencyCode}`)
 
       const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
-      console.log(`[CHARGE][${logId}] Handshake token (thtk): ${thtk ? `obtained (${String(thtk).slice(0, 8)}…)` : 'NULL — payment may fail without it'}`)
 
       const terminal = process.env.TRANZILA_TERMINAL || ''
       console.log(`[CHARGE][${logId}] Terminal: ${terminal || 'MISSING!'} | callbackUrl: ${callbackUrl}`)
@@ -463,6 +462,18 @@ export async function POST(request: NextRequest) {
 
       if (!terminal) {
         console.error(`[CHARGE][${logId}] CRITICAL: TRANZILA_TERMINAL env var is not set!`)
+      }
+
+      if (!thtk) {
+        // thtk is required by Tranzila Hosted Fields. Without it the SDK will fire
+        // the charge callback with null/false and error 10017. Fail early with a
+        // clear message instead of a confusing SDK-level error.
+        console.error(`[CHARGE][${logId}] thtk is null — TRANZILA_TERMINAL_PASSWORD is missing or incorrect. Card payments require a valid handshake token.`)
+        await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+        return NextResponse.json(
+          { error: 'Card payment is temporarily unavailable. Please try Bit payment or contact support.' },
+          { status: 503 }
+        )
       }
 
       await supabase

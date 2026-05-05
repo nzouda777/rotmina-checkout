@@ -147,11 +147,14 @@ export class TranzilaClient {
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
       const text = await response.text()
+      console.log(`[TRANZILA] Handshake status=${response.status} | body=${text.substring(0, 120)}`)
       if (response.ok && text && !text.toLowerCase().includes('error')) {
         // Tranzila returns the handshake response as "thtk=<token>" (key=value format).
         // The SDK and REST API expect only the token value, not the "thtk=" prefix.
         const raw = text.trim()
-        return raw.startsWith('thtk=') ? raw.slice(5) : raw
+        const token = raw.startsWith('thtk=') ? raw.slice(5) : raw
+        console.log(`[TRANZILA] Handshake token extracted (first 10 chars): ${token.substring(0, 10)}…`)
+        return token
       }
       console.error(`[TRANZILA] Handshake failed, fallback to none. Response: ${text}`)
       return null
