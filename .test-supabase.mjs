@@ -5,7 +5,7 @@ if (!globalThis.fetch) {
   globalThis.fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 }
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL + '/rest/v1/payment_sessions?select=*&order=created_at.desc&limit=3';
+const url = process.env.SUPABASE_URL + '/rest/v1/payment_sessions?select=*&order=created_at.desc&limit=3';
 
 fetch(url, {
   headers: {
