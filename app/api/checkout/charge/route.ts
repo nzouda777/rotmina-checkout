@@ -358,6 +358,9 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', sessionId)
 
+        // chargeBit() SDK requires ISO currency code ("ILS"), not Tranzila's numeric code ("1")
+        const currencyIso = session.cart.currency.toUpperCase() === 'USD' ? 'USD' : 'ILS'
+
         return NextResponse.json({
           success: false,
           requiresHostedFields: true,
@@ -365,7 +368,7 @@ export async function POST(request: NextRequest) {
           thtk,
           terminal,
           chargeAmount,
-          currency: currencyCode,
+          currency: currencyIso,
           callbackSuccessUrl: `${bitCallbackBase}/success?merchant_data=${sessionId}`,
           callbackFailUrl: `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
           callbackNotifyUrl: `${bitCallbackBase}/notify?merchant_data=${sessionId}`,
