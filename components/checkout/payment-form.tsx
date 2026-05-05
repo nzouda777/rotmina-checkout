@@ -83,7 +83,6 @@ export function PaymentForm({
   const [paymentError, setPaymentError]   = useState<string | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms]         = useState(false)
-  const [bitWaiting, setBitWaiting]       = useState(false)
   const { t, lang } = useLanguage()
 
   // ── Refs that survive re-renders without triggering them ──────────────────
@@ -134,7 +133,6 @@ export function PaymentForm({
     clearListeners()
     setShow3DS(false)
     setThreeDSUrl('')
-    setBitWaiting(false)
     setIsSubmitting(false)
     isSubmittingRef.current = false
   }, [clearListeners, sessionId])
@@ -150,10 +148,10 @@ export function PaymentForm({
   }, [installments, maxInstallments])
 
   // ── Hosted Fields Initialization ──────────────────────────────────────────
-  // One shared instance handles both card AND Bit fields.
-  // Both containers (#credit_card_number, #cvv, #expiry, #bit_container) are
-  // always present in the DOM (hidden via CSS when not active) so the SDK
-  // can find them in a single create() call regardless of which method is shown.
+  // The SDK is used for card input fields only.
+  // Valid field IDs: credit_card_number, cvv, expiry, card_holder_id_number.
+  // Bit payments use the separate chargeBit() method which creates its own
+  // full-screen overlay — no SDK field container is needed for Bit.
 
   const initTranzila = useCallback(() => {
     if (!tzLoaded.current) {
@@ -186,27 +184,14 @@ export function PaymentForm({
         !!document.querySelector('#cvv') &&
         !!document.querySelector('#expiry')
 
-      const bitContainerOk = !!document.querySelector('#bit_container')
+      console.log(`[TZ] DOM check — card containers: ${cardContainersOk}`)
 
-      console.log(`[TZ] DOM check — card containers: ${cardContainersOk} | bit container: ${bitContainerOk}`)
-
-      if (!cardContainersOk && !bitContainerOk) {
-        console.warn('[TZ] No hosted field containers found in DOM, skipping init.')
+      if (!cardContainersOk) {
+        console.warn('[TZ] Card field containers not found in DOM, skipping init.')
         return
       }
 
       try {
-        const fieldsConfig: Record<string, { selector: string }> = {}
-        if (cardContainersOk) {
-          fieldsConfig.credit_card_number = { selector: '#credit_card_number' }
-          fieldsConfig.cvv                = { selector: '#cvv' }
-          fieldsConfig.expiry             = { selector: '#expiry' }
-        }
-        if (bitContainerOk) {
-          // 'bit_button' is the Tranzila hosted-fields Bit selector key.
-          fieldsConfig.bit_button = { selector: '#bit_container' }
-        }
-
         // @ts-ignore
         const instance = window.TzlaHostedFields.create({
           sandbox: sandboxMode,
@@ -223,10 +208,14 @@ export function PaymentForm({
               'outline': 'none',
             },
           },
-          fields: fieldsConfig,
+          fields: {
+            credit_card_number: { selector: '#credit_card_number' },
+            cvv:                { selector: '#cvv' },
+            expiry:             { selector: '#expiry' },
+          },
         })
         hostedFieldsRef.current = instance
-        console.log('[TZ] ✅ Hosted fields initialized — fields:', Object.keys(fieldsConfig).join(', '))
+        console.log('[TZ] ✅ Hosted fields initialized (card fields: cc, cvv, expiry)')
       } catch (err) {
         console.error('[TZ] Hosted fields init error:', err)
       }
@@ -634,9 +623,11 @@ export function PaymentForm({
           return
         }
 
-        // ── STEP 6: Build tzParams ──────────────────────────────────────────
+        // ── STEP 6: Build params ────────────────────────────────────────────
         const isBitPayment = !!result.isBit
-        const tzParams: any = {
+
+        // Common base (same for card and Bit)
+        const baseContact = {
           terminal_name: result.terminal,
           sum:           String(result.chargeAmount),
           currency:      result.currency,
@@ -646,23 +637,32 @@ export function PaymentForm({
           merchant_data: sessionId,
         }
 
-        if (result.thtk) tzParams.thtk = result.thtk
+        let tzParams: any  // card params for charge()
+        let tzBitParams: any  // bit params for chargeBit()
 
         if (isBitPayment) {
-          // Bit via hosted fields — SDK renders the Bit button in #bit_container.
-          // Use the dedicated bit-callback routes so Tranzila's server-to-server
-          // notify webhook hits the right handler and marks the session paid.
-          tzParams.payment_method      = 'bit'
-          tzParams.success_url_address = result.callbackSuccessUrl
-          tzParams.fail_url_address    = result.callbackFailUrl
-          if (result.callbackNotifyUrl) tzParams.notify_url = result.callbackNotifyUrl
-          console.log(`[PAY][${submitId}] STEP 6 — Bit tzParams built:`, JSON.stringify({ ...tzParams, thtk: tzParams.thtk ? '***' : null }))
+          // chargeBit() params — Bit uses success_url / failure_url / notify_url
+          // The SDK creates a full-screen overlay with the Bit QR/deeplink.
+          // The callback fires AFTER the user completes (or cancels) payment on phone.
+          tzBitParams = {
+            ...baseContact,
+            success_url:        result.callbackSuccessUrl,
+            failure_url:        result.callbackFailUrl,
+            notify_url:         result.callbackNotifyUrl,
+            transaction_layout: 'qr',
+          }
+          if (result.thtk) tzBitParams.thtk = result.thtk
+          console.log(`[PAY][${submitId}] STEP 6 — Bit chargeBit() params:`, JSON.stringify({ ...tzBitParams, thtk: tzBitParams.thtk ? '***' : null }))
         } else {
-          // Card — installments, cred_type, tranmode, single callback URL
-          tzParams.success_url_address = result.callbackUrl
-          tzParams.fail_url_address    = result.callbackUrl
-          tzParams.cred_type = installments > 1 ? '8' : '1'
-          tzParams.tranmode  = 'A'
+          // charge() params for card
+          tzParams = {
+            ...baseContact,
+            success_url_address: result.callbackUrl,
+            fail_url_address:    result.callbackUrl,
+            cred_type: installments > 1 ? '8' : '1',
+            tranmode:  'A',
+          }
+          if (result.thtk) tzParams.thtk = result.thtk
           if (installments > 1) {
             tzParams.npay = String(installments)
             const other = Math.floor((result.chargeAmount / installments) * 100) / 100
@@ -672,23 +672,27 @@ export function PaymentForm({
           } else {
             tzParams.maxpay = '1'
           }
-          console.log(`[PAY][${submitId}] STEP 6 — Card tzParams built:`, JSON.stringify({
-            ...tzParams,
-            thtk: tzParams.thtk ? `${String(tzParams.thtk).slice(0, 8)}…` : null,
+          console.log(`[PAY][${submitId}] STEP 6 — Card charge() params:`, JSON.stringify({
+            ...tzParams, thtk: tzParams.thtk ? `${String(tzParams.thtk).slice(0, 8)}…` : null,
           }))
         }
 
-        // ── STEP 7: Start realtime + polling before charge() ───────────────
+        // ── STEP 7: Start realtime + polling before charge ─────────────────
         console.log(`[PAY][${submitId}] STEP 7 — Starting realtime subscription + session polling`)
         startRealtimeSubscription()
-        // Bit: immediate poll (phone-based). Card: 15 s delay (callback comes after Tranzila processes)
+        // For Bit, chargeBit() blocks until phone payment is done, so
+        // polling starts immediately. Card: 15 s delay for callback round-trip.
         startSessionPolling(isBitPayment ? 0 : 15_000)
         is3DSActiveRef.current = true
 
-        // ── STEP 8: Call hostedFieldsRef.current.charge() ─────────────────
-        console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.charge()...`)
+        // ── STEP 8: Call charge() or chargeBit() ──────────────────────────
+        const sdkMethod = isBitPayment ? 'chargeBit' : 'charge'
+        console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.${sdkMethod}()...`)
         try {
-          hostedFieldsRef.current.charge(tzParams, (tzResult: any) => {
+          const sdkCall = isBitPayment
+            ? (cb: any) => hostedFieldsRef.current.chargeBit(tzBitParams, cb)
+            : (cb: any) => hostedFieldsRef.current.charge(tzParams, cb)
+          sdkCall((tzResult: any) => {
             // ── STEP 9: charge() callback ──────────────────────────────────
             console.log(`[PAY][${submitId}] STEP 9 — charge() callback fired`)
             console.log(`[PAY][${submitId}] STEP 9 — Raw tzResult:`, JSON.stringify(tzResult))
@@ -696,34 +700,15 @@ export function PaymentForm({
             const success = isTzSuccess(tzResult)
             console.log(`[PAY][${submitId}] STEP 9 — isTzSuccess: ${success} | isBit: ${isBitPayment}`)
 
-            if (isBitPayment) {
-              // For Bit, charge() fires after initiation (not phone completion).
-              // Only show an error if there is a genuine API/config error.
-              // All other states are treated as "payment initiated — waiting for phone".
-              const hasGenuineError =
-                tzResult &&
-                ((typeof tzResult.error_code === 'number' && tzResult.error_code > 0) ||
-                  (Array.isArray(tzResult.errors) && tzResult.errors.length > 0))
-
-              if (hasGenuineError) {
-                const errorMsg = parseTranzilaError(tzResult)
-                console.log(`[PAY][${submitId}] STEP 9 Bit — ❌ Init failed: "${errorMsg}"`)
-                clearListeners()
-                setPaymentError(errorMsg)
-                setBitWaiting(false)
-                setIsSubmitting(false)
-                isSubmittingRef.current = false
-                is3DSActiveRef.current = false
-              } else {
-                console.log(`[PAY][${submitId}] STEP 9 Bit — ✅ Initiated. Waiting for completion via realtime/polling.`)
-                setBitWaiting(true)
-              }
-            } else if (success) {
-              console.log(`[PAY][${submitId}] STEP 9 — ✅ Charge accepted by SDK — awaiting backend callback to confirm session`)
-              // Session will be confirmed via Supabase realtime or polling
+            if (success) {
+              // SDK confirmed the charge. For card, the backend callback updates
+              // the session. For Bit, chargeBit() fires only after the user completes
+              // payment on their phone — the notify webhook already marked it paid.
+              // Realtime/polling will detect the paid status and redirect.
+              console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — session paid via webhook/callback`)
             } else {
               const errorMsg = parseTranzilaError(tzResult)
-              console.log(`[PAY][${submitId}] STEP 9 — ❌ Charge DECLINED: "${errorMsg}" | hint: "${getErrorHint(errorMsg)}"`)
+              console.log(`[PAY][${submitId}] STEP 9 — ❌ ${isBitPayment ? 'Bit' : 'Card'} charge DECLINED: "${errorMsg}"`)
               clearListeners()
               setPaymentError(errorMsg)
               setIsSubmitting(false)
@@ -731,9 +716,9 @@ export function PaymentForm({
               is3DSActiveRef.current = false
             }
           })
-          console.log(`[PAY][${submitId}] STEP 8 — charge() called successfully (callback is pending)`)
+          console.log(`[PAY][${submitId}] STEP 8 — ${sdkMethod}() called (callback pending until payment completes)`)
         } catch (err: any) {
-          console.error(`[PAY][${submitId}] STEP 8 — ❌ Exception thrown by charge():`, err?.message || err)
+          console.error(`[PAY][${submitId}] STEP 8 — ❌ Exception thrown by ${sdkMethod}():`, err?.message || err)
           setPaymentError('Failed to initiate payment. Please refresh the page and try again.')
           setIsSubmitting(false)
           isSubmittingRef.current = false
@@ -786,18 +771,17 @@ export function PaymentForm({
         and sets pointer-events: auto so clicks reach the iframe document.
       */}
       <style>{`
-        /* Card + Bit hosted-field iframes must fill their container and be clickable */
+        /* Card hosted-field iframes must fill their container and be clickable */
         #credit_card_number iframe,
         #cvv iframe,
-        #expiry iframe,
-        #bit_container iframe {
+        #expiry iframe {
           display: block !important;
           width: 100% !important;
           height: 100% !important;
           pointer-events: auto !important;
           border: none !important;
         }
-        #credit_card_number, #cvv, #expiry, #bit_container {
+        #credit_card_number, #cvv, #expiry {
           cursor: text;
           pointer-events: auto;
         }
@@ -979,41 +963,21 @@ export function PaymentForm({
               </div>
             </div>
 
-            {/* ── Bit section — always in DOM, visible only when bit is selected ── */}
-            {/* #bit_container is where TzlaHostedFields renders the Bit payment button */}
+            {/* ── Bit section ── */}
+            {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK
+                show a full-screen overlay with the Bit QR / deeplink.
+                No hosted-field container is needed here. */}
             <div style={{ display: paymentMethod === 'bit' ? 'block' : 'none' }}>
-              <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6 space-y-4">
-                {!bitWaiting ? (
-                  <div className="flex items-center justify-center gap-3">
-                    <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
-                      <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
-                      <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
-                    </div>
+              <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
+                    <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 py-2">
-                    <div className="flex items-center gap-3">
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#2b5686]/30 border-t-[#2b5686]" />
-                      <span className="text-sm font-medium text-[#2b5686]">
-                        {lang === 'he' ? 'ממתין לאישור Bit…' : 'Waiting for Bit payment…'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-center">
-                      {lang === 'he'
-                        ? 'אשר את התשלום באפליקציית Bit בטלפון שלך'
-                        : 'Complete the payment in the Bit app on your phone'}
-                    </p>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
                   </div>
-                )}
-                {/* Tranzila hosted-fields Bit button / QR renders here */}
-                <div
-                  id="bit_container"
-                  className="w-full rounded-lg overflow-hidden bg-background border border-[#2b5686]/30"
-                  style={{ minHeight: '56px' }}
-                />
+                </div>
               </div>
             </div>
           </div>
@@ -1071,15 +1035,13 @@ export function PaymentForm({
                 : 'bg-foreground text-background hover:opacity-90 focus:ring-ring'
             }`}
           >
-            {bitWaiting
-              ? (lang === 'he' ? 'ממתין לתשלום Bit…' : 'Waiting for Bit payment…')
-              : isSubmitting
-                ? t('paymentForm.processing')
-                : chargeAmount > 0
-                  ? (paymentMethod === 'bit'
-                      ? t('paymentForm.payWithBit')
-                      : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
-                  : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
+            {isSubmitting
+              ? t('paymentForm.processing')
+              : chargeAmount > 0
+                ? (paymentMethod === 'bit'
+                    ? t('paymentForm.payWithBit')
+                    : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
+                : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
             }
           </button>
         </div>
