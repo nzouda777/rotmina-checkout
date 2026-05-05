@@ -57,14 +57,18 @@ export async function POST(request: NextRequest) {
     const idempotencyKey = bodyIdempotencyKey || idempotency_key || Math.random().toString(36).substring(2) + Date.now().toString(36)
 
     // Calculate currency conversion if cart is not originally ILS
-    const originalCurrency = cart?.currency || 'ILS';
+    // Shopify cart can have 'currency' or 'currency_code'
+    const originalCurrency = (cart?.currency || cart?.currency_code || 'ILS').toUpperCase();
+    console.log(`[CURRENCY] Detected original currency: ${originalCurrency}`);
     const rate = await getExchangeRate(originalCurrency, 'ILS');
+    console.log(`[CURRENCY] Conversion rate to ILS: ${rate}`);
 
-    // Handle raw Shopify cart format if detected
+    // Handle raw Shopify cart format if detected (prices in cents)
     let finalCart = cart
-    if (cart && cart.token && cart.items && !cart.subtotal) {
+    if (cart && (cart.token || cart.items) && !cart.subtotal) {
+      console.log(`[CURRENCY] Processing raw Shopify cart in cents. Total price in cents: ${cart.total_price}`);
       finalCart = {
-        items: cart.items.map((item: any) => ({
+        items: (cart.items || []).map((item: any) => ({
           id: String(item.id),
           variant_id: item.variant_id,
           product_id: item.product_id,
@@ -82,9 +86,11 @@ export async function POST(request: NextRequest) {
         total: Math.round((cart.total_price / 100) * rate * 100) / 100,
         currency: 'ILS'
       }
+      console.log(`[CURRENCY] Converted raw total to ILS: ${finalCart.total}`);
     } else if (finalCart && rate !== 1) {
-      // If it's the pre-formatted cart but had a different currency
-      finalCart.items = finalCart.items.map((item: any) => ({
+      console.log(`[CURRENCY] Converting pre-formatted cart. Original total: ${finalCart.total}`);
+      // If it's the pre-formatted cart but had a different currency (prices in decimal)
+      finalCart.items = (finalCart.items || []).map((item: any) => ({
         ...item,
         price: Math.round(item.price * rate * 100) / 100
       }));
@@ -92,6 +98,7 @@ export async function POST(request: NextRequest) {
       finalCart.total = Math.round(finalCart.total * rate * 100) / 100;
       if (finalCart.shipping) finalCart.shipping = Math.round(finalCart.shipping * rate * 100) / 100;
       if (finalCart.tax) finalCart.tax = Math.round(finalCart.tax * rate * 100) / 100;
+      console.log(`[CURRENCY] Converted formatted total to ILS: ${finalCart.total}`);
     }
 
     if (!shop || !finalCart) {
