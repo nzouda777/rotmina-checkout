@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
     }
 
     const tranzila = createTranzilaClient()
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host')}`
     const clientIp =
       request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       request.headers.get('x-real-ip') ||

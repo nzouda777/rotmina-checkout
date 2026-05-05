@@ -83,6 +83,7 @@ export function PaymentForm({
   const [paymentError, setPaymentError]   = useState<string | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms]         = useState(false)
+  const [bitWaiting, setBitWaiting]       = useState(false)
   const { t, lang } = useLanguage()
 
   // ── Refs that survive re-renders without triggering them ──────────────────
@@ -133,6 +134,7 @@ export function PaymentForm({
     clearListeners()
     setShow3DS(false)
     setThreeDSUrl('')
+    setBitWaiting(false)
     setIsSubmitting(false)
     isSubmittingRef.current = false
   }, [clearListeners, sessionId])
@@ -692,19 +694,41 @@ export function PaymentForm({
             console.log(`[PAY][${submitId}] STEP 9 — Raw tzResult:`, JSON.stringify(tzResult))
 
             const success = isTzSuccess(tzResult)
-            console.log(`[PAY][${submitId}] STEP 9 — isTzSuccess: ${success}`)
+            console.log(`[PAY][${submitId}] STEP 9 — isTzSuccess: ${success} | isBit: ${isBitPayment}`)
 
-            if (success) {
-              console.log(`[PAY][${submitId}] STEP 9 — ✅ Charge accepted by SDK — awaiting backend webhook/callback to confirm session`)
+            if (isBitPayment) {
+              // For Bit, charge() fires after initiation (not phone completion).
+              // Only show an error if there is a genuine API/config error.
+              // All other states are treated as "payment initiated — waiting for phone".
+              const hasGenuineError =
+                tzResult &&
+                ((typeof tzResult.error_code === 'number' && tzResult.error_code > 0) ||
+                  (Array.isArray(tzResult.errors) && tzResult.errors.length > 0))
+
+              if (hasGenuineError) {
+                const errorMsg = parseTranzilaError(tzResult)
+                console.log(`[PAY][${submitId}] STEP 9 Bit — ❌ Init failed: "${errorMsg}"`)
+                clearListeners()
+                setPaymentError(errorMsg)
+                setBitWaiting(false)
+                setIsSubmitting(false)
+                isSubmittingRef.current = false
+                is3DSActiveRef.current = false
+              } else {
+                console.log(`[PAY][${submitId}] STEP 9 Bit — ✅ Initiated. Waiting for completion via realtime/polling.`)
+                setBitWaiting(true)
+              }
+            } else if (success) {
+              console.log(`[PAY][${submitId}] STEP 9 — ✅ Charge accepted by SDK — awaiting backend callback to confirm session`)
               // Session will be confirmed via Supabase realtime or polling
             } else {
               const errorMsg = parseTranzilaError(tzResult)
               console.log(`[PAY][${submitId}] STEP 9 — ❌ Charge DECLINED: "${errorMsg}" | hint: "${getErrorHint(errorMsg)}"`)
+              clearListeners()
               setPaymentError(errorMsg)
               setIsSubmitting(false)
               isSubmittingRef.current = false
               is3DSActiveRef.current = false
-              clearListeners()
             }
           })
           console.log(`[PAY][${submitId}] STEP 8 — charge() called successfully (callback is pending)`)
@@ -959,16 +983,32 @@ export function PaymentForm({
             {/* #bit_container is where TzlaHostedFields renders the Bit payment button */}
             <div style={{ display: paymentMethod === 'bit' ? 'block' : 'none' }}>
               <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6 space-y-4">
-                <div className="flex items-center justify-center gap-3">
-                  <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
-                    <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
+                {!bitWaiting ? (
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
+                      <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
+                      <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
-                    <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#2b5686]/30 border-t-[#2b5686]" />
+                      <span className="text-sm font-medium text-[#2b5686]">
+                        {lang === 'he' ? 'ממתין לאישור Bit…' : 'Waiting for Bit payment…'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center">
+                      {lang === 'he'
+                        ? 'אשר את התשלום באפליקציית Bit בטלפון שלך'
+                        : 'Complete the payment in the Bit app on your phone'}
+                    </p>
                   </div>
-                </div>
-                {/* Tranzila hosted-fields Bit button renders here */}
+                )}
+                {/* Tranzila hosted-fields Bit button / QR renders here */}
                 <div
                   id="bit_container"
                   className="w-full rounded-lg overflow-hidden bg-background border border-[#2b5686]/30"
@@ -1031,13 +1071,15 @@ export function PaymentForm({
                 : 'bg-foreground text-background hover:opacity-90 focus:ring-ring'
             }`}
           >
-            {isSubmitting
-              ? t('paymentForm.processing')
-              : chargeAmount > 0
-                ? (paymentMethod === 'bit'
-                    ? t('paymentForm.payWithBit')
-                    : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
-                : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
+            {bitWaiting
+              ? (lang === 'he' ? 'ממתין לתשלום Bit…' : 'Waiting for Bit payment…')
+              : isSubmitting
+                ? t('paymentForm.processing')
+                : chargeAmount > 0
+                  ? (paymentMethod === 'bit'
+                      ? t('paymentForm.payWithBit')
+                      : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
+                  : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
             }
           </button>
         </div>

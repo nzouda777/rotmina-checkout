@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
     }
 
     let shopifyOrderId = session.order_id
+    let shopifyOrderUrl: string | null = null
 
     if (isSuccess && !shopifyOrderId && session.customer) {
       try {
@@ -110,7 +111,8 @@ export async function POST(request: NextRequest) {
           transactionId: ConfirmationCode,
         })
         shopifyOrderId = String(order.id)
-        console.log(`[CALLBACK][${logId}] Shopify order created: ${shopifyOrderId}`)
+        shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+        console.log(`[CALLBACK][${logId}] Shopify order created: ${shopifyOrderId} | url: ${shopifyOrderUrl}`)
       } catch (err) {
         console.error(`[CALLBACK][${logId}] Shopify order failed (payment still marked paid):`, err)
       }
@@ -121,7 +123,11 @@ export async function POST(request: NextRequest) {
       .update({
         status: isSuccess ? 'paid' : 'failed',
         error_message: errorMsg ?? null,
-        raw_response: params,
+        raw_response: {
+          ...params,
+          shopifyOrderUrl: shopifyOrderUrl || undefined,
+          _gift_card: (session.raw_response as any)?._gift_card || undefined,
+        },
         order_id: shopifyOrderId,
         tranzila_transaction_id: ConfirmationCode || null,
         updated_at: new Date().toISOString(),
