@@ -332,53 +332,50 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Case B1: Bit payment via REST API (initBit) ────────────────────
+    // ── Case B1: Bit payment via Hosted Fields ────────────────────
     if (paymentMethod === 'bit') {
       const bitCallbackBase = `${baseUrl}/api/checkout/bit-callback`
       const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
       const terminal = process.env.TRANZILA_TERMINAL || ''
 
-      console.log(`[CHARGE][${logId}] Initiating Bit via REST API | terminal=${terminal} | amount=${chargeAmount}`)
+      console.log(`[CHARGE][${logId}] Initiating Bit via Hosted Fields | terminal=${terminal || 'MISSING!'} | currency=${session.cart.currency} → ${currencyCode} | amount=${chargeAmount}`)
 
+      let thtk: string | null = null
       try {
-        const bitParams = {
-          terminal_name: terminal,
-          sum: chargeAmount,
-          currency: currencyCode,
-          success_url: `${bitCallbackBase}/success?merchant_data=${sessionId}`,
-          failure_url: `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
-          notify_url: `${bitCallbackBase}/notify?merchant_data=${sessionId}`,
-          merchant_data: sessionId,
-        }
-
-        const bitResult = await tranzila.initBit(bitParams)
-        console.log(`[CHARGE][${logId}] Bit init result:`, bitResult)
-
-        await supabase
-          .from('payment_sessions')
-          .update({
-            status: 'pending_bit',
-            raw_response: {
-              bit_api_initiated: true,
-              result: bitResult,
-              _gift_card: giftCardInfo
-                ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
-                : null,
-            },
-          })
-          .eq('id', sessionId)
-
-        return NextResponse.json({
-          success: false,
-          requiresHostedFields: false, // We use redirect instead
-          redirectUrl: bitResult.url || bitResult.redirect_url,
-          paymentMethod: 'bit',
-          sessionId,
-        })
-      } catch (bitErr: any) {
-        console.error(`[CHARGE][${logId}] Bit init failed:`, bitErr.message)
-        return NextResponse.json({ error: 'Bit payment initialization failed', detail: bitErr.message }, { status: 500 })
+        thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+        console.log(`[CHARGE][${logId}] Bit thtk: ${thtk ? `obtained (${String(thtk).slice(0, 8)}…)` : 'NULL — payment may fail without it'}`)
+      } catch (thtkErr: any) {
+        console.warn(`[CHARGE][${logId}] Bit thtk fetch failed (non-fatal):`, thtkErr.message)
       }
+
+      await supabase
+        .from('payment_sessions')
+        .update({
+          status: 'pending_bit',
+          raw_response: {
+            bit_hosted_fields_initiated: true,
+            _gift_card: giftCardInfo
+              ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
+              : null,
+          },
+        })
+        .eq('id', sessionId)
+
+      console.log(`[CHARGE][${logId}] Returning requiresHostedFields (Bit) response`)
+      return NextResponse.json({
+        success: false,
+        requiresHostedFields: true,
+        isBit: true,
+        thtk,
+        terminal,
+        chargeAmount,
+        currency: currencyCode,
+        callbackSuccessUrl: `${bitCallbackBase}/success?merchant_data=${sessionId}`,
+        callbackFailUrl:    `${bitCallbackBase}/failure?merchant_data=${sessionId}`,
+        callbackNotifyUrl:  `${bitCallbackBase}/notify?merchant_data=${sessionId}`,
+        sessionId,
+        paymentMethod: 'bit',
+      })
     }
 
     // ── Case B2: Credit card (Tranzila Hosted Fields SAQ A) ──────────────────

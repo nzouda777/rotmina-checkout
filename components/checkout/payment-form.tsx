@@ -641,15 +641,19 @@ export function PaymentForm({
         let tzBitParams: any  // bit params for chargeBit()
 
         if (isBitPayment) {
-          // chargeBit() params — Bit uses success_url / failure_url / notify_url
-          // The SDK creates a full-screen overlay with the Bit QR/deeplink.
-          // The callback fires AFTER the user completes (or cancels) payment on phone.
+          // chargeBit() params — Bit uses success_url / fail_url / notify_url
+          // It strictly requires 'terminal' (not 'terminal_name') in Hosted Fields DirectNG.
           tzBitParams = {
-            ...baseContact,
+            terminal:           result.terminal,
+            sum:                String(result.chargeAmount),
+            currency:           result.currency,
+            contact:            `${customerInfo.firstName} ${customerInfo.lastName}`,
+            email:              customerInfo.email,
+            phone:              customerInfo.phone.replace(/\D/g, ''),
+            merchant_data:      sessionId,
             success_url:        result.callbackSuccessUrl,
-            failure_url:        result.callbackFailUrl,
+            fail_url:           result.callbackFailUrl,
             notify_url:         result.callbackNotifyUrl,
-            transaction_layout: 'qr',
           }
           if (result.thtk) tzBitParams.thtk = result.thtk
           console.log(`[PAY][${submitId}] STEP 6 — Bit chargeBit() params:`, JSON.stringify({ ...tzBitParams, thtk: tzBitParams.thtk ? '***' : null }))
