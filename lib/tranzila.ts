@@ -150,15 +150,29 @@ export class TranzilaClient {
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
       const text = await response.text()
-      console.log(`[TRANZILA] Handshake status=${response.status} | body=${text.substring(0, 120)}`)
-      if (response.ok && text && !text.toLowerCase().includes('error')) {
-        // Tranzila returns "thtk=<token>" — strip the key prefix before returning.
-        const raw = text.trim()
-        const token = raw.startsWith('thtk=') ? raw.slice(5) : raw
+      console.log(`[TRANZILA] Handshake status=${response.status} | body=${text.substring(0, 200)}`)
+
+      if (!response.ok) {
+        console.error(`[TRANZILA] Handshake HTTP error ${response.status}: ${text}`)
+        return null
+      }
+
+      const raw = text.trim()
+
+      // Tranzila returns plain text "thtk=<token>" on success
+      if (raw.startsWith('thtk=')) {
+        const token = raw.slice(5)
         console.log(`[TRANZILA] Handshake token (first 10): ${token.substring(0, 10)}…`)
         return token
       }
-      console.error(`[TRANZILA] Handshake failed. Response: ${text}`)
+
+      // Some configurations may return just the token without the prefix
+      if (raw && !raw.toLowerCase().startsWith('{') && !raw.toLowerCase().includes('error') && !raw.toLowerCase().includes('invalid')) {
+        console.log(`[TRANZILA] Handshake token (no prefix, first 10): ${raw.substring(0, 10)}…`)
+        return raw
+      }
+
+      console.error(`[TRANZILA] Handshake unexpected response: ${text}`)
       return null
     } catch (e) {
       console.error('[TRANZILA] Handshake error:', e)
