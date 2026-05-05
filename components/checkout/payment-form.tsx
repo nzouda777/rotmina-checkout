@@ -564,8 +564,18 @@ export function PaymentForm({
     setPaymentError(null)
 
     try {
-      // ── STEP 1: Call /api/checkout/charge ─────────────────────────────────
-      console.log(`[PAY][${submitId}] STEP 1 — Calling /api/checkout/charge...`)
+      // ── STEP 1: Validate minimum amount for Bit ──────────────────────────
+      if (paymentMethod === 'bit' && chargeAmount < 5) {
+        const errorMsg = 'Bit requires a minimum payment of 5 NIS. Please use a credit card for this order.'
+        console.log(`[PAY][${submitId}] STEP 1 — ❌ Bit amount too small: ${chargeAmount}`)
+        setPaymentError(errorMsg)
+        setIsSubmitting(false)
+        isSubmittingRef.current = false
+        return
+      }
+
+      // ── STEP 2: Call /api/checkout/charge ─────────────────────────────────
+      console.log(`[PAY][${submitId}] STEP 2 — Calling /api/checkout/charge...`)
       const response = await fetch('/api/checkout/charge', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -642,12 +652,12 @@ export function PaymentForm({
         let tzBitParams: any  // bit params for chargeBit()
 
         if (isBitPayment) {
-          // chargeBit() params — Bit uses success_url / fail_url / notify_url
-          // It strictly requires 'terminal' (not 'terminal_name') in Hosted Fields DirectNG.
+          // chargeBit() params — Tranzila Bit API strictly requires these names:
+          // terminal_name, amount, currency_code
           tzBitParams = {
-            terminal:           result.terminal,
-            sum:                String(result.chargeAmount),
-            currency:           result.currency,
+            terminal_name:      result.terminal,
+            amount:             String(result.chargeAmount),
+            currency_code:      'ILS', // Bit only supports ILS
             contact:            `${customerInfo.firstName} ${customerInfo.lastName}`,
             email:              customerInfo.email,
             phone:              customerInfo.phone.replace(/\D/g, ''),
