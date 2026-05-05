@@ -191,29 +191,30 @@ export function PaymentForm({
         return
       }
 
-      try {
-        // @ts-ignore
-        const instance = window.TzlaHostedFields.create({
-          sandbox: sandboxMode,
-          styles: {
-            input: {
-              'padding': '0 12px',
-              'font-size': '16px',
-              'font-family': 'sans-serif',
-              'color': 'currentColor',
-              'width': '100%',
-              'height': '100%',
-              'background': 'transparent',
-              'border': 'none',
-              'outline': 'none',
+        try {
+          // @ts-ignore
+          const instance = window.TzlaHostedFields.create({
+            sandbox: sandboxMode,
+            terminal: process.env.NEXT_PUBLIC_TRANZILA_TERMINAL || 'fxprotmina',
+            styles: {
+              input: {
+                'padding': '0 12px',
+                'font-size': '16px',
+                'font-family': 'sans-serif',
+                'color': 'currentColor',
+                'width': '100%',
+                'height': '100%',
+                'background': 'transparent',
+                'border': 'none',
+                'outline': 'none',
+              },
             },
-          },
-          fields: {
-            credit_card_number: { selector: '#credit_card_number' },
-            cvv:                { selector: '#cvv' },
-            expiry:             { selector: '#expiry' },
-          },
-        })
+            fields: {
+              credit_card_number: { selector: '#credit_card_number' },
+              cvv:                { selector: '#cvv' },
+              expiry:             { selector: '#expiry' },
+            },
+          })
         hostedFieldsRef.current = instance
         console.log('[TZ] ✅ Hosted fields initialized (card fields: cc, cvv, expiry)')
       } catch (err) {
@@ -490,9 +491,9 @@ export function PaymentForm({
   }
 
   const parseTranzilaError = useCallback((res: any): string => {
-    if (!res) {
-      console.warn('[PARSE-ERROR] tzResult is null/undefined')
-      return 'Payment failed. Please try again.'
+    if (res === false || !res) {
+      console.warn('[PARSE-ERROR] tzResult is false/null/undefined. This usually means a field validation error or SDK failure.')
+      return 'Payment failed. Please verify your card details and try again.'
     }
     console.log('[PARSE-ERROR] Raw result:', JSON.stringify(res))
 
