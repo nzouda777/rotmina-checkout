@@ -98,7 +98,9 @@ export function PaymentForm({
   // FIX 5: hostedFields as a ref instead of state.
   // Using useState caused re-renders that could trigger re-initialization
   // loops and stale closure captures in charge callbacks.
-  const hostedFieldsRef = useRef<any>(null)
+  const hostedFieldsRef   = useRef<any>(null)
+  // thtk pre-fetched when the SDK loads so it can be passed in both create() and charge()
+  const preloadedThtkRef  = useRef<string | null>(null)
 
   // ── Cleanup helpers ───────────────────────────────────────────────────────
 
@@ -173,7 +175,8 @@ export function PaymentForm({
     }
 
     const sandboxMode = process.env.NEXT_PUBLIC_TRANZILA_TEST_MODE === 'true'
-    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount}`)
+    const thtk = preloadedThtkRef.current
+    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount} | thtk=${thtk ? thtk.substring(0, 10) + '…' : 'none'}`)
 
     // Defer one tick so React has finished committing all DOM nodes.
     setTimeout(() => {
@@ -191,32 +194,37 @@ export function PaymentForm({
         return
       }
 
-        try {
-          // @ts-ignore
-          const instance = window.TzlaHostedFields.create({
-            sandbox: sandboxMode,
-            terminal: process.env.NEXT_PUBLIC_TRANZILA_TERMINAL || 'fxprotmina',
-            styles: {
-              input: {
-                'padding': '0 12px',
-                'font-size': '16px',
-                'font-family': 'sans-serif',
-                'color': 'currentColor',
-                'width': '100%',
-                'height': '100%',
-                'background': 'transparent',
-                'border': 'none',
-                'outline': 'none',
-              },
+      try {
+        const sdkConfig: any = {
+          sandbox: sandboxMode,
+          terminal: process.env.NEXT_PUBLIC_TRANZILA_TERMINAL || 'fxprotmina',
+          styles: {
+            input: {
+              'padding': '0 12px',
+              'font-size': '16px',
+              'font-family': 'sans-serif',
+              'color': 'currentColor',
+              'width': '100%',
+              'height': '100%',
+              'background': 'transparent',
+              'border': 'none',
+              'outline': 'none',
             },
-            fields: {
-              credit_card_number: { selector: '#credit_card_number' },
-              cvv:                { selector: '#cvv' },
-              expiry:             { selector: '#expiry' },
-            },
-          })
+          },
+          fields: {
+            credit_card_number: { selector: '#credit_card_number' },
+            cvv:                { selector: '#cvv' },
+            expiry:             { selector: '#expiry' },
+          },
+        }
+        // Pass thtk in create() so Tranzila can bind it to this SDK session.
+        // This prevents error 10017 which occurs when the token is only in charge().
+        if (thtk) sdkConfig.thtk = thtk
+
+        // @ts-ignore
+        const instance = window.TzlaHostedFields.create(sdkConfig)
         hostedFieldsRef.current = instance
-        console.log('[TZ] ✅ Hosted fields initialized (card fields: cc, cvv, expiry)')
+        console.log(`[TZ] ✅ Hosted fields initialized (thtk in create: ${!!thtk})`)
       } catch (err) {
         console.error('[TZ] Hosted fields init error:', err)
       }
@@ -597,6 +605,9 @@ export function PaymentForm({
           giftCardId:     giftCardId   || undefined,
           giftCardCode:   giftCardCode || undefined,
           giftCardAmount: giftCardAmount || undefined,
+          // Send the pre-loaded thtk so the server uses the same token
+          // that was already passed to TzlaHostedFields.create()
+          thtk: preloadedThtkRef.current || undefined,
         }),
       })
 
@@ -791,7 +802,18 @@ export function PaymentForm({
         strategy="afterInteractive"
         onLoad={() => {
           tzLoaded.current = true
-          initTranzila()
+          // Pre-fetch the thtk so it can be passed in both create() and charge().
+          // Tranzila requires the same token in both calls to validate the handshake.
+          fetch(`/api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (data?.thtk) {
+                preloadedThtkRef.current = data.thtk
+                console.log(`[TZ] Pre-loaded thtk (first 10): ${data.thtk.substring(0, 10)}…`)
+              }
+            })
+            .catch(() => {})
+            .finally(() => initTranzila())
         }}
       />
 
