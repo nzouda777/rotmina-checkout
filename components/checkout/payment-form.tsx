@@ -235,6 +235,12 @@ export function PaymentForm({
     initTranzila()
   }, [initTranzila])
 
+  // Clear preloaded thtk if amount changes to avoid mismatch
+  useEffect(() => {
+    preloadedThtkRef.current = null
+    console.log('[TZ] Amount changed, clearing preloaded thtk')
+  }, [chargeAmount])
+
   // ── Validation ────────────────────────────────────────────────────────────
 
   const validate = (): boolean => {
