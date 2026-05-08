@@ -461,6 +461,11 @@ export async function POST(request: NextRequest) {
       // Fall back to generating fresh only if the client didn't send one.
       const thtk = providedThtk || await tranzila.getHandshakeToken(chargeAmount, currencyCode)
 
+      if (providedThtk) {
+        console.log(`[CHARGE-THTK] providedThtk from client: ${String(providedThtk).substring(0, 10)}… (PRESENT — using same token as create())`)
+      } else {
+        console.warn(`[CHARGE-THTK] ⚠️ providedThtk MISSING — generating FRESH thtk (will mismatch create() if create() had a thtk!)`)
+      }
       console.log(`[CHARGE][${logId}] thtk source: ${providedThtk ? 'client (session)' : 'server (fresh)'} | amount: ${chargeAmount} | currency: ${currencyCode}`)
 
       const terminal = process.env.TRANZILA_TERMINAL || ''

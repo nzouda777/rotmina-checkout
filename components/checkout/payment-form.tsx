@@ -223,6 +223,12 @@ export function PaymentForm({
         // identical thtk — a mismatch causes error 10017.
         if (thtk) sdkConfig.thtk = thtk
 
+        if (thtk) {
+          console.log(`[THTK-3] Calling create() | thtk in config: YES | thtk preview: ${thtk.substring(0, 10)}…`)
+        } else {
+          console.warn(`[THTK-3] ⚠️ Calling create() WITHOUT thtk — charge() needs same absence to avoid 10017`)
+        }
+
         // @ts-ignore
         const instance = window.TzlaHostedFields.create(sdkConfig)
         hostedFieldsRef.current = instance
@@ -596,6 +602,12 @@ export function PaymentForm({
 
       // ── STEP 2: Call /api/checkout/charge ─────────────────────────────────
       console.log(`[PAY][${submitId}] STEP 2 — Calling /api/checkout/charge...`)
+      const createThtk = sessionThtkRef.current  // snapshot for THTK-5 comparison
+      if (createThtk) {
+        console.log(`[THTK-4] Sending to charge endpoint | sessionThtkRef: ${createThtk.substring(0, 10)}… (PRESENT)`)
+      } else {
+        console.warn(`[THTK-4] ⚠️ Sending to charge endpoint | sessionThtkRef: MISSING/NULL`)
+      }
       const response = await fetch('/api/checkout/charge', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -648,6 +660,19 @@ export function PaymentForm({
         console.log(`[PAY][${submitId}] STEP 5 — requiresHostedFields=true | isBit=${!!result.isBit}`)
         console.log(`[PAY][${submitId}] STEP 5 — hostedFieldsRef.current: ${hostedFieldsRef.current ? 'READY' : 'NULL ⚠️'}`)
         console.log(`[PAY][${submitId}] STEP 5 — terminal="${result.terminal}" | thtk=${result.thtk ? 'present' : 'MISSING ⚠️'} | currency=${result.currency} | chargeAmount=${result.chargeAmount}`)
+
+        const chargeThtk = result.thtk ?? null
+        const createThtkPreview = createThtk ? `${createThtk.substring(0, 10)}…` : 'MISSING'
+        const chargeThtkPreview = chargeThtk ? `${String(chargeThtk).substring(0, 10)}…` : 'MISSING'
+        console.log(`[THTK-5] create() thtk  : ${createThtkPreview}`)
+        console.log(`[THTK-5] charge() thtk  : ${chargeThtkPreview}`)
+        if (createThtk && chargeThtk && createThtk === String(chargeThtk)) {
+          console.log(`[THTK-5] Token MATCH ✅`)
+        } else if (!createThtk && !chargeThtk) {
+          console.warn(`[THTK-5] Both tokens MISSING — consistent but thtk-less, may still fail`)
+        } else {
+          console.error(`[THTK-5] Token MISMATCH ❌ — this will cause error 10017!`)
+        }
 
         if (!hostedFieldsRef.current) {
           console.error(`[PAY][${submitId}] STEP 5 — ❌ Hosted fields NOT initialized! SDK may not have loaded yet.`)
@@ -806,8 +831,19 @@ export function PaymentForm({
           tzLoaded.current = true
           // Generate the session thtk server-side now so the same token can be
           // passed to both create() and charge() — Tranzila requires them to match.
+          console.log(`[THTK-1] SDK loaded. Fetching session handshake token from server...`)
+          console.log(`[THTK-1] Fetch URL: /api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
           fetch(`/api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
-            .then(r => r.ok ? r.json() : null)
+            .then(async r => {
+              if (!r.ok) {
+                console.error(`[THTK-2] ❌ Handshake fetch FAILED — status=${r.status} | create() will have NO thtk → risk of 10017`)
+                return null
+              }
+              const json = await r.json()
+              const preview = json?.thtk ? `${String(json.thtk).substring(0, 10)}…` : 'NULL'
+              console.log(`[THTK-2] Handshake response status: ${r.status} | thtk: ${preview} (${json?.thtk ? 'PRESENT' : 'MISSING'})`)
+              return json
+            })
             .then(data => {
               if (data?.thtk) {
                 sessionThtkRef.current = data.thtk

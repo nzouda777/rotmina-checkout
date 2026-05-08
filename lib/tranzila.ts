@@ -149,10 +149,15 @@ export class TranzilaClient {
       apiUrl += `&sum=${sum}&currency=${currency}`
     }
 
+    const maskedPw = `${password.substring(0, 3)}***`
+    const logUrl = apiUrl.replace(password, maskedPw)
+    console.log(`[TRANZILA-HANDSHAKE] URL: ${logUrl}`)
+
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
       const text = await response.text()
       console.log(`[TRANZILA] Handshake status=${response.status} | body=${text.substring(0, 200)}`)
+      console.log(`[TRANZILA-HANDSHAKE] Raw response: ${text}`)
 
       if (!response.ok) {
         console.error(`[TRANZILA] Handshake HTTP error ${response.status}: ${text}`)
@@ -165,12 +170,14 @@ export class TranzilaClient {
       if (raw.startsWith('thtk=')) {
         const token = raw.slice(5)
         console.log(`[TRANZILA] Handshake token (first 10): ${token.substring(0, 10)}…`)
+        console.log(`[TRANZILA-HANDSHAKE] Extracted token: ${token}`)
         return token
       }
 
       // Some configurations may return just the token without the prefix
       if (raw && !raw.toLowerCase().startsWith('{') && !raw.toLowerCase().includes('error') && !raw.toLowerCase().includes('invalid')) {
         console.log(`[TRANZILA] Handshake token (no prefix, first 10): ${raw.substring(0, 10)}…`)
+        console.log(`[TRANZILA-HANDSHAKE] Extracted token (no prefix): ${raw}`)
         return raw
       }
 

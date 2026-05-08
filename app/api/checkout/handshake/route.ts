@@ -11,9 +11,11 @@ export async function GET(request: NextRequest) {
   }
 
   const currencyCode = currency === 'USD' ? '2' : '1'
+  console.log(`[HANDSHAKE-API] amount=${amount} | currency_param=${currency} | currencyCode=${currencyCode}`)
 
   const tranzila = createTranzilaClient()
   const thtk = await tranzila.getHandshakeToken(amount, currencyCode)
+  console.log(`[HANDSHAKE-API] thtk generated: ${thtk ? thtk.substring(0, 10) + '…' : 'NULL'} | terminal=${process.env.TRANZILA_TERMINAL || 'MISSING'}`)
 
   if (!thtk) {
     return NextResponse.json({ error: 'Failed to generate handshake token' }, { status: 503 })
