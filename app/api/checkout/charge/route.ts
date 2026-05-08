@@ -455,12 +455,13 @@ export async function POST(request: NextRequest) {
       const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
       console.log(`[CHARGE][${logId}] Currency: ${session.cart.currency} → Tranzila code: ${currencyCode}`)
 
-      // Always generate a fresh handshake token for the EXACT amount calculated by the server.
-      // This is the source of truth and prevents mismatches if the client's calculation 
-      // was slightly different or outdated.
-      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
-      
-      console.log(`[CHARGE][${logId}] thtk generated for amount: ${chargeAmount} | currency: ${currencyCode}`)
+      // Use the thtk that was already passed to TzlaHostedFields.create() on the client.
+      // Tranzila requires the SAME token in both create() and charge() — generating a
+      // new one here would produce a mismatch and trigger error 10017.
+      // Fall back to generating fresh only if the client didn't send one.
+      const thtk = providedThtk || await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+
+      console.log(`[CHARGE][${logId}] thtk source: ${providedThtk ? 'client (session)' : 'server (fresh)'} | amount: ${chargeAmount} | currency: ${currencyCode}`)
 
       const terminal = process.env.TRANZILA_TERMINAL || ''
       console.log(`[CHARGE][${logId}] Terminal: ${terminal || 'MISSING!'} | callbackUrl: ${callbackUrl}`)
