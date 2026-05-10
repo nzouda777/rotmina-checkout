@@ -25,17 +25,46 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
   const validate = (): boolean => {
     const newErrors: Partial<Record<keyof CustomerInfo, string>> = {}
 
+    // Email validation
     if (!formData.email) {
       newErrors.email = t('customerForm.emailRequired')
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = t('customerForm.invalidEmail')
     }
 
+    // Required fields for Shopify
     if (!formData.firstName) newErrors.firstName = t('customerForm.firstNameRequired')
     if (!formData.lastName) newErrors.lastName = t('customerForm.lastNameRequired')
     if (!formData.address) newErrors.address = t('customerForm.addressRequired')
     if (!formData.city) newErrors.city = t('customerForm.cityRequired')
-    if (!formData.phone) newErrors.phone = t('customerForm.phoneRequired')
+    
+    // Country validation (required for Shopify)
+    if (!formData.country) {
+      newErrors.country = 'Country is required for order processing'
+    }
+    
+    // Postal code validation (required for Shopify)
+    if (!formData.postalCode) {
+      newErrors.postalCode = 'Postal code is required for order processing'
+    } else if (formData.country === 'Israel' && !/^\d{5,7}$/.test(formData.postalCode.replace(/\D/g, ''))) {
+      newErrors.postalCode = 'Invalid Israeli postal code (5-7 digits)'
+    } else if (formData.country === 'United States' && !/^\d{5}(-\d{4})?$/.test(formData.postalCode)) {
+      newErrors.postalCode = 'Invalid US postal code format (12345 or 12345-6789)'
+    } else if (formData.country === 'United Kingdom' && !/^[A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2}$/.test(formData.postalCode.toUpperCase())) {
+      newErrors.postalCode = 'Invalid UK postal code format (e.g., SW1A 1AA)'
+    }
+    
+    // Phone validation (required for Shopify)
+    if (!formData.phone) {
+      newErrors.phone = t('customerForm.phoneRequired')
+    } else {
+      const cleanPhone = formData.phone.replace(/\D/g, '')
+      if (cleanPhone.length < 9) {
+        newErrors.phone = 'Phone number must be at least 9 digits'
+      } else if (cleanPhone.length > 15) {
+        newErrors.phone = 'Phone number is too long'
+      }
+    }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
@@ -83,8 +112,11 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               name="country"
               value={formData.country}
               onChange={handleChange}
-              className="w-full px-4 py-3 pe-12 appearance-none rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer"
+              className={`w-full px-4 py-3 pe-12 appearance-none rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer ${
+                errors.country ? 'border-destructive' : 'border-input'
+              }`}
             >
+              <option value="">{t('customerForm.selectCountry')}</option>
               <option value="Israel">{t('customerForm.israel')}</option>
               <option value="United States">{t('customerForm.unitedStates')}</option>
               <option value="United Kingdom">{t('customerForm.unitedKingdom')}</option>
@@ -96,6 +128,9 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </div>
+            {errors.country && (
+              <p className="mt-1 text-sm text-destructive">{errors.country}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -180,8 +215,13 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 value={formData.postalCode}
                 onChange={handleChange}
                 placeholder={t('customerForm.postalCode')}
-                className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
+                  errors.postalCode ? 'border-destructive' : 'border-input'
+                }`}
               />
+              {errors.postalCode && (
+                <p className="mt-1 text-sm text-destructive">{errors.postalCode}</p>
+              )}
             </div>
           </div>
 

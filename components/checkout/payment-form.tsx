@@ -237,9 +237,32 @@ export function PaymentForm({
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
+    
+    // Terms validation
     if (!termsAccepted) {
       newErrors.terms = t('paymentForm.acceptTermsError')
     }
+
+    // Card field validation - check if hosted fields are ready
+    if (paymentMethod === 'card') {
+      // Check if hosted fields are initialized
+      if (!hostedFieldsRef.current) {
+        newErrors.card = 'Payment system is not ready. Please wait a moment and try again.'
+        setErrors(newErrors)
+        return false
+      }
+
+      // Additional validation for installments
+      if (installments > maxInstallments) {
+        newErrors.installments = `Maximum ${maxInstallments} installments allowed for this amount`
+      }
+    }
+
+    // Bit payment validation
+    if (paymentMethod === 'bit' && chargeAmount < 5) {
+      newErrors.bit = 'Bit requires a minimum payment of 5 NIS. Please use a credit card for this order.'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -744,9 +767,36 @@ export function PaymentForm({
             if (success) {
               // SDK confirmed the charge. For card, the backend callback updates
               // the session. For Bit, chargeBit() fires only after the user completes
-              // payment on their phone — the notify webhook already marked it paid.
-              // Realtime/polling will detect the paid status and redirect.
-              console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — waiting for webhook/callback to confirm`)
+              // payment on their phone. In both cases, the notify webhook may have
+              // already marked it paid.
+              //
+              // Strategy: Check session immediately to see if we can redirect now.
+              console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — checking session for immediate redirect...`)
+              
+              try {
+                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+                const sessionData = sessionRes.ok ? await sessionRes.json() : null
+
+                if (sessionData?.status === 'paid') {
+                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Session already PAID — redirecting immediately`)
+                  clearPoll()
+                  clearListeners()
+                  setIsSubmitting(false)
+                  isSubmittingRef.current = false
+                  is3DSActiveRef.current = false
+                  onSuccess(
+                    sessionData.tranzila_transaction_id || 'confirmed',
+                    sessionData.raw_response?.shopifyOrderUrl,
+                    sessionData.raw_response?._generated_gift_cards,
+                    sessionData.raw_response?._gift_card?.remainingBalance,
+                    giftCardCode,
+                  )
+                  return
+                }
+                console.log(`[PAY][${submitId}] STEP 9 — Session not yet paid, waiting for polling/realtime to finish`)
+              } catch (err) {
+                console.error(`[PAY][${submitId}] STEP 9 — Immediate session check failed:`, err)
+              }
             } else if (isBitPayment) {
               // ── Bit-specific: SDK callback is unreliable for Bit ───────────
               // The chargeBit() SDK callback frequently returns an error/non-success
@@ -1098,25 +1148,43 @@ export function PaymentForm({
               type="checkbox"
               id="terms"
               checked={termsAccepted}
-              onChange={e => {
-                setTermsAccepted(e.target.checked)
-                if (errors.terms) setErrors(p => ({ ...p, terms: '' }))
-              }}
-              className="h-4 w-4 rounded border-gray-300 text-foreground focus:ring-foreground accent-foreground cursor-pointer"
+              onChange={e => setTermsAccepted(e.target.checked)}
+              className="w-4 h-4 text-primary border-2 border-input rounded focus:ring-2 focus:ring-ring bg-background"
             />
-            <label htmlFor="terms" className="text-sm text-muted-foreground select-none cursor-pointer">
-              {t('paymentForm.agreeTerms')}{' '}
+            <label htmlFor="terms" className="text-sm text-muted-foreground">
+              {t('paymentForm.iAgreeTo')}{' '}
               <button
                 type="button"
-                onClick={e => { e.preventDefault(); setShowTerms(true) }}
-                className="underline hover:text-foreground transition-colors outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 rounded-sm"
+                onClick={() => setShowTerms(!showTerms)}
+                className="text-primary hover:underline underline-offset-2"
               >
-                {t('paymentForm.theTerms')}
-              </button>.
+                {t('paymentForm.termsAndConditions')}
+              </button>
             </label>
           </div>
-          {errors.terms && <p className="mt-2 text-sm text-destructive font-medium">{errors.terms}</p>}
+          {errors.terms && (
+            <p className="mt-1 text-sm text-destructive">{errors.terms}</p>
+          )}
         </div>
+
+        {/* Payment Method Specific Errors */}
+        {errors.card && (
+          <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+            <p className="text-sm text-destructive">{errors.card}</p>
+          </div>
+        )}
+        
+        {errors.installments && (
+          <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+            <p className="text-sm text-destructive">{errors.installments}</p>
+          </div>
+        )}
+        
+        {errors.bit && (
+          <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+            <p className="text-sm text-destructive">{errors.bit}</p>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-col-reverse sm:flex-row rtl:sm:flex-row-reverse gap-4 items-center mt-6">
