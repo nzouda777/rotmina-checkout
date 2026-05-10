@@ -1152,13 +1152,13 @@ export function PaymentForm({
               className="w-4 h-4 text-primary border-2 border-input rounded focus:ring-2 focus:ring-ring bg-background"
             />
             <label htmlFor="terms" className="text-sm text-muted-foreground">
-              {t('paymentForm.iAgreeTo')}{' '}
+              {t('paymentForm.agreeTerms')}{' '}
               <button
                 type="button"
                 onClick={() => setShowTerms(!showTerms)}
                 className="text-primary hover:underline underline-offset-2"
               >
-                {t('paymentForm.termsAndConditions')}
+                {t('paymentForm.theTerms')}
               </button>
             </label>
           </div>
