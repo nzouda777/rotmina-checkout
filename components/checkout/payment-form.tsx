@@ -156,17 +156,13 @@ export function PaymentForm({
   // Bit payments use the separate chargeBit() method which creates its own
   // full-screen overlay — no SDK field container is needed for Bit.
 
-  /**
-   * Initialize (or re-initialize) the Tranzila Hosted Fields SDK.
-   *
-   * At page load we call this WITHOUT a thtk so the card-input iframes render
-   * immediately. At submit time we fetch a fresh thtk, destroy the old
-   * instance, and re-create with the new token so create() + charge() share
-   * the exact same, freshly-generated token (avoiding error 10017).
-   */
-  const initTranzila = useCallback((freshThtk?: string | null) => {
+  const initTranzila = useCallback(() => {
     if (!tzLoaded.current) {
       console.log('[TZ] initTranzila: SDK not yet loaded')
+      return
+    }
+    if (hostedFieldsRef.current) {
+      console.log('[TZ] initTranzila: already initialized, skipping')
       return
     }
     if (chargeAmount <= 0) {
@@ -180,19 +176,8 @@ export function PaymentForm({
     }
 
     const sandboxMode = process.env.NEXT_PUBLIC_TRANZILA_TEST_MODE === 'true'
-    const thtk = freshThtk ?? null
-    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount} | thtk=${thtk ? thtk.substring(0, 10) + '…' : 'none (page-load init)'}`)
-
-    // Destroy previous instance if re-initialising with a fresh thtk
-    if (hostedFieldsRef.current) {
-      console.log('[TZ] Destroying previous hosted fields instance for re-init')
-      try {
-        if (typeof hostedFieldsRef.current.destroy === 'function') {
-          hostedFieldsRef.current.destroy()
-        }
-      } catch { /* best-effort */ }
-      hostedFieldsRef.current = null
-    }
+    const thtk = sessionThtkRef.current
+    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount} | thtk=${thtk ? thtk.substring(0, 10) + '…' : 'none'}`)
 
     // Defer one tick so React has finished committing all DOM nodes.
     setTimeout(() => {
@@ -233,15 +218,16 @@ export function PaymentForm({
             expiry:             { selector: '#expiry' },
           },
         }
-        // Only pass thtk when we have a fresh one (submit-time re-init).
-        // At page load we intentionally omit it so the iframes render without
-        // requiring a handshake upfront.
+        // Pass the session thtk (generated via HMAC-authenticated handshake
+        // at page load) to create() so Tranzila binds this SDK session to the
+        // same token we'll send in charge(). Both calls must carry the
+        // identical thtk — a mismatch causes error 10017.
         if (thtk) sdkConfig.thtk = thtk
 
         if (thtk) {
           console.log(`[THTK-3] Calling create() | thtk in config: YES | thtk preview: ${thtk.substring(0, 10)}…`)
         } else {
-          console.log(`[THTK-3] Calling create() WITHOUT thtk (page-load init — thtk will be added at submit time)`)
+          console.warn(`[THTK-3] ⚠️ Calling create() WITHOUT thtk — charge() needs same absence to avoid 10017`)
         }
 
         // @ts-ignore
@@ -615,42 +601,6 @@ export function PaymentForm({
         return
       }
 
-      // ── STEP 1.5: Generate FRESH thtk + re-init hosted fields ─────────────
-      // The thtk must be generated right before use and the SAME token must be
-      // passed to both create() and charge(). Generating at page-load risks
-      // expiration; generating here ensures freshness.
-      let freshThtk: string | null = null
-      if (paymentMethod === 'card') {
-        console.log(`[PAY][${submitId}] STEP 1.5 — Fetching fresh thtk...`)
-        try {
-          const hskResp = await fetch(`/api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
-          if (hskResp.ok) {
-            const hskData = await hskResp.json()
-            freshThtk = hskData?.thtk || null
-            console.log(`[PAY][${submitId}] STEP 1.5 — Fresh thtk: ${freshThtk ? freshThtk.substring(0, 10) + '…' : 'NULL ⚠️'}`)
-          } else {
-            console.error(`[PAY][${submitId}] STEP 1.5 — Handshake fetch failed: status=${hskResp.status}`)
-          }
-        } catch (hskErr) {
-          console.error(`[PAY][${submitId}] STEP 1.5 — Handshake fetch error:`, hskErr)
-        }
-
-        if (freshThtk) {
-          // Store the fresh thtk so charge() will use the same token
-          sessionThtkRef.current = freshThtk
-          // Re-init hosted fields with the fresh thtk so create() and charge()
-          // are bound to the same token. This is a synchronous-ish operation;
-          // the SDK replaces the iframes in the same DOM containers.
-          console.log(`[PAY][${submitId}] STEP 1.5 — Re-initializing hosted fields with fresh thtk...`)
-          initTranzila(freshThtk)
-          // Give the SDK a moment to re-init the iframes
-          await new Promise(resolve => setTimeout(resolve, 300))
-          console.log(`[PAY][${submitId}] STEP 1.5 — Hosted fields re-initialized: ${!!hostedFieldsRef.current}`)
-        } else {
-          console.warn(`[PAY][${submitId}] STEP 1.5 — No fresh thtk obtained, proceeding with existing one: ${sessionThtkRef.current ? 'present' : 'MISSING'}`)
-        }
-      }
-
       // ── STEP 2: Call /api/checkout/charge ─────────────────────────────────
       console.log(`[PAY][${submitId}] STEP 2 — Calling /api/checkout/charge...`)
       const createThtk = sessionThtkRef.current  // snapshot for THTK-5 comparison
@@ -880,12 +830,32 @@ export function PaymentForm({
         strategy="afterInteractive"
         onLoad={() => {
           tzLoaded.current = true
-          // Initialize hosted fields WITHOUT thtk at page load.
-          // The thtk will be generated fresh at submit time and the SDK will
-          // be re-initialized with it — this avoids token expiration and
-          // ensures create() + charge() share the exact same fresh token.
-          console.log(`[THTK-1] SDK loaded. Initializing hosted fields WITHOUT thtk (will fetch fresh at submit time)`)
-          initTranzila()
+          // Generate the session thtk server-side now (via HMAC-authenticated
+          // handshake) so the same token can be passed to both create() and
+          // charge() — Tranzila requires them to match.
+          console.log(`[THTK-1] SDK loaded. Fetching session handshake token (HMAC auth)...`)
+          console.log(`[THTK-1] Fetch URL: /api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
+          fetch(`/api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
+            .then(async r => {
+              if (!r.ok) {
+                console.error(`[THTK-2] ❌ Handshake fetch FAILED — status=${r.status}`)
+                return null
+              }
+              const json = await r.json()
+              const preview = json?.thtk ? `${String(json.thtk).substring(0, 10)}…` : 'NULL'
+              console.log(`[THTK-2] Handshake response | thtk: ${preview} (${json?.thtk ? 'PRESENT' : 'MISSING'})`)
+              return json
+            })
+            .then(data => {
+              if (data?.thtk) {
+                sessionThtkRef.current = data.thtk
+                console.log(`[TZ] Session thtk ready (first 10): ${data.thtk.substring(0, 10)}…`)
+              } else {
+                console.warn('[TZ] Handshake fetch returned no thtk — card payment may fail')
+              }
+            })
+            .catch(err => console.error('[TZ] Handshake fetch error:', err))
+            .finally(() => initTranzila())
         }}
       />
 
