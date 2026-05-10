@@ -12,8 +12,9 @@ export function CheckoutHeader({ shopName }: CheckoutHeaderProps) {
   const { t, lang, setLang } = useLanguage()
 
   return (
-    <header className="border-b border-border bg-background">
+    <header className="border-b border-border bg-background" dir="ltr">
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div></div>
         <div className="flex items-center gap-3">
           <a href='https://rotmina.co' className="text-xl font-semibold text-foreground">
             <Image
