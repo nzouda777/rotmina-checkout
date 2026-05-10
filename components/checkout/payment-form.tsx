@@ -99,9 +99,6 @@ export function PaymentForm({
   // Using useState caused re-renders that could trigger re-initialization
   // loops and stale closure captures in charge callbacks.
   const hostedFieldsRef   = useRef<any>(null)
-  // thtk generated server-side at page load, passed to both create() and charge()
-  // so Tranzila sees the same token in both calls (required to avoid error 10017).
-  const sessionThtkRef    = useRef<string | null>(null)
 
   // ── Cleanup helpers ───────────────────────────────────────────────────────
 
@@ -176,8 +173,7 @@ export function PaymentForm({
     }
 
     const sandboxMode = process.env.NEXT_PUBLIC_TRANZILA_TEST_MODE === 'true'
-    const thtk = sessionThtkRef.current
-    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount} | thtk=${thtk ? thtk.substring(0, 10) + '…' : 'none'}`)
+    console.log(`[TZ] initTranzila: starting | sandbox=${sandboxMode} | chargeAmount=${chargeAmount}`)
 
     // Defer one tick so React has finished committing all DOM nodes.
     setTimeout(() => {
@@ -218,22 +214,15 @@ export function PaymentForm({
             expiry:             { selector: '#expiry' },
           },
         }
-        // Pass the session thtk (generated via HMAC-authenticated handshake
-        // at page load) to create() so Tranzila binds this SDK session to the
-        // same token we'll send in charge(). Both calls must carry the
-        // identical thtk — a mismatch causes error 10017.
-        if (thtk) sdkConfig.thtk = thtk
-
-        if (thtk) {
-          console.log(`[THTK-3] Calling create() | thtk in config: YES | thtk preview: ${thtk.substring(0, 10)}…`)
-        } else {
-          console.warn(`[THTK-3] ⚠️ Calling create() WITHOUT thtk — charge() needs same absence to avoid 10017`)
-        }
+        // No thtk at create() time — Tranzila confirmed that thtk should be
+        // generated fresh server-side at charge time. The SDK is initialized
+        // without a token; the fresh thtk will be passed to charge()/chargeBit().
+        console.log(`[TZ] Calling create() without thtk (will be generated fresh at charge time)`)
 
         // @ts-ignore
         const instance = window.TzlaHostedFields.create(sdkConfig)
         hostedFieldsRef.current = instance
-        console.log(`[TZ] ✅ Hosted fields initialized (thtk in create: ${!!thtk})`)
+        console.log(`[TZ] ✅ Hosted fields initialized`)
       } catch (err) {
         console.error('[TZ] Hosted fields init error:', err)
       }
@@ -602,13 +591,8 @@ export function PaymentForm({
       }
 
       // ── STEP 2: Call /api/checkout/charge ─────────────────────────────────
-      console.log(`[PAY][${submitId}] STEP 2 — Calling /api/checkout/charge...`)
-      const createThtk = sessionThtkRef.current  // snapshot for THTK-5 comparison
-      if (createThtk) {
-        console.log(`[THTK-4] Sending to charge endpoint | sessionThtkRef: ${createThtk.substring(0, 10)}… (PRESENT)`)
-      } else {
-        console.warn(`[THTK-4] ⚠️ Sending to charge endpoint | sessionThtkRef: MISSING/NULL`)
-      }
+      // The server generates a FRESH thtk on each call — no client-side token needed.
+      console.log(`[PAY][${submitId}] STEP 2 — Calling /api/checkout/charge (server will generate fresh thtk)...`)
       const response = await fetch('/api/checkout/charge', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -620,9 +604,6 @@ export function PaymentForm({
           giftCardId:     giftCardId   || undefined,
           giftCardCode:   giftCardCode || undefined,
           giftCardAmount: giftCardAmount || undefined,
-          // Forward the FRESH session thtk so the server returns the SAME token
-          // that was just passed to TzlaHostedFields.create().
-          thtk:           sessionThtkRef.current || undefined,
         }),
       })
 
@@ -662,18 +643,8 @@ export function PaymentForm({
         console.log(`[PAY][${submitId}] STEP 5 — hostedFieldsRef.current: ${hostedFieldsRef.current ? 'READY' : 'NULL ⚠️'}`)
         console.log(`[PAY][${submitId}] STEP 5 — terminal="${result.terminal}" | thtk=${result.thtk ? 'present' : 'MISSING ⚠️'} | currency=${result.currency} | chargeAmount=${result.chargeAmount}`)
 
-        const chargeThtk = result.thtk ?? null
-        const createThtkPreview = createThtk ? `${createThtk.substring(0, 10)}…` : 'MISSING'
-        const chargeThtkPreview = chargeThtk ? `${String(chargeThtk).substring(0, 10)}…` : 'MISSING'
-        console.log(`[THTK-5] create() thtk  : ${createThtkPreview}`)
-        console.log(`[THTK-5] charge() thtk  : ${chargeThtkPreview}`)
-        if (createThtk && chargeThtk && createThtk === String(chargeThtk)) {
-          console.log(`[THTK-5] Token MATCH ✅`)
-        } else if (!createThtk && !chargeThtk) {
-          console.warn(`[THTK-5] Both tokens MISSING — consistent but thtk-less, may still fail`)
-        } else {
-          console.error(`[THTK-5] Token MISMATCH ❌ — this will cause error 10017!`)
-        }
+        const freshThtk = result.thtk ?? null
+        console.log(`[THTK] Fresh server-generated thtk: ${freshThtk ? String(freshThtk).substring(0, 10) + '…' : 'MISSING ⚠️'}`)
 
         if (!hostedFieldsRef.current) {
           console.error(`[PAY][${submitId}] STEP 5 — ❌ Hosted fields NOT initialized! SDK may not have loaded yet.`)
@@ -889,33 +860,9 @@ export function PaymentForm({
         src="https://hf.tranzila.com/assets/js/thostedf.js"
         strategy="afterInteractive"
         onLoad={() => {
+          console.log(`[TZ] SDK loaded. Initializing Hosted Fields (thtk will be generated fresh at charge time)...`)
           tzLoaded.current = true
-          // Generate the session thtk server-side now (via HMAC-authenticated
-          // handshake) so the same token can be passed to both create() and
-          // charge() — Tranzila requires them to match.
-          console.log(`[THTK-1] SDK loaded. Fetching session handshake token (HMAC auth)...`)
-          console.log(`[THTK-1] Fetch URL: /api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
-          fetch(`/api/checkout/handshake?amount=${chargeAmount}&currency=${currency}`)
-            .then(async r => {
-              if (!r.ok) {
-                console.error(`[THTK-2] ❌ Handshake fetch FAILED — status=${r.status}`)
-                return null
-              }
-              const json = await r.json()
-              const preview = json?.thtk ? `${String(json.thtk).substring(0, 10)}…` : 'NULL'
-              console.log(`[THTK-2] Handshake response | thtk: ${preview} (${json?.thtk ? 'PRESENT' : 'MISSING'})`)
-              return json
-            })
-            .then(data => {
-              if (data?.thtk) {
-                sessionThtkRef.current = data.thtk
-                console.log(`[TZ] Session thtk ready (first 10): ${data.thtk.substring(0, 10)}…`)
-              } else {
-                console.warn('[TZ] Handshake fetch returned no thtk — card payment may fail')
-              }
-            })
-            .catch(err => console.error('[TZ] Handshake fetch error:', err))
-            .finally(() => initTranzila())
+          initTranzila()
         }}
       />
 

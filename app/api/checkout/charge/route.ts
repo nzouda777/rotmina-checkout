@@ -157,7 +157,6 @@ export async function POST(request: NextRequest) {
       giftCardId,
       giftCardCode,
       giftCardAmount = 0,
-      thtk: providedThtk,
     } = body
 
     console.log(`[CHARGE][${logId}] Session: ${sessionId} | Method: ${paymentMethod}`)
@@ -455,18 +454,11 @@ export async function POST(request: NextRequest) {
       const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
       console.log(`[CHARGE][${logId}] Currency: ${session.cart.currency} → Tranzila code: ${currencyCode}`)
 
-      // Use the thtk that was already passed to TzlaHostedFields.create() on the client.
-      // Tranzila requires the SAME token in both create() and charge() — generating a
-      // new one here would produce a mismatch and trigger error 10017.
-      // Fall back to generating fresh only if the client didn't send one.
-      const thtk = providedThtk || await tranzila.getHandshakeToken(chargeAmount, currencyCode)
-
-      if (providedThtk) {
-        console.log(`[CHARGE-THTK] providedThtk from client: ${String(providedThtk).substring(0, 10)}… (PRESENT — using same token as create())`)
-      } else {
-        console.warn(`[CHARGE-THTK] ⚠️ providedThtk MISSING — generating FRESH thtk (will mismatch create() if create() had a thtk!)`)
-      }
-      console.log(`[CHARGE][${logId}] thtk source: ${providedThtk ? 'client (session)' : 'server (fresh)'} | amount: ${chargeAmount} | currency: ${currencyCode}`)
+      // Always generate a FRESH thtk server-side for each charge attempt.
+      // Tranzila confirmed this is the correct approach — the SDK create() is
+      // called without a thtk, and each charge() gets its own fresh token.
+      const thtk = await tranzila.getHandshakeToken(chargeAmount, currencyCode)
+      console.log(`[CHARGE][${logId}] Fresh thtk generated: ${thtk ? String(thtk).substring(0, 10) + '…' : 'NULL'} | amount: ${chargeAmount} | currency: ${currencyCode}`)
 
       const terminal = process.env.TRANZILA_TERMINAL || ''
       console.log(`[CHARGE][${logId}] Terminal: ${terminal || 'MISSING!'} | callbackUrl: ${callbackUrl}`)

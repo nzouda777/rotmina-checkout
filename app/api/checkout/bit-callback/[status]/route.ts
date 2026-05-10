@@ -25,24 +25,38 @@ async function handleBitCallback(request: NextRequest, status: string) {
   const logId = Math.random().toString(36).substring(7)
   const { searchParams } = new URL(request.url)
 
-  // Tranzila sends merchant_data as query param for all callback types
-  const sessionId = searchParams.get('merchant_data')
-  const confirmationCode =
+  let sessionId = searchParams.get('merchant_data')
+  let confirmationCode =
     searchParams.get('index') ||
     searchParams.get('ConfirmationCode') ||
-    searchParams.get('confirmation_code') ||
-    `BIT-${Date.now()}`
+    searchParams.get('confirmation_code')
+
+  // Log and parse POST body if present (Tranzila sends webhook data in POST body)
+  if (request.method === 'POST') {
+    try {
+      const formData = await request.formData()
+      if (!sessionId) {
+        sessionId = formData.get('merchant_data') as string
+      }
+      if (!confirmationCode) {
+        confirmationCode = 
+          (formData.get('index') as string) || 
+          (formData.get('ConfirmationCode') as string) || 
+          (formData.get('confirmation_code') as string)
+      }
+
+      const bodyObj: Record<string, string> = {}
+      formData.forEach((value, key) => { bodyObj[key] = value.toString() })
+      console.log(`[BIT-CALLBACK][${logId}] POST body:`, JSON.stringify(bodyObj))
+    } catch (err) {
+      console.error(`[BIT-CALLBACK][${logId}] Error parsing POST body:`, err)
+    }
+  }
+
+  confirmationCode = confirmationCode || `BIT-${Date.now()}`
 
   console.log(`[BIT-CALLBACK][${logId}] status=${status} sessionId=${sessionId} confirmationCode=${confirmationCode}`)
   console.log(`[BIT-CALLBACK][${logId}] Full URL: ${request.url}`)
-
-  // Log POST body if present (Tranzila may send extra data)
-  if (request.method === 'POST') {
-    try {
-      const body = await request.text()
-      if (body) console.log(`[BIT-CALLBACK][${logId}] POST body:`, body)
-    } catch {}
-  }
 
   // ── Handle the notify_url webhook (server-to-server from Tranzila) ────────
   // Tranzila calls notify_url when the payment is confirmed on their end.
@@ -79,7 +93,7 @@ async function handleBitCallback(request: NextRequest, status: string) {
   // ── Handle failure callback ────────────────────────────────────────────────
   if (status === 'failure' || status === 'cancel') {
     console.log(`[BIT-CALLBACK][${logId}] Bit payment ${status}`)
-    if (!sessionId) return redirectToError('Session ID missing')
+    if (!sessionId) return redirectToErrorUrl(request, 'Session ID missing')
 
     const supabase = await createClient()
     await supabase
@@ -87,13 +101,13 @@ async function handleBitCallback(request: NextRequest, status: string) {
       .update({ status: 'failed', error_message: `Bit payment ${status}` })
       .eq('id', sessionId)
 
-    return redirectToError(`Bit payment was ${status}.`, sessionId)
+    return redirectToErrorUrl(request, `Bit payment was ${status}.`, sessionId)
   }
 
   // ── Handle success callback (browser redirect from Tranzila) ─────────────
   if (!sessionId) {
     console.error(`[BIT-CALLBACK][${logId}] success: missing sessionId`)
-    return redirectToError('Session ID missing')
+    return redirectToErrorUrl(request, 'Session ID missing')
   }
 
   const supabase = await createClient()
@@ -105,17 +119,17 @@ async function handleBitCallback(request: NextRequest, status: string) {
 
   if (error || !session) {
     console.error(`[BIT-CALLBACK][${logId}] Session not found: ${sessionId}`)
-    return redirectToError('Session not found')
+    return redirectToErrorUrl(request, 'Session not found')
   }
 
   if (session.status === 'paid') {
     console.log(`[BIT-CALLBACK][${logId}] Already paid — returning success breakout`)
-    return redirectToShopify(session)
+    return redirectToSuccessUrl(request, session, confirmationCode)
   }
 
   console.log(`[BIT-CALLBACK][${logId}] Processing Bit success for session ${sessionId}`)
   await processSuccess(supabase, session, sessionId, confirmationCode, logId)
-  return redirectToShopify(session)
+  return redirectToSuccessUrl(request, session, confirmationCode)
 }
 
 // ── Shared success processor ──────────────────────────────────────────────────
@@ -233,19 +247,21 @@ async function processSuccess(
   } else {
     console.log(`[BIT-CALLBACK][${logId}] ✅ Session ${actualSessionId} → paid`)
   }
+  
+  return shopifyOrderId
 }
 
 // ── HTML helpers ──────────────────────────────────────────────────────────────
 
-function redirectToShopify(session: any, shopifyOrderId?: string | null) {
-  const shopifyDomain = session.shop || 'rotmina.myshopify.com'
-  const targetUrl = `https://${shopifyDomain}/pages/success${shopifyOrderId ? `?order_id=${shopifyOrderId}` : ''}`
+function redirectToSuccessUrl(request: NextRequest, session: any, confirmationCode: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const targetUrl = `${baseUrl}/checkout/success?session=${session.id}&confirmation=${confirmationCode}`
   return breakoutRedirect(targetUrl, session.id)
 }
 
-function redirectToError(message: string, sessionId?: string, shop?: string) {
-  const shopifyDomain = shop || 'rotmina.myshopify.com'
-  const targetUrl = `https://${shopifyDomain}/pages/error?error=${encodeURIComponent(message)}`
+function redirectToErrorUrl(request: NextRequest, message: string, sessionId?: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const targetUrl = `${baseUrl}/checkout/error?session=${sessionId || ''}&error=${encodeURIComponent(message)}`
   return breakoutRedirect(targetUrl, sessionId, message)
 }
 
