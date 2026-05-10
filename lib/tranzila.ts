@@ -133,17 +133,109 @@ export class TranzilaClient {
 
   /**
    * Generates a Transaction Handshake Token (thtk) for secure iFrame usage.
-   * GET /v1/handshake/create
+   * Uses HMAC-SHA256 authenticated POST to /v1/handshake/create — the same
+   * authentication method used by charge() and initBit().
+   *
+   * The legacy TranzilaPW query-param method generated tokens that the
+   * Hosted Fields SDK rejected with error 10017 ("Invalid handshake token").
    */
   async getHandshakeToken(sum?: number, currency?: string): Promise<string | null> {
+    const appKey = process.env.TRANZILA_APP_KEY || ''
+    const secret = process.env.TRANZILA_SECRET || ''
+
+    // If HMAC credentials are missing, fall back to legacy TranzilaPW method
+    if (!appKey || !secret) {
+      console.warn('[TRANZILA-HANDSHAKE] App Key / Secret not configured, trying legacy TranzilaPW method...')
+      return this.getHandshakeTokenLegacy(sum, currency)
+    }
+
+    const time = Math.round(Date.now() / 1000)
+    const nonce = this.makeNonce(80)
+    const accessToken = this.generateAccessToken(appKey, secret, time, nonce)
+
+    const body: Record<string, any> = {
+      terminal_name: this.config.terminalName,
+    }
+    if (sum !== undefined) body.sum = sum
+    if (currency !== undefined) body.currency = currency
+
+    const apiUrl = 'https://api.tranzila.com/v1/handshake/create'
+    console.log(`[TRANZILA-HANDSHAKE] POST ${apiUrl} | terminal=${this.config.terminalName} | sum=${sum} | currency=${currency}`)
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-tranzila-api-app-key': appKey,
+          'X-tranzila-api-request-time': String(time),
+          'X-tranzila-api-nonce': nonce,
+          'X-tranzila-api-access-token': accessToken,
+        },
+        body: JSON.stringify(body),
+      })
+
+      const text = await response.text()
+      console.log(`[TRANZILA-HANDSHAKE] status=${response.status} | body=${text.substring(0, 300)}`)
+
+      if (!response.ok) {
+        console.error(`[TRANZILA-HANDSHAKE] HTTP error ${response.status}: ${text}`)
+        // Fall back to legacy method on HMAC failure
+        console.warn('[TRANZILA-HANDSHAKE] Falling back to legacy TranzilaPW method...')
+        return this.getHandshakeTokenLegacy(sum, currency)
+      }
+
+      const raw = text.trim()
+
+      // Tranzila may return JSON: { "thtk": "..." }
+      if (raw.startsWith('{')) {
+        try {
+          const json = JSON.parse(raw)
+          if (json.thtk) {
+            console.log(`[TRANZILA-HANDSHAKE] Token from JSON: ${json.thtk.substring(0, 10)}…`)
+            return json.thtk
+          }
+          if (json.error || json.errors) {
+            console.error(`[TRANZILA-HANDSHAKE] API error:`, JSON.stringify(json))
+            // Fall back to legacy method
+            return this.getHandshakeTokenLegacy(sum, currency)
+          }
+        } catch { /* not JSON, continue */ }
+      }
+
+      // Plain text "thtk=<token>" format
+      if (raw.startsWith('thtk=')) {
+        const token = raw.slice(5)
+        console.log(`[TRANZILA-HANDSHAKE] Token (text format): ${token.substring(0, 10)}…`)
+        return token
+      }
+
+      // Plain token without prefix
+      if (raw && !raw.toLowerCase().includes('error') && !raw.toLowerCase().includes('invalid')) {
+        console.log(`[TRANZILA-HANDSHAKE] Token (no prefix): ${raw.substring(0, 10)}…`)
+        return raw
+      }
+
+      console.error(`[TRANZILA-HANDSHAKE] Unexpected response: ${text}`)
+      return this.getHandshakeTokenLegacy(sum, currency)
+    } catch (e) {
+      console.error('[TRANZILA-HANDSHAKE] HMAC method error:', e)
+      return this.getHandshakeTokenLegacy(sum, currency)
+    }
+  }
+
+  /**
+   * Legacy handshake method using TranzilaPW query parameter.
+   * Used as a fallback if HMAC authentication fails or is not configured.
+   */
+  private async getHandshakeTokenLegacy(sum?: number, currency?: string): Promise<string | null> {
     const password = process.env.TRANZILA_TERMINAL_PASSWORD
     if (!password || password === 'your_terminal_password') {
-      console.log('[TRANZILA] Handshake password not configured, skipping thtk generation.')
+      console.log('[TRANZILA-HANDSHAKE-LEGACY] Password not configured, skipping.')
       return null
     }
 
-    // Tranzila requires sum + currency for this terminal's handshake configuration.
-    // currency is the Tranzila numeric code: "1" = ILS, "2" = USD.
     let apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}`
     if (sum !== undefined && currency !== undefined) {
       apiUrl += `&sum=${sum}&currency=${currency}`
@@ -151,40 +243,35 @@ export class TranzilaClient {
 
     const maskedPw = `${password.substring(0, 3)}***`
     const logUrl = apiUrl.replace(password, maskedPw)
-    console.log(`[TRANZILA-HANDSHAKE] URL: ${logUrl}`)
+    console.log(`[TRANZILA-HANDSHAKE-LEGACY] URL: ${logUrl}`)
 
     try {
       const response = await fetch(apiUrl, { method: 'GET' })
       const text = await response.text()
-      console.log(`[TRANZILA] Handshake status=${response.status} | body=${text.substring(0, 200)}`)
-      console.log(`[TRANZILA-HANDSHAKE] Raw response: ${text}`)
+      console.log(`[TRANZILA-HANDSHAKE-LEGACY] status=${response.status} | body=${text.substring(0, 200)}`)
 
       if (!response.ok) {
-        console.error(`[TRANZILA] Handshake HTTP error ${response.status}: ${text}`)
+        console.error(`[TRANZILA-HANDSHAKE-LEGACY] HTTP error ${response.status}: ${text}`)
         return null
       }
 
       const raw = text.trim()
 
-      // Tranzila returns plain text "thtk=<token>" on success
       if (raw.startsWith('thtk=')) {
         const token = raw.slice(5)
-        console.log(`[TRANZILA] Handshake token (first 10): ${token.substring(0, 10)}…`)
-        console.log(`[TRANZILA-HANDSHAKE] Extracted token: ${token}`)
+        console.log(`[TRANZILA-HANDSHAKE-LEGACY] Token: ${token.substring(0, 10)}…`)
         return token
       }
 
-      // Some configurations may return just the token without the prefix
       if (raw && !raw.toLowerCase().startsWith('{') && !raw.toLowerCase().includes('error') && !raw.toLowerCase().includes('invalid')) {
-        console.log(`[TRANZILA] Handshake token (no prefix, first 10): ${raw.substring(0, 10)}…`)
-        console.log(`[TRANZILA-HANDSHAKE] Extracted token (no prefix): ${raw}`)
+        console.log(`[TRANZILA-HANDSHAKE-LEGACY] Token (no prefix): ${raw.substring(0, 10)}…`)
         return raw
       }
 
-      console.error(`[TRANZILA] Handshake unexpected response: ${text}`)
+      console.error(`[TRANZILA-HANDSHAKE-LEGACY] Unexpected response: ${text}`)
       return null
     } catch (e) {
-      console.error('[TRANZILA] Handshake error:', e)
+      console.error('[TRANZILA-HANDSHAKE-LEGACY] Error:', e)
       return null
     }
   }
