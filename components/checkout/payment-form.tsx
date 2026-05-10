@@ -760,8 +760,8 @@ export function PaymentForm({
           const sdkCall = isBitPayment
             ? (cb: any) => hostedFieldsRef.current.chargeBit(tzBitParams, cb)
             : (cb: any) => hostedFieldsRef.current.charge(tzParams, cb)
-          sdkCall((err: any, response: any) => {
-            // ── STEP 9: charge() callback ──────────────────────────────────
+          sdkCall(async (err: any, response: any) => {
+            // ── STEP 9: charge() / chargeBit() callback ─────────────────────
             // response = Tranzila API result on success; err = error indicator on failure
             const tzResult = response ?? err
             console.log(`[PAY][${submitId}] STEP 9 — SDK callback | err=${JSON.stringify(err)} | response=${JSON.stringify(response)}`)
@@ -776,9 +776,69 @@ export function PaymentForm({
               // payment on their phone — the notify webhook already marked it paid.
               // Realtime/polling will detect the paid status and redirect.
               console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — waiting for webhook/callback to confirm`)
+            } else if (isBitPayment) {
+              // ── Bit-specific: SDK callback is unreliable for Bit ───────────
+              // The chargeBit() SDK callback frequently returns an error/non-success
+              // response even when the payment actually succeeded. The Tranzila
+              // notify webhook (server-to-server) is the authoritative signal —
+              // it may have already marked the session as "paid" by the time this
+              // callback fires.
+              //
+              // Strategy:
+              //   1. Check the session status immediately.
+              //   2. If already "paid" → redirect to success.
+              //   3. If still processing → keep polling/realtime alive for a grace
+              //      period to allow the webhook to arrive.
+              //   4. Only show an error if the session is explicitly "failed".
+              console.log(`[PAY][${submitId}] STEP 9 — Bit SDK callback non-success, checking session before showing error...`)
+
+              try {
+                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+                const sessionData = sessionRes.ok ? await sessionRes.json() : null
+
+                if (sessionData?.status === 'paid') {
+                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Bit session already PAID (notify webhook arrived) — redirecting to success`)
+                  clearPoll()
+                  clearListeners()
+                  setIsSubmitting(false)
+                  isSubmittingRef.current = false
+                  is3DSActiveRef.current = false
+                  onSuccess(
+                    sessionData.tranzila_transaction_id || 'confirmed',
+                    sessionData.raw_response?.shopifyOrderUrl,
+                    sessionData.raw_response?._generated_gift_cards,
+                    sessionData.raw_response?._gift_card?.remainingBalance,
+                    giftCardCode,
+                  )
+                  return
+                }
+
+                if (sessionData?.status === 'failed') {
+                  console.log(`[PAY][${submitId}] STEP 9 — ❌ Bit session explicitly FAILED: "${sessionData.error_message}"`)
+                  clearListeners()
+                  setPaymentError(sessionData.error_message || parseTranzilaError(tzResult, true))
+                  setIsSubmitting(false)
+                  isSubmittingRef.current = false
+                  is3DSActiveRef.current = false
+                  return
+                }
+
+                // Session is still in a transitional state (pending_bit / processing).
+                // The notify webhook may not have arrived yet. Keep polling/realtime
+                // alive — they will detect the final status and redirect or show error.
+                console.log(`[PAY][${submitId}] STEP 9 — Bit session status="${sessionData?.status}" — keeping polling alive (notify webhook may still arrive)`)
+                // Don't clear listeners, don't show error, don't reset submit state.
+                // The existing polling (startSessionPolling) and realtime subscription
+                // will handle the final redirect.
+              } catch (checkErr) {
+                console.error(`[PAY][${submitId}] STEP 9 — Failed to check session status:`, checkErr)
+                // Still don't show error — let polling/realtime handle it
+                console.log(`[PAY][${submitId}] STEP 9 — Keeping polling alive despite check failure`)
+              }
             } else {
-              const errorMsg = parseTranzilaError(tzResult, isBitPayment)
-              console.log(`[PAY][${submitId}] STEP 9 — ❌ ${isBitPayment ? 'Bit' : 'Card'} charge DECLINED: "${errorMsg}"`)
+              // Card payment: SDK callback is authoritative — show error immediately
+              const errorMsg = parseTranzilaError(tzResult, false)
+              console.log(`[PAY][${submitId}] STEP 9 — ❌ Card charge DECLINED: "${errorMsg}"`)
               clearListeners()
               setPaymentError(errorMsg)
               setIsSubmitting(false)
