@@ -192,6 +192,16 @@ export function PaymentForm({
       }
 
       try {
+        // dispay all info i send to tranzila for hosted field request before send it
+        console.log('payload:', {
+          sandbox: sandboxMode,
+          terminal: process.env.NEXT_PUBLIC_TRANZILA_TERMINAL || 'fxprotmina',
+          fields: {
+            credit_card_number: { selector: '#credit_card_number' },
+            cvv:                { selector: '#cvv' },
+            expiry:             { selector: '#expiry' },
+          },
+        })
         const sdkConfig: any = {
           sandbox: sandboxMode,
           terminal: process.env.NEXT_PUBLIC_TRANZILA_TERMINAL || 'fxprotmina',
@@ -713,6 +723,7 @@ export function PaymentForm({
             notify_url:         result.callbackNotifyUrl,
           }
           if (result.thtk) tzBitParams.thtk = result.thtk
+          console.log('Tranzila Bit Charge Payload:', tzBitParams)
           console.log(`[PAY][${submitId}] STEP 6 — Bit chargeBit() params:`, JSON.stringify({ ...tzBitParams, thtk: tzBitParams.thtk ? '***' : null }))
         } else {
           // charge() params for card
@@ -733,6 +744,7 @@ export function PaymentForm({
           } else {
             tzParams.maxpay = '1'
           }
+          console.log('Tranzila Card Charge Payload:', tzParams)
           console.log(`[PAY][${submitId}] STEP 6 — Card charge() params:`, JSON.stringify({
             ...tzParams, thtk: tzParams.thtk ? `${String(tzParams.thtk).slice(0, 8)}…` : null,
           }))
