@@ -165,8 +165,8 @@ async function handleCallback(request: NextRequest) {
             giftCard: giftCardInfo,
           })
           shopifyOrderId = String(order.id)
-          shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
-          console.log('[3DS-CALLBACK] Shopify order created:', shopifyOrderId)
+          shopifyOrderUrl = order.order_status_url || null
+          console.log('[3DS-CALLBACK] Shopify order created:', shopifyOrderId, 'status_url:', shopifyOrderUrl)
         } catch (err) {
           console.error('[3DS-CALLBACK] Shopify order failed:', err)
         }
@@ -192,7 +192,7 @@ async function handleCallback(request: NextRequest) {
         .eq('id', actualSessionId)
 
       // Redirect to Shopify native order status page
-      return redirectToShopify(session, shopifyOrderId)
+      return redirectToShopify(session, shopifyOrderId, shopifyOrderUrl)
 
     } else {
       const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
@@ -230,9 +230,9 @@ function redirectToSuccess(sessionId: string, confirmationCode: string, giftCard
   return breakoutRedirect(targetUrl, sessionId)
 }
 
-function redirectToShopify(session: any, shopifyOrderId?: string | null) {
+function redirectToShopify(session: any, shopifyOrderId?: string | null, orderStatusUrl?: string | null) {
   const shopifyDomain = session.shop || 'rotmina.myshopify.com'
-  const targetUrl = `https://${shopifyDomain}/pages/success${shopifyOrderId ? `?order_id=${shopifyOrderId}` : ''}`
+  const targetUrl = orderStatusUrl || `https://${shopifyDomain}/pages/success${shopifyOrderId ? `?order_id=${shopifyOrderId}` : ''}`
   return breakoutRedirect(targetUrl, session.id)
 }
 
@@ -252,7 +252,7 @@ function breakoutRedirect(url: string, sessionId?: string, errorMessage?: string
         <script>
           try {
             // Parse result from URL
-            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url') || "${url}".includes('/pages/success');
+            var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('/pages/success') || ("${url}".includes('/orders/') && "${url}".includes('key='));
             var result = {
               type: '3DS_COMPLETE',
               success: isSuccess,
