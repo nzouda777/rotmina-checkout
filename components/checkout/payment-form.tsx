@@ -696,7 +696,7 @@ export function PaymentForm({
         const baseContact = {
           terminal:      result.terminal,
           terminal_name: result.terminal,
-          sum:           String(result.chargeAmount),
+          sum:           Number(result.chargeAmount).toFixed(2),
           currency:      result.currency,
           contact:       `${customerInfo.firstName} ${customerInfo.lastName}`,
           email:         customerInfo.email,
@@ -712,7 +712,7 @@ export function PaymentForm({
           // terminal_name, amount, currency_code
           tzBitParams = {
             terminal_name:      result.terminal,
-            amount:             String(result.chargeAmount),
+            amount:             Number(result.chargeAmount).toFixed(2),
             currency_code:      'ILS', // Bit only supports ILS
             contact:            `${customerInfo.firstName} ${customerInfo.lastName}`,
             email:              customerInfo.email,

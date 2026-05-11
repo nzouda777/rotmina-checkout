@@ -140,7 +140,7 @@ export class TranzilaClient {
 
     let apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}`
     if (sum !== undefined) {
-      apiUrl += `&sum=${sum}`
+      apiUrl += `&sum=${sum.toFixed(2)}`
     }
 
     console.log(`[TRANZILA-HANDSHAKE] URL: ${apiUrl}`)
@@ -160,11 +160,11 @@ export class TranzilaClient {
 
       const raw = text.trim()
 
-      // if (raw.startsWith('thtk=')) {
-      //   const token = raw.slice(5)
-      //   console.log(`[TRANZILA-HANDSHAKE] Token: ${token.substring(0, 10)}…`)
-      //   return token
-      // }
+      if (raw.startsWith('thtk=')) {
+        const token = raw.slice(5)
+        console.log(`[TRANZILA-HANDSHAKE] Token: ${token.substring(0, 10)}…`)
+        return token
+      }
 
       if (raw && !raw.toLowerCase().startsWith('{') && !raw.toLowerCase().includes('error') && !raw.toLowerCase().includes('invalid')) {
         console.log(`[TRANZILA-HANDSHAKE] Token (no prefix): ${raw.substring(0, 10)}…`)
