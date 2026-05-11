@@ -62,8 +62,8 @@ export async function GET(request: NextRequest) {
       const password = process.env.TRANZILA_TERMINAL_PASSWORD
       
       if (password && password !== 'your_terminal_password') {
-        const handshakeUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${terminal}&TranzilaTK=1&sum=100&currency=1`
-        
+        const handshakeUrl = `https://api.tranzila.com/v1/handshake/create?supplier=fxprotmina&TranzilaPW=xE4Ic6T6&sum=100&currency=1`
+
         const response = await fetch(handshakeUrl, { method: 'GET' })
         const text = await response.text()
         
