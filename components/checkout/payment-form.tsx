@@ -94,8 +94,9 @@ export function PaymentForm({
   const pollIntervalRef   = useRef<NodeJS.Timeout | null>(null)
   const pollTimeoutRef    = useRef<NodeJS.Timeout | null>(null)
   const messageHandlerRef = useRef<((e: MessageEvent) => void) | null>(null)
-  const popupRef          = useRef<Window | null>(null)
-  const popupMonitorRef   = useRef<NodeJS.Timeout | null>(null)
+  const popupRef            = useRef<Window | null>(null)
+  const popupMonitorRef     = useRef<NodeJS.Timeout | null>(null)
+  const challengeHandlerRef = useRef<((e: MessageEvent) => void) | null>(null)
 
   // FIX 5: hostedFields as a ref instead of state.
   // Using useState caused re-renders that could trigger re-initialization
@@ -792,6 +793,49 @@ export function PaymentForm({
         startSessionPolling(isBitPayment ? 0 : 15_000)
         is3DSActiveRef.current = true
 
+        // ── STEP 7.5: Intercept SDK showChallenge → open popup ────────────
+        // The SDK sends showChallenge when 3DS authentication is required.
+        // We open challengeUrl in window.open() so ACS servers that set
+        // X-Frame-Options: sameorigin (e.g. wibmo.com) load without being
+        // blocked — window.open() is a top-level context, not an iframe.
+        if (!isBitPayment) {
+          const challengeHandler = (event: MessageEvent) => {
+            let data = event.data
+            try { if (typeof data === 'string') data = JSON.parse(data) } catch {}
+            if (data?.type !== 'showChallenge') return
+
+            const url = data?.response?.challengeUrl ?? data?.challengeUrl
+            if (!url) return
+
+            console.log(`[PAY][${submitId}] showChallenge intercepted → opening 3DS popup`)
+            window.removeEventListener('message', challengeHandler)
+            challengeHandlerRef.current = null
+
+            const sw = window.screen.width  || 1280
+            const sh = window.screen.height || 800
+            const pw = 520, ph = 680
+            popupRef.current = window.open(
+              url, '3dsChallenge',
+              `width=${pw},height=${ph},left=${Math.round((sw-pw)/2)},top=${Math.round((sh-ph)/2)},resizable=yes,scrollbars=yes`
+            )
+            setShow3DS(true)
+            setThreeDSUrl('')
+
+            // Detect if user closes popup before completing 3DS
+            if (popupMonitorRef.current) clearInterval(popupMonitorRef.current)
+            popupMonitorRef.current = setInterval(() => {
+              if (popupRef.current?.closed && is3DSActiveRef.current) {
+                console.log(`[PAY][${submitId}] 3DS popup closed by user`)
+                clearInterval(popupMonitorRef.current!)
+                popupMonitorRef.current = null
+                close3DS('User Cancel')
+              }
+            }, 600)
+          }
+          challengeHandlerRef.current = challengeHandler
+          window.addEventListener('message', challengeHandler)
+        }
+
         // ── STEP 8: Call charge() or chargeBit() ──────────────────────────
         const sdkMethod = isBitPayment ? 'chargeBit' : 'charge'
         console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.${sdkMethod}()...`)
@@ -807,6 +851,16 @@ export function PaymentForm({
             // response = Tranzila API result on success; err = error indicator on failure
             const tzResult = response ?? err
             console.log(`[PAY][${submitId}] STEP 9 — SDK callback | err=${JSON.stringify(err)} | response=${JSON.stringify(response)}`)
+
+            // Clean up 3DS challenge popup and handler now that SDK has responded
+            if (challengeHandlerRef.current) {
+              window.removeEventListener('message', challengeHandlerRef.current)
+              challengeHandlerRef.current = null
+            }
+            if (popupMonitorRef.current) { clearInterval(popupMonitorRef.current); popupMonitorRef.current = null }
+            if (popupRef.current && !popupRef.current.closed) { popupRef.current.close(); popupRef.current = null }
+            setShow3DS(false)
+            setThreeDSUrl('')
 
             // success = err is null/falsy AND response indicates approval
             const success = !err && isTzSuccess(tzResult)
