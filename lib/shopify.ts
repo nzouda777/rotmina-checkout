@@ -131,8 +131,13 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     customer_email: customer.email,
   }))
 
+  if (!SHOPIFY_STORE_DOMAIN.endsWith('.myshopify.com')) {
+    throw new Error(`SHOPIFY_STORE_DOMAIN must be a .myshopify.com domain (got: ${SHOPIFY_STORE_DOMAIN}). Custom domains cause POST→GET redirect and will return an orders list instead of creating an order.`)
+  }
+
   const response = await fetch(endpoint, {
     method: 'POST',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
