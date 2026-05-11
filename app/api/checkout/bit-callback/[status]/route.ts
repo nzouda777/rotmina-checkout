@@ -297,7 +297,7 @@ function redirectToSuccessUrl(request: NextRequest, session: any, confirmationCo
 
 function redirectToErrorUrl(request: NextRequest, message: string, sessionId?: string) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
-  const targetUrl = `${baseUrl}/checkout/error?session=${sessionId || ''}&error=${encodeURIComponent(message)}`
+  const targetUrl = `${baseUrl}/checkout/s=error`
   return breakoutRedirect(targetUrl, sessionId, message)
 }
 

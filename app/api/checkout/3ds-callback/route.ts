@@ -68,10 +68,9 @@ async function handleCallback(request: NextRequest) {
 
     const actualSessionId = session.id
 
-    // Éviter le double traitement
     if (session.status === 'paid') {
-      console.log('[3DS-CALLBACK] Already paid, redirecting to Shopify')
-      return redirectToShopify(session)
+      console.log('[3DS-CALLBACK] Already paid, redirecting to success page')
+      return redirectToSuccess(actualSessionId, session.tranzila_transaction_id)
     }
 
     // ── Step 3: Call Tranzila 3DS Complete ─────────────────────────────
@@ -191,8 +190,8 @@ async function handleCallback(request: NextRequest) {
         })
         .eq('id', actualSessionId)
 
-      // Redirect to Shopify native order status page
-      return redirectToShopify(session, shopifyOrderId, shopifyOrderUrl)
+      // Redirect to success page in the app
+      return redirectToSuccess(actualSessionId, confirmationCode || trackId)
 
     } else {
       const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
@@ -207,7 +206,7 @@ async function handleCallback(request: NextRequest) {
         .eq('id', actualSessionId)
 
       console.log('[3DS-CALLBACK] Payment failed after 3DS Complete:', errorMsg)
-      return redirectToError(errorMsg, sessionId, undefined, errorMsg)
+      return redirectToError(errorMsg, sessionId, errorMsg)
     }
 
   } catch (error: any) {
@@ -216,17 +215,9 @@ async function handleCallback(request: NextRequest) {
   }
 }
 
-function redirectToSuccess(sessionId: string, confirmationCode: string, giftCardCodes?: string, usedGiftCardCode?: string, remainingBalance?: number) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-  const params = new URLSearchParams({
-    session: sessionId,
-    confirmation: confirmationCode,
-  })
-  if (giftCardCodes) params.set('gift_cards', giftCardCodes)
-  if (usedGiftCardCode) params.set('used_gc', usedGiftCardCode)
-  if (remainingBalance !== undefined) params.set('gc_remaining', String(remainingBalance))
-  
-  const targetUrl = `${baseUrl}/checkout/success?${params.toString()}`
+function redirectToSuccess(sessionId: string, confirmationCode: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+  const targetUrl = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}`
   return breakoutRedirect(targetUrl, sessionId)
 }
 
@@ -236,9 +227,9 @@ function redirectToShopify(session: any, shopifyOrderId?: string | null, orderSt
   return breakoutRedirect(targetUrl, session.id)
 }
 
-function redirectToError(message: string, sessionId?: string, shop?: string, errorMessage?: string) {
-  const shopifyDomain = shop || 'rotmina.myshopify.com'
-  const targetUrl = `https://${shopifyDomain}/pages/error?error=${encodeURIComponent(message)}`
+function redirectToError(message: string, sessionId?: string, errorMessage?: string) {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+  const targetUrl = `${baseUrl}/checkout/s=error`
   return breakoutRedirect(targetUrl, sessionId, errorMessage)
 }
 

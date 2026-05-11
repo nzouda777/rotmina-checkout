@@ -95,42 +95,15 @@ export default function CheckoutPage() {
     giftCardRemainingBalance?: number,
     usedGiftCardCode?: string
   ) => {
-    // Priority 1: Use the URL provided by the server (already points to /pages/success with order_id)
-    if (shopifyOrderUrl) {
-      window.location.href = shopifyOrderUrl
-      return
-    }
-
-    // Priority 2: Hardcoded fallback to Shopify success page
-    if (session?.shop) {
-      window.location.href = `https://${session.shop}/pages/success`
-      return
-    }
-
-    // Fallback: Local success page
-    const params = new URLSearchParams({
-      session: sessionId,
-      confirmation: confirmationCode,
-    })
-    if (generatedGiftCards && generatedGiftCards.length > 0) {
-      params.set('gift_cards', generatedGiftCards.map(gc => gc.code).join(','))
-    }
-    if (usedGiftCardCode) {
-      params.set('used_gc', usedGiftCardCode)
-    }
-    if (giftCardRemainingBalance !== undefined) {
-      params.set('gc_remaining', String(giftCardRemainingBalance))
-    }
-    router.push(`/checkout/success?${params.toString()}`)
+    // Standard redirection format requested by user
+    const baseUrl = window.location.origin
+    const targetUrl = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}`
+    window.location.href = targetUrl
   }
 
   const handlePaymentError = (errorMessage: string) => {
-    if (session?.shop) {
-      window.location.href = `https://${session.shop}/pages/error?error=${encodeURIComponent(errorMessage)}`
-    } else {
-      setError(errorMessage)
-      setStep('payment')
-    }
+    const baseUrl = window.location.origin
+    window.location.href = `${baseUrl}/checkout/s=error`
   }
 
   const handleGiftCardApply = (giftCard: AppliedGiftCard) => {
