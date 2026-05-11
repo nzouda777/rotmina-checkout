@@ -31,6 +31,9 @@ async function handleBitCallback(request: NextRequest, status: string) {
     searchParams.get('ConfirmationCode') ||
     searchParams.get('confirmation_code')
 
+  // Customer info extracted from the Tranzila webhook body (fallback when session.customer is null)
+  let callbackCustomer: CustomerInfo | null = null
+
   // Log and parse POST body if present (Tranzila sends webhook data in POST body)
   if (request.method === 'POST') {
     try {
@@ -39,15 +42,34 @@ async function handleBitCallback(request: NextRequest, status: string) {
         sessionId = formData.get('merchant_data') as string
       }
       if (!confirmationCode) {
-        confirmationCode = 
-          (formData.get('index') as string) || 
-          (formData.get('ConfirmationCode') as string) || 
+        confirmationCode =
+          (formData.get('index') as string) ||
+          (formData.get('ConfirmationCode') as string) ||
           (formData.get('confirmation_code') as string)
       }
 
       const bodyObj: Record<string, string> = {}
       formData.forEach((value, key) => { bodyObj[key] = value.toString() })
       console.log(`[BIT-CALLBACK][${logId}] POST body:`, JSON.stringify(bodyObj))
+
+      // Extract customer info from callback body as fallback.
+      // Tranzila echoes back contact/email/phone that were passed at charge time.
+      const contact = (formData.get('contact') as string) || ''
+      const email = (formData.get('email') as string) || ''
+      const phone = (formData.get('phone') as string) || ''
+      if (email || contact) {
+        const nameParts = contact.trim().split(/\s+/)
+        callbackCustomer = {
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' ') || '',
+          email,
+          phone,
+          address: '',
+          city: '',
+          postalCode: '',
+          country: 'Israel',
+        }
+      }
     } catch (err) {
       console.error(`[BIT-CALLBACK][${logId}] Error parsing POST body:`, err)
     }
@@ -90,7 +112,7 @@ async function handleBitCallback(request: NextRequest, status: string) {
 
     console.log(`[BIT-CALLBACK][${logId}] notify: processing payment for session ${sessionId}`)
     // Process as success — the notify webhook confirms the payment
-    await processSuccess(supabase, session, sessionId, confirmationCode, logId)
+    await processSuccess(supabase, session, sessionId, confirmationCode, logId, callbackCustomer)
     return NextResponse.json({ ok: true })
   }
 
@@ -136,7 +158,7 @@ async function handleBitCallback(request: NextRequest, status: string) {
   }
 
   console.log(`[BIT-CALLBACK][${logId}] Processing Bit success for session ${sessionId}`)
-  await processSuccess(supabase, session, sessionId, confirmationCode, logId)
+  await processSuccess(supabase, session, sessionId, confirmationCode, logId, callbackCustomer)
   return redirectToSuccessUrl(request, session, confirmationCode)
 }
 
@@ -147,9 +169,10 @@ async function processSuccess(
   sessionId: string,
   confirmationCode: string,
   logId: string,
+  callbackCustomer: CustomerInfo | null = null,
 ) {
   const actualSessionId = session.id
-  const customer = session.customer as CustomerInfo
+  const customer = (session.customer as CustomerInfo) || callbackCustomer
   const storedGiftCard = session.raw_response?._gift_card
   let remainingBalance: number | undefined
 

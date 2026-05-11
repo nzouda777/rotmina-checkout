@@ -189,11 +189,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Lock session to prevent duplicate charges
-    await supabase
+    // Lock session to prevent duplicate charges + save customer info.
+    // If the status constraint rejects 'processing' (migration 003 not yet applied),
+    // fall back to saving the customer field alone so callbacks can still create the Shopify order.
+    const { error: lockErr } = await supabase
       .from('payment_sessions')
       .update({ status: 'processing', error_message: null, customer: customerInfo as CustomerInfo })
       .eq('id', sessionId)
+
+    if (lockErr) {
+      console.warn(`[CHARGE][${logId}] Combined lock+customer update failed (run migration 003): ${lockErr.message}`)
+      // Save customer separately so the payment callback can still create the Shopify order.
+      const { error: customerErr } = await supabase
+        .from('payment_sessions')
+        .update({ customer: customerInfo as CustomerInfo, error_message: null })
+        .eq('id', sessionId)
+      if (customerErr) {
+        console.error(`[CHARGE][${logId}] ❌ Customer save failed too: ${customerErr.message}`)
+        return NextResponse.json({ error: 'Failed to save payment session' }, { status: 500 })
+      }
+      console.log(`[CHARGE][${logId}] Customer saved via fallback (status not changed to processing)`)
+    }
 
     const orderTotal = Number(session.cart.total)
     const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, orderTotal)

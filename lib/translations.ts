@@ -462,6 +462,27 @@ export const translations = {
       en: 'Verifying your payment...',
       he: '...מאמת את התשלום שלך',
     },
+    // Loading step messages
+    loadingConnecting: {
+      en: 'Connecting to payment server...',
+      he: 'מתחבר לשרת התשלומים...',
+    },
+    loadingConnectingBit: {
+      en: 'Preparing your Bit payment...',
+      he: 'מכין את תשלום ה-Bit שלך...',
+    },
+    loadingConnectingSubtitle: {
+      en: 'Please wait, this only takes a moment.',
+      he: 'נא להמתין, זה יארך רק רגע.',
+    },
+    loadingCompleting: {
+      en: 'Finalizing your order...',
+      he: 'מסיים את ההזמנה שלך...',
+    },
+    loadingCompletingSubtitle: {
+      en: 'Your payment was received. We\'re creating your order.',
+      he: 'התשלום התקבל. אנו יוצרים את ההזמנה שלך.',
+    },
     // Terms modal
     termsOfUse: {
       en: 'Terms of Use',

@@ -83,6 +83,7 @@ export function PaymentForm({
   const [paymentError, setPaymentError]   = useState<string | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms]         = useState(false)
+  const [loadingStep, setLoadingStep]     = useState<'connecting' | 'completing' | null>(null)
   const { t, lang } = useLanguage()
 
   // ── Refs that survive re-renders without triggering them ──────────────────
@@ -140,6 +141,7 @@ export function PaymentForm({
     clearListeners()
     setShow3DS(false)
     setThreeDSUrl('')
+    setLoadingStep(null)
     setIsSubmitting(false)
     isSubmittingRef.current = false
   }, [clearListeners, sessionId])
@@ -659,6 +661,7 @@ export function PaymentForm({
     had3DSChallengeRef.current = false
     setIsSubmitting(true)
     setPaymentError(null)
+    setLoadingStep('connecting')
 
     try {
       // ── STEP 1: Validate minimum amount for Bit ──────────────────────────
@@ -695,6 +698,7 @@ export function PaymentForm({
 
       if (!response.ok) {
         console.error(`[PAY][${submitId}] STEP 2 — API returned error status ${response.status}`)
+        setLoadingStep(null)
         setPaymentError(result.error || 'Payment request failed. Please try again.')
         setIsSubmitting(false)
         isSubmittingRef.current = false
@@ -706,6 +710,7 @@ export function PaymentForm({
       const needsBitRedirect = result.paymentMethod === 'bit' && !result.requiresHostedFields && result.redirectUrl
       if (needs3DSModal || needsBitRedirect) {
         console.log(`[PAY][${submitId}] STEP 3 — ${needsBitRedirect ? 'Bit REST redirect' : '3DS redirect'} | url: ${result.redirectUrl}`)
+        setLoadingStep(null)
         // open3DSModal handles realtime + polling internally
         open3DSModal(result.redirectUrl, needsBitRedirect ? 'bit' : 'card', result.trackId)
         return
@@ -714,6 +719,7 @@ export function PaymentForm({
       // ── STEP 4: Gift-card-only / test-card instant success ────────────────
       if (result.success && !result.requiresHostedFields) {
         console.log(`[PAY][${submitId}] STEP 4 — Instant success (GC-only or test card) | confirmationCode: ${result.confirmationCode}`)
+        setLoadingStep(null)
         onSuccess(result.confirmationCode, result.shopifyOrderUrl, result.generatedGiftCards, result.giftCardRemainingBalance, giftCardCode)
         return
       }
@@ -828,6 +834,9 @@ export function PaymentForm({
         }
 
         // ── STEP 8: Call charge() or chargeBit() ──────────────────────────
+        // Clear the 'connecting' loader: the SDK handles its own UI from here
+        // (BIT: full-screen overlay; card: no UI until showChallenge or callback)
+        setLoadingStep(null)
         const sdkMethod = isBitPayment ? 'chargeBit' : 'charge'
         console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.${sdkMethod}()...`)
         try {
@@ -860,6 +869,7 @@ export function PaymentForm({
             // ── Helper: redirect to success from session data ─────────────────
             const resolveSuccess = (sd: any) => {
               clearPoll(); clearListeners()
+              setLoadingStep(null)
               setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
               onSuccess(
                 sd.tranzila_transaction_id || tzResult?.ConfirmationCode || tzResult?.index || 'confirmed',
@@ -924,6 +934,7 @@ export function PaymentForm({
                 const errMsg = sessionData.error_message || parseTranzilaError(tzResult, isBitPayment)
                 console.log(`[PAY][${submitId}] STEP 9 — ❌ Session FAILED: "${errMsg}"`)
                 clearListeners()
+                setLoadingStep(null)
                 setPaymentError(errMsg)
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
                 return
@@ -963,6 +974,7 @@ export function PaymentForm({
               if (approvalSignal) {
                 // Charge was approved (or likely approved). Give Tranzila's server
                 // callback 2 s to arrive before self-completing.
+                setLoadingStep('completing')
                 await new Promise(r => setTimeout(r, 2000))
 
                 const recheck  = await fetch(`/api/checkout/session?id=${sessionId}`)
@@ -972,6 +984,7 @@ export function PaymentForm({
                 if (recheckData?.status === 'paid')   { resolveSuccess(recheckData); return }
                 if (recheckData?.status === 'failed') {
                   clearListeners()
+                  setLoadingStep(null)
                   setPaymentError(recheckData.error_message || parseTranzilaError(tzResult, isBitPayment))
                   setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
                   return
@@ -988,6 +1001,7 @@ export function PaymentForm({
               // Bit payment or SDK explicit failure: keep polling;
               // the server callback or notify webhook may still arrive.
               console.log(`[PAY][${submitId}] STEP 9 — falling back to immediate polling (approvalSignal=${approvalSignal})`)
+              setLoadingStep('completing')
               clearPoll()
               startSessionPolling(0)
 
@@ -995,6 +1009,7 @@ export function PaymentForm({
               console.error(`[PAY][${submitId}] STEP 9 — session check error:`, sessionCheckErr)
               if (!sdkSuccess) {
                 clearListeners()
+                setLoadingStep(null)
                 setPaymentError(parseTranzilaError(tzResult, isBitPayment))
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
               }
@@ -1004,6 +1019,7 @@ export function PaymentForm({
           console.log(`[PAY][${submitId}] STEP 8 — ${sdkMethod}() called (callback pending until payment completes)`)
         } catch (err: any) {
           console.error(`[PAY][${submitId}] STEP 8 — ❌ Exception thrown by ${sdkMethod}():`, err?.message || err)
+          setLoadingStep(null)
           setPaymentError('Failed to initiate payment. Please refresh the page and try again.')
           setIsSubmitting(false)
           isSubmittingRef.current = false
@@ -1019,10 +1035,12 @@ export function PaymentForm({
 
     } catch (err: any) {
       console.error(`[PAY][${submitId}] CATCH — Unhandled exception:`, err?.message || err)
+      setLoadingStep(null)
       setPaymentError(t('paymentForm.paymentProcessingFailed'))
     } finally {
       if (!is3DSActiveRef.current) {
         console.log(`[PAY][${submitId}] FINALLY — Not in 3DS/HF active state, resetting submit lock`)
+        setLoadingStep(null)
         setIsSubmitting(false)
         isSubmittingRef.current = false
       }
@@ -1361,40 +1379,70 @@ export function PaymentForm({
         </div>
       </form>
 
-      {/* 3DS / Bit modal */}
-      {show3DS && (
+      {/* 3DS / Bit modal — also shown during 'connecting' and 'completing' loading steps */}
+      {(show3DS || !!loadingStep) && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
 
-          {/* ── Spinner state (3DS challenge or Bit popup — SDK / popup is handling it) ── */}
+          {/* ── Spinner state (loading step or 3DS challenge / Bit popup) ── */}
           {!threeDSUrl && (
             <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
+              {/* Top gradient bar — blue for connecting/verifying, green for completing */}
+              <div className={`h-1 w-full bg-gradient-to-r ${loadingStep === 'completing' ? 'from-emerald-400 via-green-500 to-teal-500' : 'from-blue-500 via-indigo-500 to-purple-500'}`} />
               <div className="px-8 py-10 text-center space-y-6">
                 {/* Spinner */}
-                <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-gray-100 border-t-blue-500" />
-                {/* Text */}
+                <div className={`mx-auto h-16 w-16 animate-spin rounded-full border-4 border-gray-100 ${loadingStep === 'completing' ? 'border-t-emerald-500' : 'border-t-blue-500'}`} />
+
+                {/* Phase-specific text */}
                 <div className="space-y-2">
-                  <p className="text-lg font-bold text-gray-900">
-                    {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
-                  </p>
-                  <p className="text-sm text-gray-500 leading-relaxed">
-                    {paymentMethod === 'bit'
-                      ? t('paymentForm.completeInPopup')
-                      : t('paymentForm.verifyingPayment')}
-                  </p>
+                  {loadingStep === 'connecting' ? (
+                    <>
+                      <p className="text-lg font-bold text-gray-900">
+                        {paymentMethod === 'bit'
+                          ? t('paymentForm.loadingConnectingBit')
+                          : t('paymentForm.loadingConnecting')}
+                      </p>
+                      <p className="text-sm text-gray-500 leading-relaxed">
+                        {t('paymentForm.loadingConnectingSubtitle')}
+                      </p>
+                    </>
+                  ) : loadingStep === 'completing' ? (
+                    <>
+                      <p className="text-lg font-bold text-gray-900">
+                        {t('paymentForm.loadingCompleting')}
+                      </p>
+                      <p className="text-sm text-gray-500 leading-relaxed">
+                        {t('paymentForm.loadingCompletingSubtitle')}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-lg font-bold text-gray-900">
+                        {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
+                      </p>
+                      <p className="text-sm text-gray-500 leading-relaxed">
+                        {paymentMethod === 'bit'
+                          ? t('paymentForm.completeInPopup')
+                          : t('paymentForm.verifyingPayment')}
+                      </p>
+                    </>
+                  )}
                 </div>
+
                 {/* Live indicator */}
                 <div className="flex items-center justify-center gap-2">
-                  <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                  <div className={`h-2 w-2 animate-pulse rounded-full ${loadingStep === 'completing' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
                   <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
                 </div>
-                {/* Cancel */}
-                <button
-                  onClick={() => close3DS('User Cancel')}
-                  className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
-                >
-                  {t('paymentForm.cancel')}
-                </button>
+
+                {/* Cancel — only during 3DS or connecting phase (not while finalizing) */}
+                {loadingStep !== 'completing' && (
+                  <button
+                    onClick={() => close3DS('User Cancel')}
+                    className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
+                  >
+                    {t('paymentForm.cancel')}
+                  </button>
+                )}
               </div>
             </div>
           )}
