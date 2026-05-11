@@ -216,7 +216,7 @@ async function handleCallback(request: NextRequest) {
 }
 
 function redirectToSuccess(sessionId: string, confirmationCode: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+  const baseUrl = process.env.SHOPIFY_STORE_DOMAIN || ''
   const targetUrl = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}`
   return breakoutRedirect(targetUrl, sessionId)
 }
@@ -228,7 +228,7 @@ function redirectToShopify(session: any, shopifyOrderId?: string | null, orderSt
 }
 
 function redirectToError(message: string, sessionId?: string, errorMessage?: string) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
+  const baseUrl = process.env.SHOPIFY_STORE_DOMAIN || ''
   const targetUrl = `${baseUrl}/checkout/s=error`
   return breakoutRedirect(targetUrl, sessionId, errorMessage)
 }
