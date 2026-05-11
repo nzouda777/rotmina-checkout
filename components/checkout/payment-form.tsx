@@ -94,6 +94,8 @@ export function PaymentForm({
   const pollIntervalRef   = useRef<NodeJS.Timeout | null>(null)
   const pollTimeoutRef    = useRef<NodeJS.Timeout | null>(null)
   const messageHandlerRef = useRef<((e: MessageEvent) => void) | null>(null)
+  const popupRef          = useRef<Window | null>(null)
+  const popupMonitorRef   = useRef<NodeJS.Timeout | null>(null)
 
   // FIX 5: hostedFields as a ref instead of state.
   // Using useState caused re-renders that could trigger re-initialization
@@ -129,6 +131,9 @@ export function PaymentForm({
         body: JSON.stringify({ sessionId }),
       }).catch((err) => console.error('[3DS] Failed to reset session:', err))
     }
+    if (popupMonitorRef.current) { clearInterval(popupMonitorRef.current); popupMonitorRef.current = null }
+    if (popupRef.current && !popupRef.current.closed) popupRef.current.close()
+    popupRef.current = null
     is3DSActiveRef.current = false
     clearListeners()
     setShow3DS(false)
@@ -404,7 +409,36 @@ export function PaymentForm({
   const open3DSModal = useCallback((redirectUrl: string, method: 'card' | 'bit', trackId?: string) => {
     cancelledRef.current = false
     is3DSActiveRef.current = true
-    setThreeDSUrl(redirectUrl)
+
+    // Open 3DS/Bit in a popup so ACS pages that set X-Frame-Options:sameorigin
+    // (e.g. wibmo.com) are not blocked. Iframes cannot embed cross-origin pages
+    // that restrict framing.
+    const screenW = window.screen.width  || 1280
+    const screenH = window.screen.height || 800
+    const popW = 520, popH = 680
+    const left = Math.round((screenW - popW) / 2)
+    const top  = Math.round((screenH - popH) / 2)
+    const popup = window.open(
+      redirectUrl,
+      '3dsAuth',
+      `width=${popW},height=${popH},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    )
+
+    if (!popup) {
+      // Popup was blocked — fall back to iframe
+      console.warn('[3DS] Popup blocked, falling back to iframe')
+      setThreeDSUrl(redirectUrl)
+    }
+    popupRef.current = popup
+
+    // Detect when user closes the popup manually
+    popupMonitorRef.current = setInterval(() => {
+      if (popupRef.current?.closed && is3DSActiveRef.current) {
+        console.log('[3DS] Popup closed by user')
+        close3DS('User Cancel')
+      }
+    }, 600)
+
     setShow3DS(true)
 
     startRealtimeSubscription()
@@ -1242,7 +1276,7 @@ export function PaymentForm({
       </form>
 
       {/* 3DS / Bit modal */}
-      {show3DS && threeDSUrl && (
+      {show3DS && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative w-full max-w-lg bg-background rounded-xl shadow-2xl border border-border overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
@@ -1267,12 +1301,29 @@ export function PaymentForm({
                 </button>
               </div>
             </div>
-            <iframe
-              src={threeDSUrl}
-              className="w-full border-0"
-              style={{ height: '500px' }}
-              title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
-            />
+            {/* Popup-based flow: show waiting screen */}
+            {!threeDSUrl && (
+              <div className="flex flex-col items-center justify-center gap-4 py-16 px-8 text-center">
+                <div className="h-10 w-10 animate-spin rounded-full border-4 border-muted border-t-primary" />
+                <p className="text-sm font-medium text-foreground">
+                  {paymentMethod === 'bit'
+                    ? t('paymentForm.bitVerification')
+                    : t('paymentForm.securePayment')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('paymentForm.completeInPopup')}
+                </p>
+              </div>
+            )}
+            {/* Fallback iframe (popup was blocked) */}
+            {threeDSUrl && (
+              <iframe
+                src={threeDSUrl}
+                className="w-full border-0"
+                style={{ height: '500px' }}
+                title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
+              />
+            )}
           </div>
         </div>
       )}

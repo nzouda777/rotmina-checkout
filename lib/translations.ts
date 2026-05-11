@@ -442,6 +442,10 @@ export const translations = {
       en: 'Cancel',
       he: 'ביטול',
     },
+    completeInPopup: {
+      en: 'Complete authentication in the popup window',
+      he: 'השלם אימות בחלון הקופץ',
+    },
     // Terms modal
     termsOfUse: {
       en: 'Terms of Use',
