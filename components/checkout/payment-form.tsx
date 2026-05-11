@@ -704,8 +704,6 @@ export function PaymentForm({
           email:         customerInfo.email,
           phone:         customerInfo.phone.replace(/\D/g, ''),
           merchant_data: sessionId,
-          expiry_month: '01',
-          expiry_year: '28',
         }
 
         let tzParams: any  // card params for charge()
