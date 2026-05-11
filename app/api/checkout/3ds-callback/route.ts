@@ -216,8 +216,8 @@ async function handleCallback(request: NextRequest) {
 }
 
 function redirectToSuccess(sessionId: string, confirmationCode: string) {
-  const baseUrl = process.env.SHOPIFY_STORE_DOMAIN || ''
-  const targetUrl = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}`
+  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co'
+  const targetUrl = `${storeUrl}/pages/success?session=${sessionId}&confirmation=${confirmationCode}`
   return breakoutRedirect(targetUrl, sessionId)
 }
 

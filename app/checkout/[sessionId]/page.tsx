@@ -95,10 +95,8 @@ export default function CheckoutPage() {
     giftCardRemainingBalance?: number,
     usedGiftCardCode?: string
   ) => {
-    // Standard redirection format requested by user
-    const baseUrl = window.location.origin
-    const targetUrl = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}`
-    window.location.href = targetUrl
+    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co'
+    window.location.href = `${storeUrl}/pages/success?session=${sessionId}&confirmation=${confirmationCode}`
   }
 
   const handlePaymentError = (errorMessage: string) => {
