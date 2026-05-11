@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, CreditCard, Lock, Shield, Info } from 'lucide-react'
+import { ArrowLeft, CreditCard, Shield, Info } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { RealtimeChannel } from '@supabase/supabase-js'
@@ -77,9 +77,7 @@ export function PaymentForm({
   const [errors, setErrors]               = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting]   = useState(false)
   const [show3DS, setShow3DS]             = useState(false)
-  const [threeDSUrl, setThreeDSUrl]       = useState('')        // iframe flow (Bit/redirect)
-  const [pendingChallengeUrl, setPendingChallengeUrl] = useState('') // SDK showChallenge flow
-  const [challengePopupOpen, setChallengePopupOpen]   = useState(false)
+  const [threeDSUrl, setThreeDSUrl]       = useState('')
   const [installments, setInstallments]   = useState(1)
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'bit'>('card')
   const [paymentError, setPaymentError]   = useState<string | null>(null)
@@ -142,89 +140,9 @@ export function PaymentForm({
     clearListeners()
     setShow3DS(false)
     setThreeDSUrl('')
-    setPendingChallengeUrl('')
-    setChallengePopupOpen(false)
     setIsSubmitting(false)
     isSubmittingRef.current = false
   }, [clearListeners, sessionId])
-
-  // Opens the 3DS challenge popup from a user gesture (button click).
-  // Must be called from an onClick handler so Chrome allows window.open as a popup.
-  const openChallengeWindow = useCallback(() => {
-    if (!pendingChallengeUrl) return
-
-    const sw = window.screen.width  || 1280
-    const sh = window.screen.height || 800
-    const pw = 480, ph = 660
-    const popup = window.open(
-      pendingChallengeUrl,
-      '3dsChallenge',
-      `popup=yes,width=${pw},height=${ph},left=${Math.round((sw - pw) / 2)},top=${Math.round((sh - ph) / 2)},resizable=yes,scrollbars=yes`
-    )
-
-    if (!popup) {
-      // Popup blocked — fall back to inline iframe
-      console.warn('[3DS] Challenge popup blocked, falling back to iframe')
-      setThreeDSUrl(pendingChallengeUrl)
-      setPendingChallengeUrl('')
-      setChallengePopupOpen(false)
-      return
-    }
-
-    popupRef.current = popup
-    setChallengePopupOpen(true)
-    setPendingChallengeUrl('')
-
-    // Monitor popup close — checks session to detect OTP completion
-    if (popupMonitorRef.current) clearInterval(popupMonitorRef.current)
-    popupMonitorRef.current = setInterval(async () => {
-      if (!popupRef.current?.closed) return
-      if (!is3DSActiveRef.current) { clearInterval(popupMonitorRef.current!); popupMonitorRef.current = null; return }
-
-      clearInterval(popupMonitorRef.current!)
-      popupMonitorRef.current = null
-      popupRef.current = null
-      setChallengePopupOpen(false)
-      setShow3DS(false)
-      console.log('[3DS] Challenge popup closed — checking session status...')
-
-      try {
-        const res = await fetch(`/api/checkout/session?id=${sessionId}`)
-        const sessionData = res.ok ? await res.json() : null
-
-        if (sessionData?.status === 'paid') {
-          console.log('[3DS] ✅ Popup closed — session PAID → redirecting')
-          is3DSActiveRef.current = false
-          clearListeners()
-          setIsSubmitting(false)
-          isSubmittingRef.current = false
-          onSuccess(
-            sessionData.tranzila_transaction_id || 'confirmed',
-            sessionData.raw_response?.shopifyOrderUrl,
-            sessionData.raw_response?._generated_gift_cards,
-            sessionData.raw_response?._gift_card?.remainingBalance,
-            giftCardCode,
-          )
-          return
-        }
-
-        if (sessionData?.status === 'failed') {
-          console.log('[3DS] ❌ Popup closed — session FAILED')
-          clearListeners()
-          setPaymentError(sessionData.error_message || t('paymentForm.paymentDeclinedGeneric'))
-          setIsSubmitting(false)
-          isSubmittingRef.current = false
-          is3DSActiveRef.current = false
-          return
-        }
-
-        // Still pending — polling/realtime will catch the final status
-        console.log(`[3DS] Popup closed, session="${sessionData?.status}" — keeping polling alive`)
-      } catch (checkErr) {
-        console.error('[3DS] Session check after popup close failed:', checkErr)
-      }
-    }, 600)
-  }, [pendingChallengeUrl, sessionId, giftCardCode, clearListeners, onSuccess, t])
 
   // Unmount cleanup
   useEffect(() => () => clearListeners(), [clearListeners])
@@ -877,28 +795,23 @@ export function PaymentForm({
         startSessionPolling(isBitPayment ? 0 : 15_000)
         is3DSActiveRef.current = true
 
-        // ── STEP 7.5: Intercept SDK showChallenge → show CTA overlay ─────────
-        // The SDK sends showChallenge when 3DS is required. We don't auto-open
-        // window.open here because message event handlers are not a user gesture —
-        // Chrome would block the popup or open it as a new tab.
-        // Instead we store the URL in state and show a button. The user's click
-        // (openChallengeWindow) is the actual user gesture that opens the popup.
+        // ── STEP 7.5: Intercept SDK showChallenge ────────────────────────────
+        // The SDK sends this when 3DS is required and opens the ACS challenge
+        // page itself (popup or overlay). We just show a waiting spinner so the
+        // user knows something is happening. We do NOT open another popup —
+        // the SDK already handles the challenge UI.
         if (!isBitPayment) {
           const challengeHandler = (event: MessageEvent) => {
             let data = event.data
             try { if (typeof data === 'string') data = JSON.parse(data) } catch {}
             if (data?.type !== 'showChallenge') return
 
-            const url = data?.response?.challengeUrl ?? data?.challengeUrl
-            if (!url) return
-
-            console.log(`[PAY][${submitId}] showChallenge intercepted → showing authentication overlay`)
+            console.log(`[PAY][${submitId}] showChallenge received — SDK is handling 3DS challenge UI`)
             window.removeEventListener('message', challengeHandler)
             challengeHandlerRef.current = null
             had3DSChallengeRef.current = true
 
-            // Store URL and show overlay — actual popup opens on button click
-            setPendingChallengeUrl(url)
+            // Show spinner overlay while SDK handles the challenge
             setShow3DS(true)
           }
           challengeHandlerRef.current = challengeHandler
@@ -930,8 +843,6 @@ export function PaymentForm({
             if (popupRef.current && !popupRef.current.closed) { popupRef.current.close(); popupRef.current = null }
             setShow3DS(false)
             setThreeDSUrl('')
-            setPendingChallengeUrl('')
-            setChallengePopupOpen(false)
 
             // success = err is null/falsy AND response indicates approval
             const success = !err && isTzSuccess(tzResult)
@@ -1471,41 +1382,37 @@ export function PaymentForm({
         </div>
       </form>
 
-      {/* 3DS / Bit modal — 3 states */}
+      {/* 3DS / Bit modal */}
       {show3DS && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
 
-          {/* ── State 1: Authentication CTA (showChallenge intercepted, waiting for user click) ── */}
-          {pendingChallengeUrl && !threeDSUrl && (
-            <div className="w-full max-w-md bg-background rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              {/* Top accent bar */}
+          {/* ── Spinner state (3DS challenge or Bit popup — SDK / popup is handling it) ── */}
+          {!threeDSUrl && (
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-              <div className="p-8 text-center space-y-6">
-                {/* Icon */}
-                <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/20 ring-4 ring-blue-100 dark:ring-blue-900/40">
-                  <Lock className="h-9 w-9 text-blue-600 dark:text-blue-400" />
-                </div>
-                {/* Title + description */}
+              <div className="px-8 py-10 text-center space-y-6">
+                {/* Spinner */}
+                <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-gray-100 border-t-blue-500" />
+                {/* Text */}
                 <div className="space-y-2">
-                  <h2 className="text-xl font-bold text-foreground">{t('paymentForm.authRequired')}</h2>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{t('paymentForm.authRequiredDesc')}</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
+                  </p>
+                  <p className="text-sm text-gray-500 leading-relaxed">
+                    {paymentMethod === 'bit'
+                      ? t('paymentForm.completeInPopup')
+                      : t('paymentForm.verifyingPayment')}
+                  </p>
                 </div>
-                {/* CTA button — click opens popup (user gesture) */}
-                <button
-                  onClick={openChallengeWindow}
-                  className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold text-sm shadow-lg hover:opacity-90 active:scale-[0.98] transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                  {t('paymentForm.openAuthWindow')}
-                </button>
-                {/* Note */}
-                <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
-                  <Shield className="h-3.5 w-3.5 shrink-0" />
-                  {t('paymentForm.completeInPopup')}
-                </p>
+                {/* Live indicator */}
+                <div className="flex items-center justify-center gap-2">
+                  <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                  <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
+                </div>
                 {/* Cancel */}
                 <button
                   onClick={() => close3DS('User Cancel')}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
                 >
                   {t('paymentForm.cancel')}
                 </button>
@@ -1513,50 +1420,25 @@ export function PaymentForm({
             </div>
           )}
 
-          {/* ── State 2: Spinner (popup open — Bit, 3DS challenge, or redirect) ── */}
-          {!pendingChallengeUrl && !threeDSUrl && (
-            <div className="w-full max-w-sm bg-background rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-              <div className="p-8 text-center space-y-5">
-                <div className="mx-auto h-14 w-14 animate-spin rounded-full border-4 border-muted border-t-blue-500" />
-                <div className="space-y-1.5">
-                  <p className="text-base font-semibold text-foreground">
-                    {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.verifyingPayment')}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{t('paymentForm.completeInPopup')}</p>
-                </div>
-                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-                  <span>{t('paymentForm.verifying')}</span>
-                </div>
-                <button
-                  onClick={() => close3DS('User Cancel')}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {t('paymentForm.cancel')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── State 3: Inline iframe (popup was blocked — fallback) ── */}
+          {/* ── Iframe state (popup blocked — inline fallback) ── */}
           {threeDSUrl && (
-            <div className="relative w-full max-w-lg bg-background rounded-xl shadow-2xl border border-border overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
+            <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-foreground" />
-                  <span className="text-sm font-medium text-foreground">
+                  <Shield className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-semibold text-gray-900">
                     {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
                   </span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
                     <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-                    <span className="text-xs text-muted-foreground">{t('paymentForm.verifying')}</span>
+                    <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
                   </div>
                   <button
                     onClick={() => close3DS('User Cancel')}
-                    className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors"
+                    className="text-sm text-gray-400 hover:text-gray-700 font-medium transition-colors"
                   >
                     {t('paymentForm.cancel')}
                   </button>
@@ -1565,7 +1447,7 @@ export function PaymentForm({
               <iframe
                 src={threeDSUrl}
                 className="w-full border-0"
-                style={{ height: '500px' }}
+                style={{ height: '520px' }}
                 title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
               />
             </div>
