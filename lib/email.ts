@@ -5,7 +5,7 @@ import { OrderConfirmationEmail } from '@/components/emails/order-confirmation-e
 import * as React from 'react'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
-const fromEmail = process.env.RESEND_FROM_EMAIL || 'Rotmani Store <orders@rotmani.com>'
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'rotmina Store <orders@rotmina.com>'
 
 export async function sendGiftCardEmailToRecipient(params: {
   recipientEmail: string

@@ -67,7 +67,7 @@ export const GiftCardEmail = ({
 
           <Hr style={footerDivider} />
           <Text style={footer}>
-            Rotmani Store
+            rotmina Store
           </Text>
         </Container>
       </Body>

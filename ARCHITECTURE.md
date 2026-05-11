@@ -1,4 +1,4 @@
-# RotmaniApp — Documentation Technique Complète
+# rotminaApp — Documentation Technique Complète
 
 > Document de prise en main manuelle du projet : logique, code, flux de paiement.
 
@@ -25,7 +25,7 @@
 
 ## 1. Vue d'ensemble
 
-**RotmaniApp** est une application de checkout (paiement) sur mesure, intégrée à Shopify, qui remplace le checkout natif de Shopify. Elle est construite en Next.js (App Router) et permet à un marchand d'accepter des paiements via la passerelle israélienne **Tranzila**.
+**rotminaApp** est une application de checkout (paiement) sur mesure, intégrée à Shopify, qui remplace le checkout natif de Shopify. Elle est construite en Next.js (App Router) et permet à un marchand d'accepter des paiements via la passerelle israélienne **Tranzila**.
 
 ### Ce que fait l'application
 
@@ -39,7 +39,7 @@
 ### Qui appelle quoi ?
 
 ```
-Shopify (boutique) 
+Shopify (boutique)
     → crée une session de paiement via POST /api/checkout/session
     → redirige le client vers /checkout/[sessionId]
 
@@ -61,27 +61,27 @@ Backend (callbacks)
 
 ## 2. Stack technique
 
-| Couche | Technologie | Version |
-|---|---|---|
-| Framework | Next.js (App Router) | 16.2.0 |
-| Langage | TypeScript | 5.7.3 |
-| UI | React | 19 |
-| Style | Tailwind CSS v4 | 4.2.0 |
-| Composants | Radix UI + Shadcn/UI | — |
-| Base de données | Supabase (PostgreSQL) | 2.101.1 |
-| Paiement | Tranzila (API REST custom) | — |
-| E-commerce | Shopify Admin API | 2024-04 |
-| Email | Resend + React Email | 6.10.0 |
-| Formulaires | React Hook Form + Zod | 7.54.1 / 3.24.1 |
-| Analytics | Vercel Analytics | 1.6.1 |
-| Hébergement | Vercel | — |
+| Couche          | Technologie                | Version         |
+| --------------- | -------------------------- | --------------- |
+| Framework       | Next.js (App Router)       | 16.2.0          |
+| Langage         | TypeScript                 | 5.7.3           |
+| UI              | React                      | 19              |
+| Style           | Tailwind CSS v4            | 4.2.0           |
+| Composants      | Radix UI + Shadcn/UI       | —               |
+| Base de données | Supabase (PostgreSQL)      | 2.101.1         |
+| Paiement        | Tranzila (API REST custom) | —               |
+| E-commerce      | Shopify Admin API          | 2024-04         |
+| Email           | Resend + React Email       | 6.10.0          |
+| Formulaires     | React Hook Form + Zod      | 7.54.1 / 3.24.1 |
+| Analytics       | Vercel Analytics           | 1.6.1           |
+| Hébergement     | Vercel                     | —               |
 
 ---
 
 ## 3. Structure des dossiers
 
 ```
-rotmaniApp/
+rotminaApp/
 │
 ├── app/                          # Next.js App Router
 │   ├── api/
@@ -261,6 +261,7 @@ CREATE TABLE gift_cards (
 **Rôle :** Créer une nouvelle session de paiement (appelé par Shopify ou la démo).
 
 **Corps de la requête :**
+
 ```json
 {
   "shop": "rotmina-israel.myshopify.com",
@@ -277,6 +278,7 @@ CREATE TABLE gift_cards (
 ```
 
 **Logique :**
+
 1. Vérifie les CORS (origines autorisées).
 2. Si `idempotencyKey` existe déjà en base → retourne la session existante (idem potence).
 3. Convertit les devises étrangères (USD/EUR/GBP → ILS) si nécessaire.
@@ -285,6 +287,7 @@ CREATE TABLE gift_cards (
 6. Retourne `{ sessionId }`.
 
 **Réponse :**
+
 ```json
 { "sessionId": "uuid-de-la-session" }
 ```
@@ -306,17 +309,20 @@ CREATE TABLE gift_cards (
 **Rôle :** Remettre une session en état `pending` pour permettre un retry.
 
 **Corps :**
+
 ```json
 { "sessionId": "uuid" }
 ```
 
 **Logique :**
+
 - Autorisé uniquement si statut actuel est `processing`, `pending_3ds`, ou `pending_bit`.
 - Interdit si la session est déjà `paid` ou `failed` de façon définitive.
 - Efface `error_message`.
 - Remet le statut à `pending`.
 
 **Réponse :**
+
 ```json
 { "reset": true, "reason": "reset from processing" }
 ```
@@ -330,6 +336,7 @@ CREATE TABLE gift_cards (
 **Rôle :** Cœur de la logique de paiement. Initie la transaction selon la méthode choisie.
 
 **Corps de la requête :**
+
 ```json
 {
   "sessionId": "uuid",
@@ -343,10 +350,10 @@ CREATE TABLE gift_cards (
     "country": "FR",
     "phone": "0612345678"
   },
-  "paymentMethod": "card",        // "card" ou "bit"
-  "cardNumber": "4111...",        // Si paiement direct (rare, Hosted Fields préféré)
-  "giftCardCode": "ROTM-XXXX-XXXX-X",   // Optionnel
-  "giftCardAmount": 50            // Optionnel
+  "paymentMethod": "card", // "card" ou "bit"
+  "cardNumber": "4111...", // Si paiement direct (rare, Hosted Fields préféré)
+  "giftCardCode": "ROTM-XXXX-XXXX-X", // Optionnel
+  "giftCardAmount": 50 // Optionnel
 }
 ```
 
@@ -389,6 +396,7 @@ CREATE TABLE gift_cards (
 ```
 
 **Réponse typique (Hosted Fields CB) :**
+
 ```json
 {
   "success": false,
@@ -404,6 +412,7 @@ CREATE TABLE gift_cards (
 ```
 
 **Réponse si paiement immédiat (carte cadeau totale, carte test) :**
+
 ```json
 {
   "success": true,
@@ -425,6 +434,7 @@ CREATE TABLE gift_cards (
 **Paramètres :** `?amount=468.46&currency=ILS`
 
 **Réponse :**
+
 ```json
 { "thtk": "token_tranzila_frais", "terminal": "fxprotmina" }
 ```
@@ -440,6 +450,7 @@ CREATE TABLE gift_cards (
 **Supporte GET et POST** (Tranzila peut utiliser l'un ou l'autre).
 
 **Paramètres reçus (form-data ou query params) :**
+
 ```
 Response=000              # Code réponse (000 = succès)
 index=session_uuid        # ID de session (si passé via merchant_data)
@@ -448,6 +459,7 @@ merchant_data=session_uuid
 ```
 
 **Logique :**
+
 1. Extraire `sessionId` depuis `merchant_data` ou `index`.
 2. Si réponse = `000` → succès.
 3. Idempotence : si session déjà `paid` avec `order_id`, retourner succès sans rien refaire.
@@ -458,15 +470,19 @@ merchant_data=session_uuid
 8. Retourner une page HTML avec un script JavaScript `postMessage` vers la fenêtre parente.
 
 **Page HTML retournée :**
+
 ```html
 <html>
   <script>
     // Brise le contexte iframe/popup et redirige la fenêtre parente
     if (window.opener) {
-      window.opener.postMessage({ type: '3DS_COMPLETE', success: true, url: '/checkout/success?...' }, '*');
+      window.opener.postMessage(
+        { type: "3DS_COMPLETE", success: true, url: "/checkout/success?..." },
+        "*",
+      );
       window.close();
     } else {
-      window.location.href = '/checkout/success?session=...';
+      window.location.href = "/checkout/success?session=...";
     }
   </script>
 </html>
@@ -481,12 +497,14 @@ merchant_data=session_uuid
 **Rôle :** Callback reçu de la banque (ACS) après le challenge 3D Secure.
 
 **Paramètres :**
+
 ```
 track_id=xxxx             # ID de transaction Tranzila
 merchant_data=session_uuid
 ```
 
 **Logique :**
+
 1. Valider que `merchant_data` correspond à la session.
 2. Appeler `tranzila.complete3DS(trackId)` pour finaliser la transaction côté Tranzila.
 3. Si succès (`processor_response_code === '000'`) :
@@ -507,6 +525,7 @@ merchant_data=session_uuid
 **Rôle :** Appelé par le frontend quand il détecte manuellement que le 3DS est terminé (polling, realtime).
 
 **Corps :**
+
 ```json
 { "sessionId": "uuid", "trackId": "xxxx" }
 ```
@@ -514,10 +533,12 @@ merchant_data=session_uuid
 **Logique :** Identique à `3ds-callback`, mais déclenché côté frontend.
 
 **Cas spéciaux :**
+
 - Si session déjà `paid` → retourner succès immédiatement (idempotence).
 - Si Tranzila répond `pending` → retourner `{ pending: true }` (retry).
 
 **Réponse succès :**
+
 ```json
 {
   "success": true,
@@ -537,6 +558,7 @@ merchant_data=session_uuid
 **Rôle :** Callbacks de paiement Bit. Le paramètre `[status]` est dynamique.
 
 **Routes actives :**
+
 - `/bit-callback/success` — Client a payé dans l'app Bit.
 - `/bit-callback/failure` — Client a annulé.
 - `/bit-callback/cancel` — Client a annulé.
@@ -544,12 +566,12 @@ merchant_data=session_uuid
 
 **Logique par statut :**
 
-| Statut | Action |
-|---|---|
+| Statut    | Action                                                                       |
+| --------- | ---------------------------------------------------------------------------- |
 | `success` | Idempotence → débit carte cadeau → commande Shopify → email → session `paid` |
-| `notify` | Même logique (webhook de confirmation) — toujours retourne 200 |
-| `failure` | Session → `failed` + message d'erreur |
-| `cancel` | Session → `failed` + "Payment cancelled" |
+| `notify`  | Même logique (webhook de confirmation) — toujours retourne 200               |
+| `failure` | Session → `failed` + message d'erreur                                        |
+| `cancel`  | Session → `failed` + "Payment cancelled"                                     |
 
 ---
 
@@ -560,22 +582,26 @@ merchant_data=session_uuid
 **Rôle :** Valider un code de carte cadeau saisi par le client.
 
 **Corps :**
+
 ```json
 { "code": "ROTM-ABCD-EFGH-1" }
 ```
 
 **Logique :**
+
 1. Normaliser le code (uppercase, trim).
 2. Chercher dans la table `gift_cards`.
 3. Vérifier : `status = 'active'`, `balance > 0`.
 4. Retourner les infos.
 
 **Réponse succès :**
+
 ```json
 { "id": "uuid", "code": "ROTM-ABCD-EFGH-1", "balance": 150, "currency": "ILS" }
 ```
 
 **Réponse erreur :**
+
 ```json
 { "error": "Gift card not found" }   // 404
 { "error": "Gift card has no remaining balance" }  // 400
@@ -590,28 +616,34 @@ merchant_data=session_uuid
 **Classe :** `TranzilaClient`
 
 #### `getHandshakeToken(sum?, currency?): Promise<string | null>`
+
 - Génère un token `thtk` pour initier les Hosted Fields.
 - Requiert `TRANZILA_TERMINAL_PASSWORD`.
 - Endpoint : `POST https://api.tranzila.com/v1/handshake/create`
 - Retourne le `thtk` ou `null` si password non configuré.
 
 #### `charge(params): Promise<TranzilaResponse>`
+
 - Charge directe via API (rarement utilisée — les Hosted Fields sont préférés).
 - Authentification HMAC-SHA256 avec `TRANZILA_APP_KEY` + `TRANZILA_SECRET`.
 
 #### `complete3DS(trackId): Promise<TranzilaResponse>`
+
 - Finalise une transaction 3DS après le challenge.
 - Endpoint : `POST https://api.tranzila.com/v1/transaction/credit_card/3ds/complete`
 - Paramètres : `{ terminal_name, track_id }`
 
 #### `initBit(params): Promise<any>`
+
 - Initialise un paiement Bit.
 - Endpoint : `POST https://api.tranzila.com/v1/transaction/bit/init`
 - Paramètres : `{ terminal_name, sum, currency, success_url, fail_url, notify_url, merchant_data }`
 - Retourne : objet avec `url`, `redirect_url`, `bit_url`, `deep_link`
 
 #### `static isSuccess(response): boolean`
+
 Logique multi-niveaux :
+
 ```
 1. response.error_code === 0 ?
 2. response.transaction_result.processor_response_code === '000' ?
@@ -621,7 +653,9 @@ Logique multi-niveaux :
 ```
 
 #### `static getErrorMessage(response): string`
+
 Mappe les codes d'erreur Tranzila en messages lisibles :
+
 - `051` → "Insufficient funds" (fonds insuffisants)
 - `054` → "Expired card" (carte expirée)
 - `001-010` → Problèmes émetteur
@@ -635,6 +669,7 @@ Mappe les codes d'erreur Tranzila en messages lisibles :
 #### `createShopifyOrder(params): Promise<any>`
 
 **Entrée :**
+
 ```typescript
 {
   session: PaymentSession,   // Session de paiement avec panier
@@ -645,6 +680,7 @@ Mappe les codes d'erreur Tranzila en messages lisibles :
 ```
 
 **Logique :**
+
 1. Parser les `variant_id` (format numérique ou GID Shopify).
 2. Construire le tableau `transactions` :
    - Si carte cadeau utilisée → 2 transactions (GC + CB).
@@ -660,27 +696,33 @@ Mappe les codes d'erreur Tranzila en messages lisibles :
 ### `lib/gift-cards.ts` — Système cartes cadeaux
 
 #### `isGiftCardProduct(item: CartItem): boolean`
+
 Détecte un produit carte cadeau par :
+
 - Correspondance avec `GIFT_CARD_PRODUCT_ID` (env var).
 - Correspondance avec `GIFT_CARD_PRODUCT_HANDLE` (env var).
 - Mots-clés dans le titre : `"gift card"`, `"carte cadeau"`, `"גיפט קארד"`, `"כרטיס מתנה"`.
 
 #### `createGiftCard(params): Promise<GiftCardRecord>`
+
 - Génère un code unique format `ROTM-XXXX-XXXX-X`.
 - Retry jusqu'à 10 fois en cas de collision.
 - Insère en base avec statut `active`.
 
 #### `validateGiftCard(code): Promise<GiftCardRecord | null>`
+
 - Normalise le code (uppercase).
 - Retourne l'enregistrement ou `null`.
 
 #### `debitGiftCard(params): Promise<GiftCardRecord>`
+
 - Récupère le solde actuel.
 - Décrémente du montant (plafonné au solde disponible).
 - Passe à `depleted` si solde ≤ 0.
 - Met à jour `last_used_at`.
 
 #### `generateGiftCardsForOrder(params): Promise<GiftCardRecord[]>`
+
 - Filtre les items du panier qui sont des cartes cadeaux.
 - Pour chaque carte (× quantité) :
   - Crée une carte cadeau (montant = prix de l'item).
@@ -698,18 +740,21 @@ Détecte un produit carte cadeau par :
 Toutes les fonctions sont **non-bloquantes** : un échec d'envoi est logué mais ne plante pas le paiement.
 
 #### `sendOrderConfirmationEmail(params)`
+
 - **À :** email client
 - **Sujet :** `Order Confirmation #1234 🛍️`
 - **Template :** `OrderConfirmationEmail`
 - **Contenu :** items, sous-total, livraison, taxes, total, lien commande
 
 #### `sendGiftCardEmailToRecipient(params)`
+
 - **À :** `recipient_email`
 - **Sujet :** `You received a Gift Card from {sender_name}! 🎁`
 - **Template :** `GiftCardEmail`
 - **Contenu :** code, montant, message personnel
 
 #### `sendGiftCardEmailToBuyer(params)`
+
 - **À :** `buyer_email`
 - **Sujet :** `Your Gift Card Purchase Confirmation`
 - **Template :** `GiftCardBuyerEmail`
@@ -722,66 +767,73 @@ Toutes les fonctions sont **non-bloquantes** : un échec d'envoi est logué mais
 ```typescript
 // Panier
 interface CartItem {
-  id: string
-  title: string
-  quantity: number
-  price: number           // En ILS
-  image?: string
-  variant?: string
-  sku?: string
-  variant_id?: string | number
-  product_id?: string | number
-  handle?: string
-  properties?: Record<string, string>   // Ex: { recipient_email: "...", personal_message: "..." }
+  id: string;
+  title: string;
+  quantity: number;
+  price: number; // En ILS
+  image?: string;
+  variant?: string;
+  sku?: string;
+  variant_id?: string | number;
+  product_id?: string | number;
+  handle?: string;
+  properties?: Record<string, string>; // Ex: { recipient_email: "...", personal_message: "..." }
 }
 
 interface CartData {
-  items: CartItem[]
-  subtotal: number
-  shipping: number
-  tax: number
-  total: number
-  currency: string
+  items: CartItem[];
+  subtotal: number;
+  shipping: number;
+  tax: number;
+  total: number;
+  currency: string;
 }
 
 // Client
 interface CustomerInfo {
-  email: string
-  firstName: string
-  lastName: string
-  address: string
-  city: string
-  postalCode: string
-  country: string
-  phone: string
+  email: string;
+  firstName: string;
+  lastName: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+  phone: string;
 }
 
 // Session de paiement
 interface PaymentSession {
-  id: string
-  shop: string
-  idempotency_key: string
-  cart: CartData
-  customer: CustomerInfo | null
-  status: 'pending' | 'processing' | 'paid' | 'failed' | 'expired' | 'pending_3ds' | 'pending_bit'
-  amount: number
-  currency: string
-  draft_order_id: string | null
-  order_id: string | null
-  tranzila_transaction_id: string | null
-  raw_response: Record<string, unknown> | null
-  error_message: string | null
-  created_at: string
-  updated_at: string
+  id: string;
+  shop: string;
+  idempotency_key: string;
+  cart: CartData;
+  customer: CustomerInfo | null;
+  status:
+    | "pending"
+    | "processing"
+    | "paid"
+    | "failed"
+    | "expired"
+    | "pending_3ds"
+    | "pending_bit";
+  amount: number;
+  currency: string;
+  draft_order_id: string | null;
+  order_id: string | null;
+  tranzila_transaction_id: string | null;
+  raw_response: Record<string, unknown> | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Carte cadeau appliquée au panier
 interface GiftCardInfo {
-  id: string
-  code: string
-  balance: number
-  currency: string
-  appliedAmount: number
+  id: string;
+  code: string;
+  balance: number;
+  currency: string;
+  appliedAmount: number;
 }
 ```
 
@@ -794,6 +846,7 @@ interface GiftCardInfo {
 **Composant le plus complexe du projet.** Gère toute la logique d'interaction avec le SDK Tranzila.
 
 **État interne (refs, pas state) :**
+
 - `hostedFieldsRef` — Instance SDK Tranzila (ref pour éviter les re-renders).
 - `is3DSActiveRef` — Verrou : 3DS en cours.
 - `cancelledRef` — Verrou : paiement annulé.
@@ -845,6 +898,7 @@ Formulaire d'informations client (étape 1 du checkout).
 **Champs :** Email, Prénom, Nom, Adresse, Ville, Code postal, Pays (dropdown), Téléphone.
 
 **Validation :**
+
 - Email : format email obligatoire.
 - Code postal : validation par pays (Israël : 5-7 chiffres, UK, US...).
 - Téléphone : 9-15 chiffres.
@@ -855,6 +909,7 @@ Formulaire d'informations client (étape 1 du checkout).
 ### `components/checkout/gift-card-form.tsx`
 
 **Fonctionnement :**
+
 1. Client saisit son code → bouton "Apply".
 2. `POST /api/checkout/gift-card { code }`.
 3. Si valide → affiche le code + solde disponible.
@@ -867,6 +922,7 @@ Formulaire d'informations client (étape 1 du checkout).
 ### `components/checkout/order-summary.tsx`
 
 Affiche :
+
 - Items du panier (image, titre, quantité, prix).
 - Sous-total, livraison (gratuite), taxe.
 - Remise carte cadeau (si appliquée).
@@ -882,6 +938,7 @@ Affiche :
 Page principale du checkout (composant client `"use client"`).
 
 **3 étapes :**
+
 ```
 Étape 1 : CustomerForm     → saisie des infos client
 Étape 2 : PaymentForm      → paiement (+ GiftCardForm + OrderSummary)
@@ -893,6 +950,7 @@ Au chargement : `GET /api/checkout/session?id=...` pour récupérer les infos du
 #### `/app/checkout/success/page.tsx`
 
 Affiche :
+
 - Checkmark vert + "Payment Successful".
 - Code de confirmation Tranzila.
 - Infos carte cadeau utilisée (si applicable).
@@ -902,6 +960,7 @@ Affiche :
 #### `/app/checkout/error/page.tsx`
 
 Affiche :
+
 - Icône rouge X + "Payment Failed".
 - Message d'erreur.
 - Bouton "Try Again" → retour à `/checkout/[sessionId]`.
@@ -1042,34 +1101,34 @@ Pour éviter qu'un paiement soit confirné mais non capturé côté frontend, 3 
 
 ### Codes de réponse Tranzila
 
-| Code | Signification |
-|---|---|
-| `000` | Approuvé ✅ |
-| `001` | Contacter l'émetteur |
-| `051` | Fonds insuffisants |
-| `054` | Carte expirée |
+| Code  | Signification         |
+| ----- | --------------------- |
+| `000` | Approuvé ✅           |
+| `001` | Contacter l'émetteur  |
+| `051` | Fonds insuffisants    |
+| `054` | Carte expirée         |
 | `091` | Émetteur indisponible |
-| `096` | Erreur système |
+| `096` | Erreur système        |
 
 ### Statuts de session
 
-| Statut | Signification |
-|---|---|
-| `pending` | Session créée, en attente |
-| `processing` | Charge en cours (verrou) |
-| `pending_3ds` | Attente challenge 3DS |
-| `pending_bit` | Attente confirmation Bit |
-| `paid` | Paiement réussi |
-| `failed` | Paiement refusé ou erreur |
+| Statut        | Signification             |
+| ------------- | ------------------------- |
+| `pending`     | Session créée, en attente |
+| `processing`  | Charge en cours (verrou)  |
+| `pending_3ds` | Attente challenge 3DS     |
+| `pending_bit` | Attente confirmation Bit  |
+| `paid`        | Paiement réussi           |
+| `failed`      | Paiement refusé ou erreur |
 
 ### Codes HTTP des routes API
 
-| Code | Signification |
-|---|---|
-| `200` | Succès |
+| Code  | Signification                                       |
+| ----- | --------------------------------------------------- |
+| `200` | Succès                                              |
 | `400` | Requête invalide (champs manquants, état incorrect) |
-| `404` | Session ou carte cadeau introuvable |
-| `500` | Erreur serveur (API externe, DB) |
+| `404` | Session ou carte cadeau introuvable                 |
+| `500` | Erreur serveur (API externe, DB)                    |
 
 ---
 
@@ -1080,9 +1139,10 @@ Pour éviter qu'un paiement soit confirné mais non capturé côté frontend, 3 
 **Langues :** Hébreu (`he`) et Anglais (`en`).
 
 **Utilisation :**
+
 ```typescript
-const { t, lang } = useLanguage()
-t('customerForm.email')   // → 'Email' (en) ou 'אימייל' (he)
+const { t, lang } = useLanguage();
+t("customerForm.email"); // → 'Email' (en) ou 'אימייל' (he)
 ```
 
 **Clés disponibles :** `header`, `footer`, `checkout`, `customerForm` (20+ clés), `orderSummary` (10+), `giftCardForm` (10+), `paymentForm` (70+), `success` (10+), `errorPage`, `demo`.
@@ -1093,35 +1153,40 @@ t('customerForm.email')   // → 'Email' (en) ou 'אימייל' (he)
 
 ## 12. Sécurité & conformité PCI
 
-| Point | Implémentation |
-|---|---|
+| Point                             | Implémentation                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
 | **Données CB jamais sur serveur** | Tranzila Hosted Fields (iframe) — les numéros de carte ne transitent jamais par notre backend |
-| **Token-based** | Seul le `thtk` (token session) et le `track_id` circulent |
-| **CORS** | Liste d'origines autorisées hardcodée dans les routes API |
-| **Idempotence** | `idempotency_key` prévient les doubles débits |
-| **Verrou de session** | Statut `processing` empêche les charges concurrentes |
-| **3DS vérifié côté serveur** | `complete3DS` appelé backend, pas seulement frontend |
-| **Codes cartes cadeaux** | 16 caractères aléatoires (`ROTM-XXXX-XXXX-X`), non prédictibles |
-| **Emails non-bloquants** | Échec email ≠ échec paiement (loggué, non fatal) |
-| **Clés secrètes non exposées** | `SUPABASE_SERVICE_ROLE_KEY`, `TRANZILA_APP_KEY`, etc. sans préfixe `NEXT_PUBLIC_` |
+| **Token-based**                   | Seul le `thtk` (token session) et le `track_id` circulent                                     |
+| **CORS**                          | Liste d'origines autorisées hardcodée dans les routes API                                     |
+| **Idempotence**                   | `idempotency_key` prévient les doubles débits                                                 |
+| **Verrou de session**             | Statut `processing` empêche les charges concurrentes                                          |
+| **3DS vérifié côté serveur**      | `complete3DS` appelé backend, pas seulement frontend                                          |
+| **Codes cartes cadeaux**          | 16 caractères aléatoires (`ROTM-XXXX-XXXX-X`), non prédictibles                               |
+| **Emails non-bloquants**          | Échec email ≠ échec paiement (loggué, non fatal)                                              |
+| **Clés secrètes non exposées**    | `SUPABASE_SERVICE_ROLE_KEY`, `TRANZILA_APP_KEY`, etc. sans préfixe `NEXT_PUBLIC_`             |
 
 ---
 
 ## 13. Décisions d'architecture importantes
 
 ### 1. Hosted Fields plutôt que charge directe
+
 Les données carte ne touchent jamais nos serveurs. Le SDK Tranzila injecte ses propres iframes sécurisées dans notre formulaire. Seul un token (`thtk`) circule.
 
 ### 2. Refs pour le SDK (pas de state React)
+
 `hostedFieldsRef` est une `ref`, pas du state. Cela évite les re-renders intempestifs qui détruiraient et recréraient les Hosted Fields pendant que l'utilisateur saisit sa carte.
 
 ### 3. Triple mécanisme de confirmation
+
 Realtime + polling + postMessage. Garantit que même si une connexion WebSocket tombe ou qu'une popup se ferme anormalement, le paiement est bien capturé.
 
 ### 4. Emails non-bloquants
+
 Un échec d'envoi d'email ne plante pas le paiement. La commande Shopify est créée et la session est `paid` même si Resend est indisponible.
 
 ### 5. Tout en ILS côté serveur
+
 La conversion de devise (USD/EUR → ILS) est faite à la création de session. Tout le traitement interne est en ILS pour garantir la cohérence entre les APIs.
 
 ---
@@ -1149,11 +1214,13 @@ npm run dev
 ### Tester un paiement
 
 **Carte de test (mode non-production) :**
+
 - Numéro : `5430050220380520`
 - Toute date d'expiration future, tout CVV
 - → Paiement confirmé immédiatement sans passer par Tranzila
 
 **Test Tranzila :**
+
 - Vérifier la connexion : `GET /api/test-tranzila`
 
 ### Accéder à la base de données
@@ -1161,32 +1228,36 @@ npm run dev
 Dashboard Supabase → Tables `payment_sessions` et `gift_cards`.
 
 Pour retrouver une session par ID :
+
 ```sql
 SELECT * FROM payment_sessions WHERE id = 'uuid-de-la-session';
 ```
 
 Pour voir les paiements réussis récents :
+
 ```sql
-SELECT id, shop, amount, status, order_id, created_at 
-FROM payment_sessions 
-WHERE status = 'paid' 
-ORDER BY created_at DESC 
+SELECT id, shop, amount, status, order_id, created_at
+FROM payment_sessions
+WHERE status = 'paid'
+ORDER BY created_at DESC
 LIMIT 20;
 ```
 
 Pour vérifier une carte cadeau :
+
 ```sql
-SELECT code, balance, status, last_used_at 
-FROM gift_cards 
+SELECT code, balance, status, last_used_at
+FROM gift_cards
 WHERE code = 'ROTM-XXXX-XXXX-X';
 ```
 
 ### Forcer une session en `paid` manuellement (urgence)
 
 Si un paiement est confirmé par Tranzila mais que la session est bloquée :
+
 ```sql
-UPDATE payment_sessions 
-SET status = 'paid', 
+UPDATE payment_sessions
+SET status = 'paid',
     tranzila_transaction_id = 'XXXX',
     order_id = 'shopify_order_id',
     updated_at = now()
@@ -1196,6 +1267,7 @@ WHERE id = 'uuid-de-la-session';
 ### Réinitialiser une session pour retry
 
 Via l'API :
+
 ```bash
 curl -X POST https://votreapp.vercel.app/api/checkout/session/reset \
   -H "Content-Type: application/json" \
@@ -1210,25 +1282,26 @@ La session contient toutes les infos nécessaires (`cart`, `customer`, `tranzila
 ### Débiter manuellement une carte cadeau
 
 La logique est dans `lib/gift-cards.ts` → `debitGiftCard()`.
+
 ```typescript
-await debitGiftCard({ code: 'ROTM-XXXX', amount: 100, sessionId: 'uuid' })
+await debitGiftCard({ code: "ROTM-XXXX", amount: 100, sessionId: "uuid" });
 ```
 
 ### Points d'entrée clés pour modifications
 
-| Besoin | Fichier à modifier |
-|---|---|
-| Logique de charge / routing de paiement | `app/api/checkout/charge/route.ts` |
-| Client Tranzila (méthodes API) | `lib/tranzila.ts` |
-| Création de commande Shopify | `lib/shopify.ts` |
-| Logique cartes cadeaux | `lib/gift-cards.ts` |
-| Templates d'emails | `components/emails/` |
-| Formulaire de paiement (UI + SDK) | `components/checkout/payment-form.tsx` |
-| Formulaire client | `components/checkout/customer-form.tsx` |
-| Page de succès | `app/checkout/success/page.tsx` |
-| Variables d'environnement | `.env.local` |
-| Config Next.js (redirects, etc.) | `next.config.mjs` |
+| Besoin                                  | Fichier à modifier                      |
+| --------------------------------------- | --------------------------------------- |
+| Logique de charge / routing de paiement | `app/api/checkout/charge/route.ts`      |
+| Client Tranzila (méthodes API)          | `lib/tranzila.ts`                       |
+| Création de commande Shopify            | `lib/shopify.ts`                        |
+| Logique cartes cadeaux                  | `lib/gift-cards.ts`                     |
+| Templates d'emails                      | `components/emails/`                    |
+| Formulaire de paiement (UI + SDK)       | `components/checkout/payment-form.tsx`  |
+| Formulaire client                       | `components/checkout/customer-form.tsx` |
+| Page de succès                          | `app/checkout/success/page.tsx`         |
+| Variables d'environnement               | `.env.local`                            |
+| Config Next.js (redirects, etc.)        | `next.config.mjs`                       |
 
 ---
 
-*Document généré le 11 mai 2026 — à mettre à jour si l'architecture évolue.*
+_Document généré le 11 mai 2026 — à mettre à jour si l'architecture évolue._

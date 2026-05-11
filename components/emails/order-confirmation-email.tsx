@@ -147,17 +147,17 @@ export const OrderConfirmationEmail = ({
             </Text>
           </Section>
 
-          {orderStatusUrl && (
+          {/* {orderStatusUrl && (
             <Section style={buttonContainer}>
               <Link href={orderStatusUrl} style={button}>
                 Track Your Order
               </Link>
             </Section>
-          )}
+          )} */}
 
           <Hr style={footerDivider} />
           <Text style={footer}>
-            Rotmani Store<br />
+            rotmina Store<br />
             Thank you for shopping with us!
           </Text>
         </Container>
