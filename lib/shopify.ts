@@ -158,7 +158,12 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
   }
 
   const data = await response.json()
-  console.log('[SHOPIFY] Order created successfully:', { id: data.order?.id, name: data.order?.name })
+  console.log('[SHOPIFY] Response status:', response.status, response.statusText)
+  if (!data.order) {
+    console.error('[SHOPIFY] Unexpected response — no order key in body. Full response:', JSON.stringify(data).substring(0, 2000))
+    throw new Error(`Shopify returned unexpected response (no order): ${JSON.stringify(data).substring(0, 500)}`)
+  }
+  console.log('[SHOPIFY] Order created successfully:', { id: data.order.id, name: data.order.name })
   return data.order
 }
 

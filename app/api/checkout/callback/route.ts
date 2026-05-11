@@ -127,6 +127,17 @@ export async function POST(request: NextRequest) {
           shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
           console.log(`[CALLBACK][${logId}] ✅ Shopify order created: ${shopifyOrderId} | url: ${shopifyOrderUrl}`)
 
+          // Persist order_id immediately so it is never lost if the full update below fails
+          const { error: earlyOrderSaveError } = await supabase
+            .from('payment_sessions')
+            .update({ order_id: shopifyOrderId, updated_at: new Date().toISOString() })
+            .eq('id', actualSessionId)
+          if (earlyOrderSaveError) {
+            console.error(`[CALLBACK][${logId}] ⚠️ Early order_id save failed (non-fatal):`, earlyOrderSaveError)
+          } else {
+            console.log(`[CALLBACK][${logId}] order_id saved early: ${shopifyOrderId}`)
+          }
+
           // Send confirmation email (non-blocking)
           const customer = session.customer as CustomerInfo
           sendOrderConfirmationEmail({
