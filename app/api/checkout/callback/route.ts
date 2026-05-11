@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     // Use the ConfirmationCode from this callback or fall back to the one already stored
     const txnId = ConfirmationCode || session.tranzila_transaction_id || `TZ-${Date.now()}`
 
-    if (isSuccess && !shopifyOrderId) {
+    if (isSuccess ) {
       if (!session.customer) {
         console.error(`[CALLBACK][${logId}] Cannot create Shopify order: session.customer is null. Session data:`, JSON.stringify({ id: actualSessionId, status: session.status, cart_items: session.cart?.items?.length }))
       } else {
