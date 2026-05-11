@@ -248,7 +248,7 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
       {/* Submit Button */}
       <button
         type="submit"
-        className="w-full py-4 px-6 rounded-lg bg-foreground text-background font-semibold text-base hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        className="w-full py-4 px-6 rounded-lg bg-[#7c7a7a45] text-black font-semibold text-base hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
       >
         {t('customerForm.continueToPayment')}
       </button>

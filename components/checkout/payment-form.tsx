@@ -1036,6 +1036,16 @@ export function PaymentForm({
               </button>
             </div>
 
+            {/* Card logos — shown below tabs when card is selected */}
+            {paymentMethod === 'card' && (
+              <div className="flex items-center justify-start gap-2 mb-4">
+                <Image src="/visa.png" alt="Visa" width={50} height={26} style={{ objectFit: 'contain', height: 22 }} />
+                <Image src="/master.png" alt="Mastercard" width={50} height={26} style={{ objectFit: 'contain', height: 22 }} />
+                <Image src="/amex.png" alt="Amex" width={60} height={26} style={{ objectFit: 'contain', height: 22 }} />
+                <Image src="/Diners_Club_Logo.svg" alt="Diners" width={65} height={26} style={{ objectFit: 'contain', height: 22 }} />
+              </div>
+            )}
+
             {/* ── Card section — always in DOM, visible only when card is selected ── */}
             <div style={{ display: paymentMethod === 'card' ? 'block' : 'none' }}>
               <div className="rounded-lg border border-border overflow-hidden">
@@ -1202,7 +1212,7 @@ export function PaymentForm({
             className={`w-full sm:flex-1 py-4 px-6 rounded-lg font-semibold text-base transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
               paymentMethod === 'bit'
                 ? 'bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] text-white hover:opacity-90 focus:ring-[#2b5686]'
-                : 'bg-foreground text-background hover:opacity-90 focus:ring-ring'
+                : 'bg-[#7c7a7a45] text-black hover:opacity-90 focus:ring-ring'
             }`}
           >
             {isSubmitting
