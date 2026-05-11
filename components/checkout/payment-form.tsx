@@ -844,182 +844,64 @@ export function PaymentForm({
             setShow3DS(false)
             setThreeDSUrl('')
 
-            // success = err is null/falsy AND response indicates approval
-            const success = !err && isTzSuccess(tzResult)
-            console.log(`[PAY][${submitId}] STEP 9 — success: ${success} | isBit: ${isBitPayment}`)
+            const sdkSuccess = !err && isTzSuccess(tzResult)
+            console.log(`[PAY][${submitId}] STEP 9 — sdkSuccess=${sdkSuccess} | isBit=${isBitPayment} | had3DS=${had3DSChallengeRef.current}`)
 
-            if (success) {
-              // SDK confirmed the charge. For card, the backend callback updates
-              // the session. For Bit, chargeBit() fires only after the user completes
-              // payment on their phone. In both cases, the notify webhook may have
-              // already marked it paid.
-              //
-              // Strategy: Check session immediately to see if we can redirect now.
-              console.log(`[PAY][${submitId}] STEP 9 — ✅ ${isBitPayment ? 'Bit' : 'Card'} charge accepted — checking session for immediate redirect...`)
-              
-              try {
-                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
-                const sessionData = sessionRes.ok ? await sessionRes.json() : null
+            // ── Session is the source of truth ────────────────────────────────
+            // The SDK callback and our server callback (/api/checkout/callback)
+            // run concurrently. The SDK callback often fires BEFORE the server has
+            // written to the database. Never trust the SDK result alone — always
+            // read the session and use its status as the final authority.
+            //
+            // Outcomes:
+            //   paid    → redirect to success (create order + send email was done server-side)
+            //   failed  → show the server's error message
+            //   pending → keep polling/realtime alive; server callback is still in-flight
+            try {
+              const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+              const sessionData = sessionRes.ok ? await sessionRes.json() : null
+              console.log(`[PAY][${submitId}] STEP 9 — session status: "${sessionData?.status}"`)
 
-                if (sessionData?.status === 'paid') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Session already PAID — redirecting immediately`)
-                  clearPoll()
-                  clearListeners()
-                  setIsSubmitting(false)
-                  isSubmittingRef.current = false
-                  is3DSActiveRef.current = false
-                  onSuccess(
-                    sessionData.tranzila_transaction_id || 'confirmed',
-                    sessionData.raw_response?.shopifyOrderUrl,
-                    sessionData.raw_response?._generated_gift_cards,
-                    sessionData.raw_response?._gift_card?.remainingBalance,
-                    giftCardCode,
-                  )
-                  return
-                }
-                console.log(`[PAY][${submitId}] STEP 9 — Session not yet paid, waiting for polling/realtime to finish`)
-              } catch (err) {
-                console.error(`[PAY][${submitId}] STEP 9 — Immediate session check failed:`, err)
-              }
-            } else if (isBitPayment) {
-              // ── Bit-specific: SDK callback is unreliable for Bit ───────────
-              // The chargeBit() SDK callback frequently returns an error/non-success
-              // response even when the payment actually succeeded. The Tranzila
-              // notify webhook (server-to-server) is the authoritative signal —
-              // it may have already marked the session as "paid" by the time this
-              // callback fires.
-              //
-              // Strategy:
-              //   1. Check the session status immediately.
-              //   2. If already "paid" → redirect to success.
-              //   3. If still processing → keep polling/realtime alive for a grace
-              //      period to allow the webhook to arrive.
-              //   4. Only show an error if the session is explicitly "failed".
-              console.log(`[PAY][${submitId}] STEP 9 — Bit SDK callback non-success, checking session before showing error...`)
-
-              try {
-                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
-                const sessionData = sessionRes.ok ? await sessionRes.json() : null
-
-                if (sessionData?.status === 'paid') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Bit session already PAID (notify webhook arrived) — redirecting to success`)
-                  clearPoll()
-                  clearListeners()
-                  setIsSubmitting(false)
-                  isSubmittingRef.current = false
-                  is3DSActiveRef.current = false
-                  onSuccess(
-                    sessionData.tranzila_transaction_id || 'confirmed',
-                    sessionData.raw_response?.shopifyOrderUrl,
-                    sessionData.raw_response?._generated_gift_cards,
-                    sessionData.raw_response?._gift_card?.remainingBalance,
-                    giftCardCode,
-                  )
-                  return
-                }
-
-                if (sessionData?.status === 'failed') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ❌ Bit session explicitly FAILED: "${sessionData.error_message}"`)
-                  clearListeners()
-                  setPaymentError(sessionData.error_message || parseTranzilaError(tzResult, true))
-                  setIsSubmitting(false)
-                  isSubmittingRef.current = false
-                  is3DSActiveRef.current = false
-                  return
-                }
-
-                // Session is still in a transitional state (pending_bit / processing).
-                // The notify webhook may not have arrived yet. Keep polling/realtime
-                // alive — they will detect the final status and redirect or show error.
-                console.log(`[PAY][${submitId}] STEP 9 — Bit session status="${sessionData?.status}" — keeping polling alive (notify webhook may still arrive)`)
-                // Don't clear listeners, don't show error, don't reset submit state.
-                // The existing polling (startSessionPolling) and realtime subscription
-                // will handle the final redirect.
-              } catch (checkErr) {
-                console.error(`[PAY][${submitId}] STEP 9 — Failed to check session status:`, checkErr)
-                // Still don't show error — let polling/realtime handle it
-                console.log(`[PAY][${submitId}] STEP 9 — Keeping polling alive despite check failure`)
-              }
-            } else if (had3DSChallengeRef.current) {
-              // Card + 3DS popup: SDK callback is NOT authoritative because the
-              // challenge result travels server-to-server (ACS → Tranzila → our
-              // webhook), not through the SDK's internal iframe mechanism.
-              // Same strategy as Bit: check session before showing any error.
-              console.log(`[PAY][${submitId}] STEP 9 — Card SDK non-success after 3DS popup, checking session...`)
-              try {
-                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
-                const sessionData = sessionRes.ok ? await sessionRes.json() : null
-
-                if (sessionData?.status === 'paid') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Card 3DS session PAID → redirecting`)
-                  clearPoll(); clearListeners()
-                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                  onSuccess(
-                    sessionData.tranzila_transaction_id || 'confirmed',
-                    sessionData.raw_response?.shopifyOrderUrl,
-                    sessionData.raw_response?._generated_gift_cards,
-                    sessionData.raw_response?._gift_card?.remainingBalance,
-                    giftCardCode,
-                  )
-                  return
-                }
-
-                if (sessionData?.status === 'failed') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ❌ Card 3DS session FAILED`)
-                  clearListeners()
-                  setPaymentError(sessionData.error_message || parseTranzilaError(tzResult, false))
-                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                  return
-                }
-
-                // Still pending — polling/realtime will catch the final status
-                console.log(`[PAY][${submitId}] STEP 9 — Card 3DS session="${sessionData?.status}" — keeping polling alive`)
-              } catch (checkErr) {
-                console.error(`[PAY][${submitId}] STEP 9 — Session check failed after 3DS:`, checkErr)
-              }
-            } else {
-              // Card without 3DS: check session first — the Tranzila callback route
-              // may have already marked the session as "paid" even if the SDK returned
-              // a non-success result (timing race between server callback and SDK callback).
-              const errorMsg = parseTranzilaError(tzResult, false)
-              console.log(`[PAY][${submitId}] STEP 9 — Card charge non-success, checking session before showing error...`)
-              try {
-                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
-                const sessionData = sessionRes.ok ? await sessionRes.json() : null
-
-                if (sessionData?.status === 'paid') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Session PAID despite SDK non-success → redirecting`)
-                  clearPoll(); clearListeners()
-                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                  onSuccess(
-                    sessionData.tranzila_transaction_id || 'confirmed',
-                    sessionData.raw_response?.shopifyOrderUrl,
-                    sessionData.raw_response?._generated_gift_cards,
-                    sessionData.raw_response?._gift_card?.remainingBalance,
-                    giftCardCode,
-                  )
-                  return
-                }
-
-                if (sessionData?.status === 'failed') {
-                  console.log(`[PAY][${submitId}] STEP 9 — ❌ Session FAILED: "${sessionData.error_message}"`)
-                  clearListeners()
-                  setPaymentError(sessionData.error_message || errorMsg)
-                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                  return
-                }
-
-                // Session still in transitional state — show error (no 3DS, sync flow)
-                console.log(`[PAY][${submitId}] STEP 9 — ❌ Session="${sessionData?.status}" — showing SDK error`)
-                clearListeners()
-                setPaymentError(errorMsg)
+              if (sessionData?.status === 'paid') {
+                console.log(`[PAY][${submitId}] STEP 9 — ✅ Session PAID → redirecting to success`)
+                clearPoll(); clearListeners()
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-              } catch (checkErr) {
-                console.error(`[PAY][${submitId}] STEP 9 — Session check failed:`, checkErr)
+                onSuccess(
+                  sessionData.tranzila_transaction_id || 'confirmed',
+                  sessionData.raw_response?.shopifyOrderUrl,
+                  sessionData.raw_response?._generated_gift_cards,
+                  sessionData.raw_response?._gift_card?.remainingBalance,
+                  giftCardCode,
+                )
+                return
+              }
+
+              if (sessionData?.status === 'failed') {
+                const errMsg = sessionData.error_message || parseTranzilaError(tzResult, isBitPayment)
+                console.log(`[PAY][${submitId}] STEP 9 — ❌ Session FAILED: "${errMsg}"`)
                 clearListeners()
-                setPaymentError(errorMsg)
+                setPaymentError(errMsg)
+                setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                return
+              }
+
+              // Session still pending — the server callback hasn't written yet.
+              // Switch to immediate polling (override any delay) and let realtime +
+              // polling detect the final state. Never show an error here — the
+              // transaction may have succeeded and is just waiting for DB write.
+              console.log(`[PAY][${submitId}] STEP 9 — session="${sessionData?.status}", server callback in-flight — polling immediately`)
+              clearPoll()
+              startSessionPolling(0)
+
+            } catch (sessionCheckErr) {
+              console.error(`[PAY][${submitId}] STEP 9 — session check failed:`, sessionCheckErr)
+              // Can't read session — rely on SDK result as last resort
+              if (!sdkSuccess) {
+                clearListeners()
+                setPaymentError(parseTranzilaError(tzResult, isBitPayment))
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
               }
+              // If sdkSuccess=true, polling/realtime will still detect the session update
             }
           })
           console.log(`[PAY][${submitId}] STEP 8 — ${sdkMethod}() called (callback pending until payment completes)`)
