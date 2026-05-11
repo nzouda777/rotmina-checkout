@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { randomInt } from 'crypto'
 
 const ALLOWED_ORIGINS = [
   'https://rotmina-israel.myshopify.com',
@@ -114,11 +115,13 @@ export async function POST(request: NextRequest) {
     finalCart.currency = 'ILS';
 
     const supabase = await createClient()
+    const orderId = randomInt(0, 9999) 
 
     const { data, error } = await supabase
       .from('payment_sessions')
       .insert({
         shop,
+        order_id: orderId,
         idempotency_key: idempotencyKey,
         cart: finalCart,
         amount: finalCart.total,
