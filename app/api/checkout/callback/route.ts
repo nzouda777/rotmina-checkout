@@ -88,11 +88,13 @@ export async function POST(request: NextRequest) {
     }
 
     const actualSessionId = session.id
-    console.log(`[CALLBACK][${logId}] Session found: ${actualSessionId} | current status: ${session.status}`)
+    console.log(`[CALLBACK][${logId}] Session found: ${actualSessionId} | current status: ${session.status} | order_id: ${session.order_id ?? 'none'}`)
 
-    // Idempotency guard — don't reprocess an already-paid session
-    if (session.status === 'paid') {
-      console.log(`[CALLBACK][${logId}] Session already paid, returning success`)
+    // Idempotency guard — if session is paid AND the Shopify order already exists, just redirect.
+    // If paid but order_id is null (order creation failed on a previous attempt), fall through
+    // and retry order creation so we don't permanently lose the order.
+    if (session.status === 'paid' && session.order_id) {
+      console.log(`[CALLBACK][${logId}] Session already paid with Shopify order ${session.order_id}, returning success`)
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
       return breakoutRedirect(
         `${baseUrl}/checkout/success?session=${actualSessionId}&confirmation=${session.tranzila_transaction_id}`,
@@ -100,50 +102,63 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (session.status === 'paid' && !session.order_id) {
+      console.log(`[CALLBACK][${logId}] Session paid but Shopify order missing — retrying order creation`)
+    }
+
     let shopifyOrderId = session.order_id
     let shopifyOrderUrl: string | null = null
 
-    if (isSuccess && !shopifyOrderId && session.customer) {
-      try {
-        console.log(`[CALLBACK][${logId}] Creating Shopify order...`)
-        const order = await createShopifyOrder({
-          session: session as PaymentSession,
-          customer: session.customer as CustomerInfo,
-          transactionId: ConfirmationCode,
-        })
-        shopifyOrderId = String(order.id)
-        shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
-        console.log(`[CALLBACK][${logId}] Shopify order created: ${shopifyOrderId} | url: ${shopifyOrderUrl}`)
+    // Use the ConfirmationCode from this callback or fall back to the one already stored
+    const txnId = ConfirmationCode || session.tranzila_transaction_id || `TZ-${Date.now()}`
 
-        // Send confirmation email (non-blocking)
-        const customer = session.customer as CustomerInfo
-        sendOrderConfirmationEmail({
-          toEmail:      customer.email,
-          orderName:    String(order.name || order.id),
-          customerName: `${customer.firstName} ${customer.lastName}`,
-          items: (session.cart?.items || []).map((item: any) => ({
-            title:    item.title,
-            quantity: item.quantity,
-            price:    item.price,
-            image:    item.image,
-          })),
-          subtotal:  session.cart?.subtotal,
-          shipping:  session.cart?.shipping,
-          tax:       session.cart?.tax,
-          total:     session.cart?.total,
-          currency:  session.cart?.currency,
-          shippingAddress: {
-            address:    customer.address,
-            city:       customer.city,
-            postalCode: customer.postalCode,
-            country:    customer.country,
-          },
-          orderStatusUrl: shopifyOrderUrl ?? undefined,
-        }).catch((emailErr: any) =>
-          console.error(`[CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
-        )
-      } catch (err) {
-        console.error(`[CALLBACK][${logId}] Shopify order failed (payment still marked paid):`, err)
+    if (isSuccess && !shopifyOrderId) {
+      if (!session.customer) {
+        console.error(`[CALLBACK][${logId}] Cannot create Shopify order: session.customer is null. Session data:`, JSON.stringify({ id: actualSessionId, status: session.status, cart_items: session.cart?.items?.length }))
+      } else {
+        try {
+          console.log(`[CALLBACK][${logId}] Creating Shopify order | txnId: ${txnId}`)
+          const order = await createShopifyOrder({
+            session: session as PaymentSession,
+            customer: session.customer as CustomerInfo,
+            transactionId: txnId,
+          })
+          shopifyOrderId = String(order.id)
+          shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+          console.log(`[CALLBACK][${logId}] ✅ Shopify order created: ${shopifyOrderId} | url: ${shopifyOrderUrl}`)
+
+          // Send confirmation email (non-blocking)
+          const customer = session.customer as CustomerInfo
+          sendOrderConfirmationEmail({
+            toEmail:      customer.email,
+            orderName:    String(order.name || order.id),
+            customerName: `${customer.firstName} ${customer.lastName}`,
+            items: (session.cart?.items || []).map((item: any) => ({
+              title:    item.title,
+              quantity: item.quantity,
+              price:    item.price,
+              image:    item.image,
+            })),
+            subtotal:  session.cart?.subtotal,
+            shipping:  session.cart?.shipping,
+            tax:       session.cart?.tax,
+            total:     session.cart?.total,
+            currency:  session.cart?.currency,
+            shippingAddress: {
+              address:    customer.address,
+              city:       customer.city,
+              postalCode: customer.postalCode,
+              country:    customer.country,
+            },
+            orderStatusUrl: shopifyOrderUrl ?? undefined,
+          }).catch((emailErr: any) =>
+            console.error(`[CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
+          )
+        } catch (err: any) {
+          console.error(`[CALLBACK][${logId}] ❌ Shopify order creation failed:`, err?.message || err)
+          // shopifyOrderId stays null — session will be marked paid without order_id.
+          // Next callback call will retry because idempotency guard now checks order_id too.
+        }
       }
     }
 
@@ -158,7 +173,7 @@ export async function POST(request: NextRequest) {
           _gift_card: (session.raw_response as any)?._gift_card || undefined,
         },
         order_id: shopifyOrderId,
-        tranzila_transaction_id: ConfirmationCode || null,
+        tranzila_transaction_id: txnId,
         updated_at: new Date().toISOString(),
       })
       .eq('id', actualSessionId)
@@ -168,11 +183,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to update session' }, { status: 500 })
     }
 
-    console.log(`[CALLBACK][${logId}] Session updated to: ${isSuccess ? 'paid' : 'failed'}`)
+    console.log(`[CALLBACK][${logId}] Session updated to: ${isSuccess ? 'paid' : 'failed'} | order_id: ${shopifyOrderId ?? 'none'}`)
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     const redirectUrl = isSuccess
-      ? `${baseUrl}/checkout/success?session=${actualSessionId}&confirmation=${ConfirmationCode}`
+      ? `${baseUrl}/checkout/success?session=${actualSessionId}&confirmation=${txnId}`
       : `${baseUrl}/checkout/error?session=${actualSessionId}`
 
     return breakoutRedirect(redirectUrl, actualSessionId, errorMsg)

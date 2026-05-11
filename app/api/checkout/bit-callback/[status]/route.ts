@@ -79,9 +79,13 @@ async function handleBitCallback(request: NextRequest, status: string) {
       return NextResponse.json({ ok: true })
     }
 
-    if (session.status === 'paid') {
-      console.log(`[BIT-CALLBACK][${logId}] notify: already paid, no-op`)
+    if (session.status === 'paid' && session.order_id) {
+      console.log(`[BIT-CALLBACK][${logId}] notify: already paid with order ${session.order_id}, no-op`)
       return NextResponse.json({ ok: true })
+    }
+
+    if (session.status === 'paid' && !session.order_id) {
+      console.log(`[BIT-CALLBACK][${logId}] notify: session paid but Shopify order missing — retrying order creation`)
     }
 
     console.log(`[BIT-CALLBACK][${logId}] notify: processing payment for session ${sessionId}`)
@@ -122,9 +126,13 @@ async function handleBitCallback(request: NextRequest, status: string) {
     return redirectToErrorUrl(request, 'Session not found')
   }
 
-  if (session.status === 'paid') {
-    console.log(`[BIT-CALLBACK][${logId}] Already paid — returning success breakout`)
+  if (session.status === 'paid' && session.order_id) {
+    console.log(`[BIT-CALLBACK][${logId}] Already paid with order ${session.order_id} — returning success`)
     return redirectToSuccessUrl(request, session, confirmationCode)
+  }
+
+  if (session.status === 'paid' && !session.order_id) {
+    console.log(`[BIT-CALLBACK][${logId}] Session paid but Shopify order missing — retrying order creation`)
   }
 
   console.log(`[BIT-CALLBACK][${logId}] Processing Bit success for session ${sessionId}`)
@@ -161,103 +169,70 @@ async function processSuccess(
     }
   }
 
-  // 2. Create Shopify order - always create for Bit payments
+  // 2. Create Shopify order (only if not already done)
   let shopifyOrderId = session.order_id
   let shopifyOrderUrl: string | null = null
 
-  if (!customer) {
-    console.error(`[BIT-CALLBACK][${logId}] Customer info missing - cannot create Shopify order`)
-    throw new Error('Customer information required for order creation')
-  }
+  if (!shopifyOrderId) {
+    if (!customer) {
+      console.error(`[BIT-CALLBACK][${logId}] Customer info missing — cannot create Shopify order. Session: ${session.id}`)
+      // Do not throw — still mark session paid so the customer isn't stuck
+    } else {
+      const giftCardInfo: GiftCardInfo | undefined = storedGiftCard
+        ? {
+            id: storedGiftCard.id || '',
+            code: storedGiftCard.code,
+            balance: storedGiftCard.appliedAmount,
+            currency: session.cart?.currency || 'ILS',
+            appliedAmount: storedGiftCard.appliedAmount,
+          }
+        : undefined
 
-  // Validate all required Shopify fields are present and valid
-  const requiredFields = {
-    email: customer.email,
-    firstName: customer.firstName,
-    lastName: customer.lastName,
-    address: customer.address,
-    city: customer.city,
-    country: customer.country,
-    phone: customer.phone,
-    postalCode: customer.postalCode
-  }
+      try {
+        console.log(`[BIT-CALLBACK][${logId}] Creating Shopify order | confirmationCode: ${confirmationCode}`)
+        const order = await createShopifyOrder({
+          session: session as PaymentSession,
+          customer,
+          transactionId: confirmationCode,
+          giftCard: giftCardInfo,
+        })
+        shopifyOrderId = String(order.id)
+        shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+        console.log(`[BIT-CALLBACK][${logId}] ✅ Shopify order created: ${shopifyOrderId}`)
 
-  const missingFields = Object.entries(requiredFields)
-    .filter(([key, value]) => !value || value.trim() === '')
-    .map(([key]) => key)
-
-  if (missingFields.length > 0) {
-    console.error(`[BIT-CALLBACK][${logId}] Missing required Shopify fields:`, missingFields)
-    throw new Error(`Missing required information: ${missingFields.join(', ')}`)
-  }
-
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(customer.email)) {
-    console.error(`[BIT-CALLBACK][${logId}] Invalid email format:`, customer.email)
-    throw new Error('Invalid email address format')
-  }
-
-  // Validate phone format (basic validation)
-  const cleanPhone = customer.phone.replace(/\D/g, '')
-  if (cleanPhone.length < 9 || cleanPhone.length > 15) {
-    console.error(`[BIT-CALLBACK][${logId}] Invalid phone format:`, customer.phone)
-    throw new Error('Invalid phone number format')
-  }
-
-  console.log(`[BIT-CALLBACK][${logId}] ✅ All Shopify customer fields validated successfully`)
-
-  try {
-    const giftCardInfo: GiftCardInfo | undefined = storedGiftCard
-      ? {
-          id: storedGiftCard.id || '',
-          code: storedGiftCard.code,
-          balance: storedGiftCard.appliedAmount,
-          currency: session.cart?.currency || 'ILS',
-          appliedAmount: storedGiftCard.appliedAmount,
-        }
-      : undefined
-
-    console.log(`[BIT-CALLBACK][${logId}] Creating Shopify order...`)
-    const order = await createShopifyOrder({
-      session: session as PaymentSession,
-      customer,
-      transactionId: confirmationCode,
-      giftCard: giftCardInfo,
-    })
-    shopifyOrderId = String(order.id)
-    shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
-    console.log(`[BIT-CALLBACK][${logId}] ✅ Shopify order created: ${shopifyOrderId}`)
-
-    // 3. Send confirmation email - critical step, don't fail silently
-    console.log(`[BIT-CALLBACK][${logId}] Sending confirmation email...`)
-    await sendOrderConfirmationEmail({
-      toEmail: customer.email,
-      orderName: String(order.name || order.id),
-      customerName: `${customer.firstName} ${customer.lastName}`,
-      items: session.cart.items.map((item: any) => ({
-        title: item.title,
-        quantity: item.quantity,
-        price: item.price,
-        image: item.image,
-      })),
-      subtotal: session.cart.subtotal,
-      shipping: session.cart.shipping,
-      tax: session.cart.tax,
-      total: session.cart.total,
-      currency: session.cart.currency,
-      shippingAddress: {
-        address: customer.address,
-        city: customer.city,
-        postalCode: customer.postalCode,
-        country: customer.country,
-      },
-      orderStatusUrl: shopifyOrderUrl || undefined,
-    })
-    console.log(`[BIT-CALLBACK][${logId}] ✅ Confirmation email sent to ${customer.email}`)
-  } catch (orderErr: any) {
-    console.error(`[BIT-CALLBACK][${logId}] ❌ Shopify order/email failed:`, orderErr.message)
-    throw new Error(`Failed to create Shopify order or send confirmation: ${orderErr.message}`)
+        // 3. Send confirmation email (non-blocking — failure should not abort session update)
+        sendOrderConfirmationEmail({
+          toEmail: customer.email,
+          orderName: String(order.name || order.id),
+          customerName: `${customer.firstName} ${customer.lastName}`,
+          items: session.cart.items.map((item: any) => ({
+            title: item.title,
+            quantity: item.quantity,
+            price: item.price,
+            image: item.image,
+          })),
+          subtotal: session.cart.subtotal,
+          shipping: session.cart.shipping,
+          tax: session.cart.tax,
+          total: session.cart.total,
+          currency: session.cart.currency,
+          shippingAddress: {
+            address: customer.address,
+            city: customer.city,
+            postalCode: customer.postalCode,
+            country: customer.country,
+          },
+          orderStatusUrl: shopifyOrderUrl || undefined,
+        }).catch((emailErr: any) =>
+          console.error(`[BIT-CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
+        )
+      } catch (orderErr: any) {
+        console.error(`[BIT-CALLBACK][${logId}] ❌ Shopify order creation failed:`, orderErr.message)
+        // shopifyOrderId stays null — next callback call will retry (idempotency guard checks order_id)
+      }
+    }
+  } else {
+    console.log(`[BIT-CALLBACK][${logId}] Shopify order already exists: ${shopifyOrderId}`)
   }
 
   // 4. Update session to paid — this triggers Supabase realtime on the frontend

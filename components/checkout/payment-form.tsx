@@ -877,14 +877,28 @@ export function PaymentForm({
             // skips the server callback entirely).
             const selfComplete = async (): Promise<boolean> => {
               try {
-                const fd = new FormData()
-                fd.append('Response', '000')
-                fd.append('index',           String(tzResult?.index           || tzResult?.transaction_result?.index           || `SDK-${Date.now()}`))
-                fd.append('ConfirmationCode', String(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode || tzResult?.index || ''))
-                fd.append('merchant_data', sessionId)
-                const cbRes = await fetch('/api/checkout/callback', { method: 'POST', body: fd })
+                const confirmationCode = String(
+                  tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode
+                  || tzResult?.index         || tzResult?.transaction_result?.index
+                  || `SDK-${Date.now()}`
+                )
+                let cbRes: Response
+                if (isBitPayment) {
+                  // For Bit: trigger the bit-callback success handler which also
+                  // debits the gift card and sends the confirmation email.
+                  cbRes = await fetch(
+                    `/api/checkout/bit-callback/success?merchant_data=${encodeURIComponent(sessionId)}&index=${encodeURIComponent(confirmationCode)}`
+                  )
+                } else {
+                  const fd = new FormData()
+                  fd.append('Response', '000')
+                  fd.append('index', confirmationCode)
+                  fd.append('ConfirmationCode', confirmationCode)
+                  fd.append('merchant_data', sessionId)
+                  cbRes = await fetch('/api/checkout/callback', { method: 'POST', body: fd })
+                }
                 console.log(`[PAY][${submitId}] STEP 9 — self-callback HTTP ${cbRes.status}`)
-                await new Promise(r => setTimeout(r, 800)) // let DB write propagate
+                await new Promise(r => setTimeout(r, 800))
                 const finalRes  = await fetch(`/api/checkout/session?id=${sessionId}`)
                 const finalData = finalRes.ok ? await finalRes.json() : null
                 console.log(`[PAY][${submitId}] STEP 9 — post-self-callback session: "${finalData?.status}"`)
@@ -924,15 +938,24 @@ export function PaymentForm({
               //   • SDK returned ANY non-error response (err=null, response present)
               //     with an unrecognised format — safer to complete than to abandon
               //
-              // Do NOT self-complete for Bit: chargeBit() fires before phone confirmation;
-              // the real result arrives via Tranzila's notify webhook → poll for it.
+              // For Bit: chargeBit() fires only after the phone payment is confirmed by
+              // Tranzila. If sdkSuccess=true the charge is complete. We include it in
+              // approvalSignal just like card so self-complete runs when the notify
+              // webhook is slow or doesn't arrive.
+              // Non-success Bit responses (status:'pending', no response) remain false
+              // so we fall through to polling, which is the right behaviour.
+              //
+              // Card-only signals (3DS challenge, any non-error response, ConfirmationCode,
+              // index) are excluded for Bit to avoid premature completion on pending responses.
               const sdkExplicitFailure = !!err && !response
-              const approvalSignal = !isBitPayment && !sdkExplicitFailure && (
-                sdkSuccess
-                || had3DSChallengeRef.current
-                || (!err && !!response)
-                || !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
-                || !!(tzResult?.index            || tzResult?.transaction_result?.index)
+              const approvalSignal = !sdkExplicitFailure && (
+                sdkSuccess                                    // Bit + card: SDK confirmed payment
+                || (!isBitPayment && (                        // card-only fallbacks
+                  had3DSChallengeRef.current
+                  || (!err && !!response)
+                  || !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
+                  || !!(tzResult?.index            || tzResult?.transaction_result?.index)
+                ))
               )
 
               console.log(`[PAY][${submitId}] STEP 9 — pending: approvalSignal=${approvalSignal} | sdkExplicitFailure=${sdkExplicitFailure} | had3DS=${had3DSChallengeRef.current} | isBit=${isBitPayment}`)
