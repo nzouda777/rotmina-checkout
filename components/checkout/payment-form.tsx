@@ -698,12 +698,14 @@ export function PaymentForm({
         // Common base (same for card and Bit)
         const baseContact = {
           terminal_name: result.terminal,
-          sum:           Number(result.chargeAmount).toFixed(2),
+          amount:        Number(result.chargeAmount).toFixed(2),
           currency_code: currencyIso,
           contact:       `${customerInfo.firstName} ${customerInfo.lastName}`,
           email:         customerInfo.email,
           phone:         customerInfo.phone.replace(/\D/g, ''),
           merchant_data: sessionId,
+          expiry_month: '01',
+          expiry_year: '28',
         }
 
         let tzParams: any  // card params for charge()

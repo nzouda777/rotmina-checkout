@@ -10,9 +10,9 @@ const { execSync } = require('child_process');
 
 // Configuration - should match your environment
 const CONFIG = {
-  terminal: process.env.TRANZILA_TERMINAL || 'fxprotmina',
-  testMode: process.env.TRANZILA_TEST_MODE === 'true',
-  baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  terminal: 'fxprotmina',
+  testMode: false,
+  baseUrl: 'https://rotmina-checkout.vercel.app/'
 };
 
 console.log('🧪 Tranzila Hosted Fields Integration Test');
