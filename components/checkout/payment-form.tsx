@@ -221,6 +221,8 @@ export function PaymentForm({
 
         // @ts-ignore
         const instance = window.TzlaHostedFields.create(sdkConfig)
+        console.log('instance',instance)
+        console.log('sdkConfig',sdkConfig)
         hostedFieldsRef.current = instance
         console.log(`[TZ] ✅ Hosted fields initialized`)
       } catch (err) {
