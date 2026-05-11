@@ -139,8 +139,8 @@ export class TranzilaClient {
     }
 
     let apiUrl = `https://api.tranzila.com/v1/handshake/create?supplier=${this.config.terminalName}&TranzilaPW=${password}`
-    if (sum !== undefined && currency !== undefined) {
-      apiUrl += `&sum=${sum}&currency=${currency}`
+    if (sum !== undefined) {
+      apiUrl += `&sum=${sum}`
     }
 
     console.log(`[TRANZILA-HANDSHAKE] URL: ${apiUrl}`)
