@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
+import { sendOrderConfirmationEmail } from '@/lib/email'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
 const TRANZILA_RESPONSE_CODES: Record<string, string> = {
@@ -113,6 +114,34 @@ export async function POST(request: NextRequest) {
         shopifyOrderId = String(order.id)
         shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
         console.log(`[CALLBACK][${logId}] Shopify order created: ${shopifyOrderId} | url: ${shopifyOrderUrl}`)
+
+        // Send confirmation email (non-blocking)
+        const customer = session.customer as CustomerInfo
+        sendOrderConfirmationEmail({
+          toEmail:      customer.email,
+          orderName:    String(order.name || order.id),
+          customerName: `${customer.firstName} ${customer.lastName}`,
+          items: (session.cart?.items || []).map((item: any) => ({
+            title:    item.title,
+            quantity: item.quantity,
+            price:    item.price,
+            image:    item.image,
+          })),
+          subtotal:  session.cart?.subtotal,
+          shipping:  session.cart?.shipping,
+          tax:       session.cart?.tax,
+          total:     session.cart?.total,
+          currency:  session.cart?.currency,
+          shippingAddress: {
+            address:    customer.address,
+            city:       customer.city,
+            postalCode: customer.postalCode,
+            country:    customer.country,
+          },
+          orderStatusUrl: shopifyOrderUrl ?? undefined,
+        }).catch((emailErr: any) =>
+          console.error(`[CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
+        )
       } catch (err) {
         console.error(`[CALLBACK][${logId}] Shopify order failed (payment still marked paid):`, err)
       }

@@ -846,34 +846,55 @@ export function PaymentForm({
 
             const sdkSuccess = !err && isTzSuccess(tzResult)
             console.log(`[PAY][${submitId}] STEP 9 — sdkSuccess=${sdkSuccess} | isBit=${isBitPayment} | had3DS=${had3DSChallengeRef.current}`)
+            console.log(`[PAY][${submitId}] STEP 9 — tzResult:`, JSON.stringify(tzResult))
+
+            // ── Helper: redirect to success from session data ─────────────────
+            const resolveSuccess = (sd: any) => {
+              clearPoll(); clearListeners()
+              setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+              onSuccess(
+                sd.tranzila_transaction_id || tzResult?.ConfirmationCode || tzResult?.index || 'confirmed',
+                sd.raw_response?.shopifyOrderUrl,
+                sd.raw_response?._generated_gift_cards,
+                sd.raw_response?._gift_card?.remainingBalance,
+                giftCardCode,
+              )
+            }
+
+            // ── Helper: self-trigger callback so order+email are created ──────
+            // Called when the SDK says the charge succeeded but the Tranzila
+            // server-to-server callback hasn't updated the session yet (common
+            // when the callback URL is behind a CDN, or the new hosted-fields API
+            // skips the server callback entirely).
+            const selfComplete = async (): Promise<boolean> => {
+              try {
+                const fd = new FormData()
+                fd.append('Response', '000')
+                fd.append('index',           String(tzResult?.index           || tzResult?.transaction_result?.index           || `SDK-${Date.now()}`))
+                fd.append('ConfirmationCode', String(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode || tzResult?.index || ''))
+                fd.append('merchant_data', sessionId)
+                const cbRes = await fetch('/api/checkout/callback', { method: 'POST', body: fd })
+                console.log(`[PAY][${submitId}] STEP 9 — self-callback HTTP ${cbRes.status}`)
+                await new Promise(r => setTimeout(r, 800)) // let DB write propagate
+                const finalRes  = await fetch(`/api/checkout/session?id=${sessionId}`)
+                const finalData = finalRes.ok ? await finalRes.json() : null
+                console.log(`[PAY][${submitId}] STEP 9 — post-self-callback session: "${finalData?.status}"`)
+                if (finalData?.status === 'paid') { resolveSuccess(finalData); return true }
+              } catch (e) {
+                console.error(`[PAY][${submitId}] STEP 9 — self-callback error:`, e)
+              }
+              return false
+            }
 
             // ── Session is the source of truth ────────────────────────────────
-            // The SDK callback and our server callback (/api/checkout/callback)
-            // run concurrently. The SDK callback often fires BEFORE the server has
-            // written to the database. Never trust the SDK result alone — always
-            // read the session and use its status as the final authority.
-            //
-            // Outcomes:
-            //   paid    → redirect to success (create order + send email was done server-side)
-            //   failed  → show the server's error message
-            //   pending → keep polling/realtime alive; server callback is still in-flight
             try {
               const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
               const sessionData = sessionRes.ok ? await sessionRes.json() : null
               console.log(`[PAY][${submitId}] STEP 9 — session status: "${sessionData?.status}"`)
 
               if (sessionData?.status === 'paid') {
-                console.log(`[PAY][${submitId}] STEP 9 — ✅ Session PAID → redirecting to success`)
-                clearPoll(); clearListeners()
-                setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                onSuccess(
-                  sessionData.tranzila_transaction_id || 'confirmed',
-                  sessionData.raw_response?.shopifyOrderUrl,
-                  sessionData.raw_response?._generated_gift_cards,
-                  sessionData.raw_response?._gift_card?.remainingBalance,
-                  giftCardCode,
-                )
-                return
+                console.log(`[PAY][${submitId}] STEP 9 — ✅ Session PAID → redirecting`)
+                resolveSuccess(sessionData); return
               }
 
               if (sessionData?.status === 'failed') {
@@ -885,23 +906,48 @@ export function PaymentForm({
                 return
               }
 
-              // Session still pending — the server callback hasn't written yet.
-              // Switch to immediate polling (override any delay) and let realtime +
-              // polling detect the final state. Never show an error here — the
-              // transaction may have succeeded and is just waiting for DB write.
-              console.log(`[PAY][${submitId}] STEP 9 — session="${sessionData?.status}", server callback in-flight — polling immediately`)
+              // ── Session still pending ──────────────────────────────────────
+              if (sdkSuccess) {
+                // SDK confirmed charge approval. Give Tranzila's server callback
+                // 2 seconds to arrive before we self-complete.
+                console.log(`[PAY][${submitId}] STEP 9 — SDK success, session pending → waiting 2 s for server callback...`)
+                await new Promise(r => setTimeout(r, 2000))
+
+                const recheck  = await fetch(`/api/checkout/session?id=${sessionId}`)
+                const recheckData = recheck.ok ? await recheck.json() : null
+                console.log(`[PAY][${submitId}] STEP 9 — recheck: "${recheckData?.status}"`)
+
+                if (recheckData?.status === 'paid')   { resolveSuccess(recheckData); return }
+                if (recheckData?.status === 'failed') {
+                  clearListeners()
+                  setPaymentError(recheckData.error_message || parseTranzilaError(tzResult, isBitPayment))
+                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                  return
+                }
+
+                // Still pending → server callback is not coming (URL unreachable,
+                // new API skips it, or slow network). Self-trigger the full
+                // post-payment flow (Shopify order + email + session update).
+                console.log(`[PAY][${submitId}] STEP 9 — still pending after 2 s → self-completing`)
+                const done = await selfComplete()
+                if (done) return
+                // selfComplete failed (very rare) — fall through to polling
+              }
+
+              // SDK non-success OR self-complete failed — keep polling;
+              // the server callback may still arrive.
+              console.log(`[PAY][${submitId}] STEP 9 — falling back to immediate polling`)
               clearPoll()
               startSessionPolling(0)
 
             } catch (sessionCheckErr) {
-              console.error(`[PAY][${submitId}] STEP 9 — session check failed:`, sessionCheckErr)
-              // Can't read session — rely on SDK result as last resort
+              console.error(`[PAY][${submitId}] STEP 9 — session check error:`, sessionCheckErr)
               if (!sdkSuccess) {
                 clearListeners()
                 setPaymentError(parseTranzilaError(tzResult, isBitPayment))
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
               }
-              // If sdkSuccess=true, polling/realtime will still detect the session update
+              // sdkSuccess=true → polling/realtime still running, will catch paid state
             }
           })
           console.log(`[PAY][${submitId}] STEP 8 — ${sdkMethod}() called (callback pending until payment completes)`)
