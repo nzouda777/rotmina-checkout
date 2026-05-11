@@ -97,6 +97,7 @@ export function PaymentForm({
   const popupRef            = useRef<Window | null>(null)
   const popupMonitorRef     = useRef<NodeJS.Timeout | null>(null)
   const challengeHandlerRef = useRef<((e: MessageEvent) => void) | null>(null)
+  const had3DSChallengeRef  = useRef(false)
 
   // FIX 5: hostedFields as a ref instead of state.
   // Using useState caused re-renders that could trigger re-initialization
@@ -646,6 +647,7 @@ export function PaymentForm({
 
     isSubmittingRef.current = true
     cancelledRef.current = false
+    had3DSChallengeRef.current = false
     setIsSubmitting(true)
     setPaymentError(null)
 
@@ -810,25 +812,70 @@ export function PaymentForm({
             console.log(`[PAY][${submitId}] showChallenge intercepted → opening 3DS popup`)
             window.removeEventListener('message', challengeHandler)
             challengeHandlerRef.current = null
+            had3DSChallengeRef.current = true
 
             const sw = window.screen.width  || 1280
             const sh = window.screen.height || 800
             const pw = 520, ph = 680
+            // popup=yes forces Chrome to open a real popup window (not a tab).
+            // X-Frame-Options: sameorigin does not apply to popup windows.
             popupRef.current = window.open(
               url, '3dsChallenge',
-              `width=${pw},height=${ph},left=${Math.round((sw-pw)/2)},top=${Math.round((sh-ph)/2)},resizable=yes,scrollbars=yes`
+              `popup=yes,width=${pw},height=${ph},left=${Math.round((sw-pw)/2)},top=${Math.round((sh-ph)/2)}`
             )
             setShow3DS(true)
             setThreeDSUrl('')
 
-            // Detect if user closes popup before completing 3DS
+            // When popup closes, check session to detect success/failure.
+            // After OTP the ACS posts the result server-to-server to Tranzila,
+            // which calls our webhook. The session will be updated regardless
+            // of whether the SDK received the challenge result internally.
             if (popupMonitorRef.current) clearInterval(popupMonitorRef.current)
-            popupMonitorRef.current = setInterval(() => {
-              if (popupRef.current?.closed && is3DSActiveRef.current) {
-                console.log(`[PAY][${submitId}] 3DS popup closed by user`)
-                clearInterval(popupMonitorRef.current!)
-                popupMonitorRef.current = null
-                close3DS('User Cancel')
+            popupMonitorRef.current = setInterval(async () => {
+              if (!popupRef.current?.closed) return
+              if (!is3DSActiveRef.current) { clearInterval(popupMonitorRef.current!); popupMonitorRef.current = null; return }
+
+              clearInterval(popupMonitorRef.current!)
+              popupMonitorRef.current = null
+              popupRef.current = null
+              setShow3DS(false)
+              setThreeDSUrl('')
+              console.log(`[PAY][${submitId}] 3DS popup closed — checking session status...`)
+
+              try {
+                const res = await fetch(`/api/checkout/session?id=${sessionId}`)
+                const sessionData = res.ok ? await res.json() : null
+
+                if (sessionData?.status === 'paid') {
+                  console.log(`[PAY][${submitId}] ✅ Popup closed — session PAID → redirecting`)
+                  is3DSActiveRef.current = false
+                  clearListeners()
+                  setIsSubmitting(false)
+                  isSubmittingRef.current = false
+                  onSuccess(
+                    sessionData.tranzila_transaction_id || 'confirmed',
+                    sessionData.raw_response?.shopifyOrderUrl,
+                    sessionData.raw_response?._generated_gift_cards,
+                    sessionData.raw_response?._gift_card?.remainingBalance,
+                    giftCardCode,
+                  )
+                  return
+                }
+
+                if (sessionData?.status === 'failed') {
+                  console.log(`[PAY][${submitId}] ❌ Popup closed — session FAILED`)
+                  clearListeners()
+                  setPaymentError(sessionData.error_message || t('paymentForm.paymentDeclinedGeneric'))
+                  setIsSubmitting(false)
+                  isSubmittingRef.current = false
+                  is3DSActiveRef.current = false
+                  return
+                }
+
+                // Still pending — polling/realtime + STEP 9 will handle the final result
+                console.log(`[PAY][${submitId}] Popup closed, session="${sessionData?.status}" — keeping polling alive`)
+              } catch (checkErr) {
+                console.error(`[PAY][${submitId}] Session check after popup close failed:`, checkErr)
               }
             }, 600)
           }
@@ -958,8 +1005,45 @@ export function PaymentForm({
                 // Still don't show error — let polling/realtime handle it
                 console.log(`[PAY][${submitId}] STEP 9 — Keeping polling alive despite check failure`)
               }
+            } else if (had3DSChallengeRef.current) {
+              // Card + 3DS popup: SDK callback is NOT authoritative because the
+              // challenge result travels server-to-server (ACS → Tranzila → our
+              // webhook), not through the SDK's internal iframe mechanism.
+              // Same strategy as Bit: check session before showing any error.
+              console.log(`[PAY][${submitId}] STEP 9 — Card SDK non-success after 3DS popup, checking session...`)
+              try {
+                const sessionRes = await fetch(`/api/checkout/session?id=${sessionId}`)
+                const sessionData = sessionRes.ok ? await sessionRes.json() : null
+
+                if (sessionData?.status === 'paid') {
+                  console.log(`[PAY][${submitId}] STEP 9 — ✅ Card 3DS session PAID → redirecting`)
+                  clearPoll(); clearListeners()
+                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                  onSuccess(
+                    sessionData.tranzila_transaction_id || 'confirmed',
+                    sessionData.raw_response?.shopifyOrderUrl,
+                    sessionData.raw_response?._generated_gift_cards,
+                    sessionData.raw_response?._gift_card?.remainingBalance,
+                    giftCardCode,
+                  )
+                  return
+                }
+
+                if (sessionData?.status === 'failed') {
+                  console.log(`[PAY][${submitId}] STEP 9 — ❌ Card 3DS session FAILED`)
+                  clearListeners()
+                  setPaymentError(sessionData.error_message || parseTranzilaError(tzResult, false))
+                  setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                  return
+                }
+
+                // Still pending — polling/realtime will catch the final status
+                console.log(`[PAY][${submitId}] STEP 9 — Card 3DS session="${sessionData?.status}" — keeping polling alive`)
+              } catch (checkErr) {
+                console.error(`[PAY][${submitId}] STEP 9 — Session check failed after 3DS:`, checkErr)
+              }
             } else {
-              // Card payment: SDK callback is authoritative — show error immediately
+              // Card without 3DS: SDK callback is authoritative
               const errorMsg = parseTranzilaError(tzResult, false)
               console.log(`[PAY][${submitId}] STEP 9 — ❌ Card charge DECLINED: "${errorMsg}"`)
               clearListeners()
