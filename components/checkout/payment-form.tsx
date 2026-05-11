@@ -620,11 +620,20 @@ export function PaymentForm({
     if (!res) return false
     if (res.success === true) return true
     if (res.Response === '000') return true
-    if (
-      typeof res.error_code === 'number' &&
-      res.error_code === 0 &&
-      (!res.transaction_result || res.transaction_result.processor_response_code === '000')
-    ) return true
+    if (typeof res.error_code === 'number' && res.error_code === 0) {
+      const pc = res.transaction_result?.processor_response_code
+      if (!pc || pc === '000') return true
+    }
+    // New API: status field
+    if (typeof res.status === 'string') {
+      const s = res.status.toLowerCase()
+      if (s === 'success' || s === 'approved' || s === 'ok') return true
+      if (s === 'failed' || s === 'error' || s === 'declined') return false
+    }
+    // processor_response_code at top level
+    if (res.processor_response_code === '000') return true
+    // ConfirmationCode / transaction_id present → Tranzila approved the charge
+    if (res.ConfirmationCode || res.transaction_id) return true
     return false
   }, [])
 
@@ -907,10 +916,30 @@ export function PaymentForm({
               }
 
               // ── Session still pending ──────────────────────────────────────
-              if (sdkSuccess) {
-                // SDK confirmed charge approval. Give Tranzila's server callback
-                // 2 seconds to arrive before we self-complete.
-                console.log(`[PAY][${submitId}] STEP 9 — SDK success, session pending → waiting 2 s for server callback...`)
+              // Decide whether to self-complete or just poll.
+              //
+              // Self-complete (card only) when any of:
+              //   • SDK returned success indicators (sdkSuccess, ConfirmationCode, index)
+              //   • 3DS challenge happened — user authenticated → Tranzila charged the card
+              //   • SDK returned ANY non-error response (err=null, response present)
+              //     with an unrecognised format — safer to complete than to abandon
+              //
+              // Do NOT self-complete for Bit: chargeBit() fires before phone confirmation;
+              // the real result arrives via Tranzila's notify webhook → poll for it.
+              const sdkExplicitFailure = !!err && !response
+              const approvalSignal = !isBitPayment && !sdkExplicitFailure && (
+                sdkSuccess
+                || had3DSChallengeRef.current
+                || (!err && !!response)
+                || !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
+                || !!(tzResult?.index            || tzResult?.transaction_result?.index)
+              )
+
+              console.log(`[PAY][${submitId}] STEP 9 — pending: approvalSignal=${approvalSignal} | sdkExplicitFailure=${sdkExplicitFailure} | had3DS=${had3DSChallengeRef.current} | isBit=${isBitPayment}`)
+
+              if (approvalSignal) {
+                // Charge was approved (or likely approved). Give Tranzila's server
+                // callback 2 s to arrive before self-completing.
                 await new Promise(r => setTimeout(r, 2000))
 
                 const recheck  = await fetch(`/api/checkout/session?id=${sessionId}`)
@@ -925,18 +954,17 @@ export function PaymentForm({
                   return
                 }
 
-                // Still pending → server callback is not coming (URL unreachable,
-                // new API skips it, or slow network). Self-trigger the full
-                // post-payment flow (Shopify order + email + session update).
+                // Still pending → server callback is not coming. Self-trigger the full
+                // post-payment flow (Shopify order + email + session → paid).
                 console.log(`[PAY][${submitId}] STEP 9 — still pending after 2 s → self-completing`)
                 const done = await selfComplete()
                 if (done) return
                 // selfComplete failed (very rare) — fall through to polling
               }
 
-              // SDK non-success OR self-complete failed — keep polling;
-              // the server callback may still arrive.
-              console.log(`[PAY][${submitId}] STEP 9 — falling back to immediate polling`)
+              // Bit payment or SDK explicit failure: keep polling;
+              // the server callback or notify webhook may still arrive.
+              console.log(`[PAY][${submitId}] STEP 9 — falling back to immediate polling (approvalSignal=${approvalSignal})`)
               clearPoll()
               startSessionPolling(0)
 
