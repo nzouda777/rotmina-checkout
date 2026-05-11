@@ -692,12 +692,14 @@ export function PaymentForm({
         // ── STEP 6: Build params ────────────────────────────────────────────
         const isBitPayment = !!result.isBit
 
+        // Map numeric Tranzila currency code to ISO for the new hosted fields API
+        const currencyIso = result.currency === '2' ? 'USD' : 'ILS'
+
         // Common base (same for card and Bit)
         const baseContact = {
-          terminal:      result.terminal,
           terminal_name: result.terminal,
           sum:           Number(result.chargeAmount).toFixed(2),
-          currency:      result.currency,
+          currency_code: currencyIso,
           contact:       `${customerInfo.firstName} ${customerInfo.lastName}`,
           email:         customerInfo.email,
           phone:         customerInfo.phone.replace(/\D/g, ''),
@@ -731,7 +733,7 @@ export function PaymentForm({
             ...baseContact,
             success_url_address: result.callbackUrl,
             fail_url_address:    result.callbackUrl,
-            cred_type: installments > 1 ? '8' : '1',
+            payment_plan: installments > 1 ? installments : 1,
             tranmode:  'A',
           }
           if (result.thtk) tzParams.thtk = result.thtk
@@ -741,8 +743,6 @@ export function PaymentForm({
             const first = result.chargeAmount - other * (installments - 1)
             tzParams.fpay = String(first.toFixed(2))
             tzParams.spay = String(other.toFixed(2))
-          } else {
-            tzParams.maxpay = '1'
           }
           console.log('Tranzila Card Charge Payload:', tzParams)
           console.log(`[PAY][${submitId}] STEP 6 — Card charge() params:`, JSON.stringify({
