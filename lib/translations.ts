@@ -446,6 +446,22 @@ export const translations = {
       en: 'Complete authentication in the popup window',
       he: 'השלם אימות בחלון הקופץ',
     },
+    authRequired: {
+      en: 'Authentication Required',
+      he: 'אימות נדרש',
+    },
+    authRequiredDesc: {
+      en: 'Your bank requires identity verification to complete this payment.',
+      he: 'הבנק שלך דורש אימות זהות להשלמת התשלום.',
+    },
+    openAuthWindow: {
+      en: 'Open Secure Verification',
+      he: 'פתח אימות מאובטח',
+    },
+    verifyingPayment: {
+      en: 'Verifying your payment...',
+      he: '...מאמת את התשלום שלך',
+    },
     // Terms modal
     termsOfUse: {
       en: 'Terms of Use',
