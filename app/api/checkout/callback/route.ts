@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     const redirectUrl = isSuccess
-      ? `${baseUrl}/checkout/success?session=${actualSessionId}&confirmation=${txnId}`
+      ? (shopifyOrderUrl || `https://${session.shop}/pages/success?session=${actualSessionId}`)
       : `${baseUrl}/checkout/s=error`
 
     return breakoutRedirect(redirectUrl, actualSessionId, errorMsg)

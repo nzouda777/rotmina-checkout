@@ -190,8 +190,8 @@ async function handleCallback(request: NextRequest) {
         })
         .eq('id', actualSessionId)
 
-      // Redirect to success page in the app
-      return redirectToSuccess(actualSessionId, confirmationCode || trackId)
+      // Redirect to Shopify native success page
+      return redirectToShopify(session, shopifyOrderId, shopifyOrderUrl)
 
     } else {
       const errorMsg = TranzilaClient.getErrorMessage(completeResponse)
@@ -228,7 +228,7 @@ function redirectToShopify(session: any, shopifyOrderId?: string | null, orderSt
 }
 
 function redirectToError(message: string, sessionId?: string, errorMessage?: string) {
-  const baseUrl = process.env.SHOPIFY_STORE_DOMAIN || ''
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ''
   const targetUrl = `${baseUrl}/checkout/s=error`
   return breakoutRedirect(targetUrl, sessionId, errorMessage)
 }
