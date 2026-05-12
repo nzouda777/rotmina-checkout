@@ -908,7 +908,9 @@ export function PaymentForm({
               isSubmittingRef.current = false
               // reset the session in tranzila and in supabase
               resetSession(sessionId)
-              return
+              // wait for session to reset and then reload the page
+              await new Promise(r => setTimeout(r, 1000))
+              window.location.reload()
 
               
             }
