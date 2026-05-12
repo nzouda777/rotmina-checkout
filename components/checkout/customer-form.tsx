@@ -116,7 +116,7 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 errors.country ? 'border-destructive' : 'border-input'
               }`}
             >
-              <option value="">{t('customerForm.selectCountry')}</option>
+              {/* <option value="">{t('customerForm.selectCountry')}</option> */}
               <option value="Israel">{t('customerForm.israel')}</option>
               <option value="United States">{t('customerForm.unitedStates')}</option>
               <option value="United Kingdom">{t('customerForm.unitedKingdom')}</option>

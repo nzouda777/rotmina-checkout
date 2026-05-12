@@ -303,6 +303,7 @@ export function PaymentForm({
           console.log(`[POLL] Session status: ${data.status} | error_message: ${data.error_message ?? 'none'}`)
 
           if (data.status === 'paid') {
+            if (cancelledRef.current) { clearPoll(); return }
             console.log('[POLL] ✅ Payment confirmed! txnId:', data.tranzila_transaction_id)
             clearPoll()
             clearListeners()
@@ -347,6 +348,7 @@ export function PaymentForm({
         const data = await res.json()
 
         if (data.success) {
+          if (cancelledRef.current) { clearPoll(); return }
           clearPoll(); clearListeners()
           close3DS('Active Poll Success')
           onSuccess(data.confirmationCode || 'confirmed', data.shopifyOrderUrl, data.generatedGiftCards, data.giftCardRemainingBalance, giftCardCode)
@@ -462,11 +464,13 @@ export function PaymentForm({
       clearListeners()
 
       await new Promise(r => setTimeout(r, 800))
+      if (cancelledRef.current) return
 
       let sessionData: any = null
       try {
         const res  = await fetch(`/api/checkout/session?id=${sessionId}`)
         sessionData = res.ok ? await res.json() : null
+        if (cancelledRef.current) return
 
         if (sessionData?.status === 'paid') {
           close3DS('PostMessage Success')

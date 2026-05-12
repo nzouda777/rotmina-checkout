@@ -48,12 +48,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Must be in a state where 3DS completion makes sense
-    if (session.status !== 'pending_3ds' && session.status !== 'processing' && session.status !== 'pending') {
+    // Must be in a state where 3DS completion makes sense.
+    // 'pending' means the user cancelled and session/reset was called — do NOT complete.
+    if (session.status !== 'pending_3ds' && session.status !== 'processing') {
       console.log('[3DS-COMPLETE] Session not in 3DS state:', session.status)
       return NextResponse.json({
         error: `Session is in '${session.status}' state, not pending 3DS`,
         status: session.status,
+        pending: session.status === 'pending',
       }, { status: 400 })
     }
 
