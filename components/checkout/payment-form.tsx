@@ -660,6 +660,19 @@ export function PaymentForm({
     }
   }, [])
 
+  const resetSession = useCallback(async (sid: string) => {
+    try {
+      console.log(`[SESSION-RESET] Resetting session ${sid}...`)
+      await fetch('/api/checkout/session/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sid })
+      })
+    } catch (err) {
+      console.error('[SESSION-RESET] Failed to reset session:', err)
+    }
+  }, [])
+
   // ── Main submit handler ───────────────────────────────────────────────────
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -893,9 +906,8 @@ export function PaymentForm({
               setPaymentError(parseTranzilaError(tzResult, isBitPayment))
               setIsSubmitting(false)
               isSubmittingRef.current = false
-              // update tranzila session status to failed and refresh the session
-              updateTranzilaSessionStatus(sessionId, 'failed')
-              
+              // reset the session in tranzila and in supabase
+              resetSession(sessionId)
               return
 
               
