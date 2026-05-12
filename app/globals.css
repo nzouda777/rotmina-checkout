@@ -141,3 +141,10 @@
 [dir="rtl"] .rtl\:rotate-180 {
   transform: rotate(180deg);
 }
+
+.hf-challenge-cont {
+  background: #fff !important;
+}
+.hf-challenge-cont .row {
+  background: #fff !important;
+}
