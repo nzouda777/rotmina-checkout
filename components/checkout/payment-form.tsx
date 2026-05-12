@@ -913,7 +913,7 @@ export function PaymentForm({
               // window.location.reload()
 
               
-            }
+            }else {
             // ── Helper: redirect to success from session data ─────────────────
             const resolveSuccess = (sd: any) => {
               clearPoll(); clearListeners()
@@ -1062,7 +1062,7 @@ export function PaymentForm({
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
               }
               // sdkSuccess=true → polling/realtime still running, will catch paid state
-            }
+            }}
           })
           console.log(`[PAY][${submitId}] STEP 8 — ${sdkMethod}() called (callback pending until payment completes)`)
         } catch (err: any) {
