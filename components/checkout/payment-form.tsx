@@ -644,6 +644,10 @@ export function PaymentForm({
     if (res.processor_response_code === '000') return true
     // ConfirmationCode / transaction_id present → Tranzila approved the charge
     if (res.ConfirmationCode || res.transaction_id) return true
+    // Nested transaction_response structure (new hosted-fields SDK response shape)
+    if (res.transaction_response?.success === true) return true
+    if (res.transaction_response?.processor_response_code === '000') return true
+    if (res.transaction_response?.transaction_id || res.transaction_response?.auth_number) return true
     return false
   }, [])
 
@@ -904,13 +908,13 @@ export function PaymentForm({
             // ── Redirect to Shopify error page on explicit Tranzila failure ────
             // Only fires when processor_response_code is explicitly present and
             // not '000'. Undefined (success response without this field) is ignored.
-            if (tzResult?.processor_response_code && tzResult.processor_response_code !== '000') {
-              console.log(`[PAY][${submitId}] STEP 9 — processor_response_code=${tzResult.processor_response_code} → redirecting to Shopify error page`)
-              const errorMsg = encodeURIComponent(parseTranzilaError(tzResult, isBitPayment))
-              resetSession(sessionId)
-              window.location.href = `https://${shopDomain || 'rotmana.co'}/pages/error?message=${errorMsg}`
-              return
-            }
+            // if (tzResult?.processor_response_code && tzResult.processor_response_code !== '000') {
+            //   console.log(`[PAY][${submitId}] STEP 9 — processor_response_code=${tzResult.processor_response_code} → redirecting to Shopify error page`)
+            //   const errorMsg = encodeURIComponent(parseTranzilaError(tzResult, isBitPayment))
+            //   resetSession(sessionId)
+            //   window.location.href = `https://${shopDomain || 'rotmana.co'}/pages/error?message=${errorMsg}`
+            //   return
+            // }
 
             // ── Helper: redirect to success from session data ─────────────────
             const resolveSuccess = (sd: any) => {
@@ -936,6 +940,8 @@ export function PaymentForm({
                 const confirmationCode = String(
                   tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode
                   || tzResult?.index         || tzResult?.transaction_result?.index
+                  || tzResult?.transaction_response?.transaction_id
+                  || tzResult?.transaction_response?.auth_number
                   || `SDK-${Date.now()}`
                 )
                 let cbRes: Response
@@ -1001,6 +1007,7 @@ export function PaymentForm({
                 || (!isBitPayment && (                        // card-only: only hard proof
                   !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
                   || !!(tzResult?.index          || tzResult?.transaction_result?.index)
+                  || !!(tzResult?.transaction_response?.transaction_id || tzResult?.transaction_response?.auth_number)
                 ))
               )
 
