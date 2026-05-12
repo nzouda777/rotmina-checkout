@@ -647,6 +647,19 @@ export function PaymentForm({
     return false
   }, [])
 
+  const updateTranzilaSessionStatus = useCallback(async (sid: string, status: 'paid' | 'failed', errorCode?: string) => {
+    try {
+      console.log(`[STATUS-UPDATE] Updating session ${sid} to ${status}...`)
+      const fd = new FormData()
+      fd.append('Response', status === 'paid' ? '000' : (errorCode || '999'))
+      fd.append('merchant_data', sid)
+      // The callback API handles the Supabase update and error logging
+      await fetch('/api/checkout/callback', { method: 'POST', body: fd })
+    } catch (err) {
+      console.error('[STATUS-UPDATE] Failed to update session status:', err)
+    }
+  }, [])
+
   // ── Main submit handler ───────────────────────────────────────────────────
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -880,6 +893,9 @@ export function PaymentForm({
               setPaymentError(parseTranzilaError(tzResult, isBitPayment))
               setIsSubmitting(false)
               isSubmittingRef.current = false
+              // update tranzila session status to failed and refresh the session
+              updateTranzilaSessionStatus(sessionId, 'failed')
+              
               return
 
               
