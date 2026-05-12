@@ -860,7 +860,8 @@ export function PaymentForm({
             challengeHandlerRef.current = null
             had3DSChallengeRef.current = true
 
-            // Show spinner overlay while SDK handles the challenge
+            // Dismiss loader before showing 3DS overlay — they must never coexist
+            setLoadingStep(null)
             setShow3DS(true)
           }
           challengeHandlerRef.current = challengeHandler
@@ -905,8 +906,9 @@ export function PaymentForm({
             // not '000'. Undefined (success response without this field) is ignored.
             if (tzResult?.processor_response_code && tzResult.processor_response_code !== '000') {
               console.log(`[PAY][${submitId}] STEP 9 — processor_response_code=${tzResult.processor_response_code} → redirecting to Shopify error page`)
+              const errorMsg = encodeURIComponent(parseTranzilaError(tzResult, isBitPayment))
               resetSession(sessionId)
-              window.location.href = `https://${shopDomain || 'rotmana.co'}/pages/error?message=${tzResult.error_description}`
+              window.location.href = `https://${shopDomain || 'rotmana.co'}/pages/error?message=${errorMsg}`
               return
             }
 
@@ -1046,7 +1048,57 @@ export function PaymentForm({
                 return
               }
 
-              // Bit payment: keep polling; the notify webhook may still arrive.
+              // ── 3DS didn't launch: verify directly via track_id ───────────────
+              // Tranzila always assigns a track_id even when no challenge is shown
+              // (frictionless / non-enrolled cards). Call 3ds-complete to get the
+              // authoritative transaction result and update Supabase accordingly.
+              if (!isBitPayment) {
+                const sdkTrackId = tzResult?.track_id || tzResult?.trackId
+                if (sdkTrackId) {
+                  console.log(`[PAY][${submitId}] STEP 9 — no 3DS challenge, track_id=${sdkTrackId} → verifying with Tranzila`)
+                  setLoadingStep('completing')
+                  try {
+                    const verifyRes = await fetch('/api/checkout/3ds-complete', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ trackId: sdkTrackId, sessionId }),
+                    })
+                    const verifyData = verifyRes.ok ? await verifyRes.json() : null
+                    console.log(`[PAY][${submitId}] STEP 9 — verify result:`, JSON.stringify(verifyData))
+
+                    if (verifyData?.success) {
+                      clearPoll(); clearListeners()
+                      setLoadingStep(null)
+                      setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                      onSuccess(
+                        verifyData.confirmationCode || 'confirmed',
+                        verifyData.shopifyOrderUrl,
+                        verifyData.generatedGiftCards,
+                        verifyData.giftCardRemainingBalance,
+                        giftCardCode,
+                      )
+                      return
+                    }
+                    if (verifyData && !verifyData.pending) {
+                      clearListeners()
+                      setLoadingStep(null)
+                      setPaymentError(verifyData.error || parseTranzilaError(tzResult, isBitPayment))
+                      setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                      resetSession(sessionId)
+                      return
+                    }
+                    // verifyData.pending → transaction still in flight, use active polling
+                    clearPoll()
+                    start3DSActivePolling(sdkTrackId)
+                    return
+                  } catch (verifyErr) {
+                    console.error(`[PAY][${submitId}] STEP 9 — track_id verify error:`, verifyErr)
+                    // Fall through to session polling
+                  }
+                }
+              }
+
+              // Bit payment or no track_id: keep polling; the notify webhook may still arrive.
               console.log(`[PAY][${submitId}] STEP 9 — falling back to immediate polling (approvalSignal=${approvalSignal})`)
               setLoadingStep('completing')
               clearPoll()

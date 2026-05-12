@@ -71,6 +71,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No track_id found — 3DS not ready yet', pending: true })
     }
 
+    // Persist the track_id early so it survives any subsequent retries
+    if (clientTrackId && !session.raw_response?.track_id) {
+      await supabase
+        .from('payment_sessions')
+        .update({ raw_response: { ...(session.raw_response as any), track_id: clientTrackId } })
+        .eq('id', sessionId)
+    }
+
     console.log('[3DS-COMPLETE] Calling 3DS Complete with track_id:', trackId)
     const tranzila = createTranzilaClient()
     const completeResponse = await tranzila.complete3DS(trackId)
