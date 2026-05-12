@@ -900,20 +900,16 @@ export function PaymentForm({
             console.log(`[PAY][${submitId}] STEP 9 — sdkSuccess=${sdkSuccess} | isBit=${isBitPayment} | had3DS=${had3DSChallengeRef.current}`)
             console.log(`[PAY][${submitId}] STEP 9 — tzResult:`, JSON.stringify(tzResult))
 
-            if (tzResult.processor_response_code !== '000') {
-              console.error(`[PAY][${submitId}] STEP 9 — processor_response_code: ${tzResult.processor_response_code}`)
-              setLoadingStep(null)
-              setPaymentError(parseTranzilaError(tzResult, isBitPayment))
-              setIsSubmitting(false)
-              isSubmittingRef.current = false
-              // reset the session in tranzila and in supabase
+            // ── Redirect to Shopify error page on explicit Tranzila failure ────
+            // Only fires when processor_response_code is explicitly present and
+            // not '000'. Undefined (success response without this field) is ignored.
+            if (tzResult?.processor_response_code && tzResult.processor_response_code !== '000') {
+              console.log(`[PAY][${submitId}] STEP 9 — processor_response_code=${tzResult.processor_response_code} → redirecting to Shopify error page`)
               resetSession(sessionId)
-              // wait for session to reset and then reload the page
-              // await new Promise(r => setTimeout(r, 1000))
-              // window.location.reload()
-
-              
+              window.location.href = `https://${shopDomain || 'rotmana.co'}/pages/error?message=${tzResult.error_description}`
+              return
             }
+
             // ── Helper: redirect to success from session data ─────────────────
             const resolveSuccess = (sd: any) => {
               clearPoll(); clearListeners()
@@ -985,6 +981,7 @@ export function PaymentForm({
                 setLoadingStep(null)
                 setPaymentError(errMsg)
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                resetSession(sessionId)
                 return
               }
 
@@ -1035,6 +1032,7 @@ export function PaymentForm({
                   setLoadingStep(null)
                   setPaymentError(recheckData.error_message || parseTranzilaError(tzResult, isBitPayment))
                   setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                  resetSession(sessionId)
                   return
                 }
 
