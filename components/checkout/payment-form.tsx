@@ -78,6 +78,7 @@ export function PaymentForm({
   const [isSubmitting, setIsSubmitting]   = useState(false)
   const [show3DS, setShow3DS]             = useState(false)
   const [threeDSUrl, setThreeDSUrl]       = useState('')
+  const [popupWindowActive, setPopupWindowActive] = useState(false)
   const [installments, setInstallments]   = useState(1)
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'bit'>('card')
   const [paymentError, setPaymentError]   = useState<string | null>(null)
@@ -141,6 +142,7 @@ export function PaymentForm({
     clearListeners()
     setShow3DS(false)
     setThreeDSUrl('')
+    setPopupWindowActive(false)
     setLoadingStep(null)
     setIsSubmitting(false)
     isSubmittingRef.current = false
@@ -431,9 +433,13 @@ export function PaymentForm({
     )
 
     if (!popup) {
-      // Popup was blocked — fall back to iframe
+      // Popup was blocked — fall back to iframe overlay
       console.warn('[3DS] Popup blocked, falling back to iframe')
       setThreeDSUrl(redirectUrl)
+      setShow3DS(true)
+    } else {
+      // Popup opened successfully — show mini banner, no overlay
+      setPopupWindowActive(true)
     }
     popupRef.current = popup
 
@@ -444,8 +450,6 @@ export function PaymentForm({
         close3DS('User Cancel')
       }
     }, 600)
-
-    setShow3DS(true)
 
     startRealtimeSubscription()
 
@@ -1393,13 +1397,34 @@ export function PaymentForm({
         </div>
       </form>
 
-      {/* 3DS / Bit modal — also shown during 'connecting' and 'completing' loading steps */}
-      {(show3DS || !!loadingStep) && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}>
+      {/* Mini banner — shown when 3DS popup window is open (no overlay, no loader) */}
+      {popupWindowActive && (
+        <div className="fixed bottom-6 inset-x-0 flex justify-center z-[100] px-4 pointer-events-none">
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 px-5 py-4 flex items-center gap-4 max-w-sm w-full pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="h-8 w-8 flex-shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900">
+                {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
+              </p>
+              <p className="text-xs text-gray-400 truncate">{t('paymentForm.completeInPopup')}</p>
+            </div>
+            <button
+              onClick={() => close3DS('User Cancel')}
+              className="text-xs text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0 font-medium"
+            >
+              {t('paymentForm.cancel')}
+            </button>
+          </div>
+        </div>
+      )}
 
-          {/* ── Spinner state (loading step or 3DS challenge / Bit popup) ── */}
+      {/* 3DS / Bit modal — shown during loading steps, SDK challenge, or iframe fallback */}
+      {(show3DS || !!loadingStep) && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-white/90 backdrop-blur-sm">
+
+          {/* ── Spinner state (loading step or SDK 3DS challenge) ── */}
           {!threeDSUrl && (
-            <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               {/* Top gradient bar — blue for connecting/verifying, green for completing */}
               <div className={`h-1 w-full bg-gradient-to-r ${loadingStep === 'completing' ? 'from-emerald-400 via-green-500 to-teal-500' : 'from-blue-500 via-indigo-500 to-purple-500'}`} />
               <div className="px-8 py-10 text-center space-y-6">
@@ -1463,7 +1488,7 @@ export function PaymentForm({
 
           {/* ── Iframe state (popup blocked — inline fallback) ── */}
           {threeDSUrl && (
-            <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
               <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
                 <div className="flex items-center gap-2">
@@ -1497,7 +1522,7 @@ export function PaymentForm({
       )}
 
       {/* Payment Error Popup */}
-      {!show3DS && paymentError && (
+      {!show3DS && !popupWindowActive && paymentError && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="relative w-full max-w-md mx-4 bg-background rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="h-1.5 w-full bg-gradient-to-r from-red-500 via-red-400 to-orange-400" />
