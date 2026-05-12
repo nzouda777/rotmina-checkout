@@ -986,31 +986,19 @@ export function PaymentForm({
               }
 
               // ── Session still pending ──────────────────────────────────────
-              // Decide whether to self-complete or just poll.
+              // Self-complete only when there is strong evidence of a real charge:
+              //   • sdkSuccess  — SDK confirmed payment (err=null + isTzSuccess=true)
+              //   • ConfirmationCode / index present — Tranzila only sets these on success
               //
-              // Self-complete (card only) when any of:
-              //   • SDK returned success indicators (sdkSuccess, ConfirmationCode, index)
-              //   • 3DS challenge happened — user authenticated → Tranzila charged the card
-              //   • SDK returned ANY non-error response (err=null, response present)
-              //     with an unrecognised format — safer to complete than to abandon
-              //
-              // For Bit: chargeBit() fires only after the phone payment is confirmed by
-              // Tranzila. If sdkSuccess=true the charge is complete. We include it in
-              // approvalSignal just like card so self-complete runs when the notify
-              // webhook is slow or doesn't arrive.
-              // Non-success Bit responses (status:'pending', no response) remain false
-              // so we fall through to polling, which is the right behaviour.
-              //
-              // Card-only signals (3DS challenge, any non-error response, ConfirmationCode,
-              // index) are excluded for Bit to avoid premature completion on pending responses.
+              // Intentionally excluded (unreliable / caused false orders):
+              //   • had3DSChallengeRef.current — set when 3DS *starts*, not when it succeeds
+              //   • (!err && !!response)       — any SDK response triggered selfComplete
               const sdkExplicitFailure = !!err && !response
               const approvalSignal = !sdkExplicitFailure && (
                 sdkSuccess                                    // Bit + card: SDK confirmed payment
-                || (!isBitPayment && (                        // card-only fallbacks
-                  had3DSChallengeRef.current
-                  || (!err && !!response)
-                  || !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
-                  || !!(tzResult?.index            || tzResult?.transaction_result?.index)
+                || (!isBitPayment && (                        // card-only: only hard proof
+                  !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
+                  || !!(tzResult?.index          || tzResult?.transaction_result?.index)
                 ))
               )
 
@@ -1044,8 +1032,21 @@ export function PaymentForm({
                 // selfComplete failed (very rare) — fall through to polling
               }
 
-              // Bit payment or SDK explicit failure: keep polling;
-              // the server callback or notify webhook may still arrive.
+              // ── 3DS not validated or explicit SDK failure ─────────────────────
+              // The 3DS challenge was shown but not successfully completed, OR the SDK
+              // reported an explicit error. In both cases the charge did not go through.
+              // Show an error popup immediately instead of polling indefinitely.
+              if (had3DSChallengeRef.current || sdkExplicitFailure) {
+                console.log(`[PAY][${submitId}] STEP 9 — 3DS not validated / SDK failure → showing error`)
+                clearListeners()
+                setLoadingStep(null)
+                setPaymentError(parseTranzilaError(tzResult, isBitPayment))
+                setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                resetSession(sessionId)
+                return
+              }
+
+              // Bit payment: keep polling; the notify webhook may still arrive.
               console.log(`[PAY][${submitId}] STEP 9 — falling back to immediate polling (approvalSignal=${approvalSignal})`)
               setLoadingStep('completing')
               clearPoll()
@@ -1446,106 +1447,108 @@ export function PaymentForm({
         </div>
       )}
 
-      {/* 3DS / Bit modal — shown during loading steps, SDK challenge, or iframe fallback */}
-      {(show3DS || !!loadingStep) && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-white/90 backdrop-blur-sm">
+      {/* ── Loader overlay — connecting / completing (never shown alongside 3DS) ── */}
+      {!!loadingStep && !show3DS && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className={`h-1 w-full bg-gradient-to-r ${loadingStep === 'completing' ? 'from-emerald-400 via-teal-500 to-emerald-500' : 'from-blue-500 via-indigo-500 to-violet-500'}`} />
+            <div className="px-8 py-10 text-center space-y-5">
+              <div className={`mx-auto h-14 w-14 rounded-full border-4 border-gray-100 animate-spin ${loadingStep === 'completing' ? 'border-t-emerald-500' : 'border-t-blue-500'}`} />
+              <div className="space-y-1.5">
+                <p className="text-base font-bold text-gray-900">
+                  {loadingStep === 'completing'
+                    ? t('paymentForm.loadingCompleting')
+                    : paymentMethod === 'bit'
+                      ? t('paymentForm.loadingConnectingBit')
+                      : t('paymentForm.loadingConnecting')}
+                </p>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  {loadingStep === 'completing'
+                    ? t('paymentForm.loadingCompletingSubtitle')
+                    : t('paymentForm.loadingConnectingSubtitle')}
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <div className={`h-1.5 w-1.5 rounded-full animate-pulse ${loadingStep === 'completing' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
+              </div>
+              {loadingStep !== 'completing' && (
+                <button onClick={() => close3DS('User Cancel')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                  {t('paymentForm.cancel')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
-          {/* ── Spinner state (loading step or SDK 3DS challenge) ── */}
-          {!threeDSUrl && (
-            <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              {/* Top gradient bar — blue for connecting/verifying, green for completing */}
-              <div className={`h-1 w-full bg-gradient-to-r ${loadingStep === 'completing' ? 'from-emerald-400 via-green-500 to-teal-500' : 'from-blue-500 via-indigo-500 to-purple-500'}`} />
-              <div className="px-8 py-10 text-center space-y-6">
-                {/* Spinner */}
-                <div className={`mx-auto h-16 w-16 animate-spin rounded-full border-4 border-gray-100 ${loadingStep === 'completing' ? 'border-t-emerald-500' : 'border-t-blue-500'}`} />
+      {/* ── 3DS SDK challenge overlay — SDK handles its own UI, we show a waiting screen ── */}
+      {show3DS && !threeDSUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+            <div className="px-8 py-10 text-center space-y-6">
+              {/* Shield icon */}
+              <div className="mx-auto h-16 w-16 rounded-full bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
+                <Shield className="h-8 w-8 text-blue-600" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-lg font-bold text-gray-900">
+                  {t('paymentForm.securePayment')}
+                </p>
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  {t('paymentForm.verifyingPayment')}
+                </p>
+              </div>
+              {/* Animated dots */}
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <button onClick={() => close3DS('User Cancel')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                {t('paymentForm.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                {/* Phase-specific text */}
-                <div className="space-y-2">
-                  {loadingStep === 'connecting' ? (
-                    <>
-                      <p className="text-lg font-bold text-gray-900">
-                        {paymentMethod === 'bit'
-                          ? t('paymentForm.loadingConnectingBit')
-                          : t('paymentForm.loadingConnecting')}
-                      </p>
-                      <p className="text-sm text-gray-500 leading-relaxed">
-                        {t('paymentForm.loadingConnectingSubtitle')}
-                      </p>
-                    </>
-                  ) : loadingStep === 'completing' ? (
-                    <>
-                      <p className="text-lg font-bold text-gray-900">
-                        {t('paymentForm.loadingCompleting')}
-                      </p>
-                      <p className="text-sm text-gray-500 leading-relaxed">
-                        {t('paymentForm.loadingCompletingSubtitle')}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-lg font-bold text-gray-900">
-                        {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
-                      </p>
-                      <p className="text-sm text-gray-500 leading-relaxed">
-                        {paymentMethod === 'bit'
-                          ? t('paymentForm.completeInPopup')
-                          : t('paymentForm.verifyingPayment')}
-                      </p>
-                    </>
-                  )}
+      {/* ── Iframe fallback — popup was blocked, 3DS/Bit shown inline ── */}
+      {show3DS && threeDSUrl && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="h-7 w-7 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <Shield className="h-3.5 w-3.5 text-blue-600" />
                 </div>
-
-                {/* Live indicator */}
-                <div className="flex items-center justify-center gap-2">
-                  <div className={`h-2 w-2 animate-pulse rounded-full ${loadingStep === 'completing' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                <span className="text-sm font-semibold text-gray-900">
+                  {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
                   <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
                 </div>
-
-                {/* Cancel — only during 3DS or connecting phase (not while finalizing) */}
-                {loadingStep !== 'completing' && (
-                  <button
-                    onClick={() => close3DS('User Cancel')}
-                    className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
-                  >
-                    {t('paymentForm.cancel')}
-                  </button>
-                )}
+                <button
+                  onClick={() => close3DS('User Cancel')}
+                  className="h-7 w-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors text-xs font-bold"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
               </div>
             </div>
-          )}
-
-          {/* ── Iframe state (popup blocked — inline fallback) ── */}
-          {threeDSUrl && (
-            <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-semibold text-gray-900">
-                    {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-                    <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
-                  </div>
-                  <button
-                    onClick={() => close3DS('User Cancel')}
-                    className="text-sm text-gray-400 hover:text-gray-700 font-medium transition-colors"
-                  >
-                    {t('paymentForm.cancel')}
-                  </button>
-                </div>
-              </div>
-              <iframe
-                src={threeDSUrl}
-                className="w-full border-0"
-                style={{ height: '520px' }}
-                title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
-              />
-            </div>
-          )}
+            <iframe
+              src={threeDSUrl}
+              className="w-full border-0"
+              style={{ height: '520px' }}
+              title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
+            />
+          </div>
         </div>
       )}
 
