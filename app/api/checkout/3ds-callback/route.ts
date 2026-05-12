@@ -98,6 +98,15 @@ async function handleCallback(request: NextRequest) {
       (completeResponse as any).confirmation_code ||
       (completeResponse as any).transaction_id ||
       (completeResponse as any).index
+
+    console.log('[3DS-CALLBACK] Payment decision:', {
+      isSuccess,
+      processor_response_code: txnResult?.processor_response_code,
+      approved: txnResult?.approved,
+      auth_number: txnResult?.auth_number,
+      error_code: (completeResponse as any).error_code,
+      confirmationCode,
+    })
     // ──────────────────────────────────────────────────────────────────
 
     if (isSuccess) {

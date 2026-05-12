@@ -234,64 +234,77 @@ export class TranzilaClient {
   static isSuccess(response: any): boolean {
     if (!response) return false
 
-    // Explicit error_code field (from 3DS complete response)
-    // error_code: 0 = "no API error", but we must ALSO check transaction_result
-    if (typeof response.error_code === 'number') {
-      if (response.error_code !== 0) return false
-      // error_code === 0 means API call succeeded, but transaction may still be declined.
-      // Check nested transaction_result if it exists.
-      if (response.transaction_result) {
-        const processorCode = response.transaction_result.processor_response_code
-        if (processorCode && processorCode !== '000') {
-          console.log(`[TRANZILA] error_code=0 but processor_response_code=${processorCode} → DECLINED`)
-          return false
-        }
-      }
-    } else if (response.error_code) {
-      // error_code as non-zero truthy value (string, etc.)
-      return false
-    }
+    // Errors array or string → always false
+    if (Array.isArray(response.errors) && response.errors.length > 0) return false
+    if (response.error) return false
 
-    // 3DS complete: nested transaction_result with processor_response_code
+    // Non-zero error_code → API-level failure
+    if (typeof response.error_code === 'number' && response.error_code !== 0) return false
+    if (response.error_code && response.error_code !== 0) return false
+
+    // transaction_result is the authoritative source for whether the charge was approved.
+    // error_code: 0 only means the API call was accepted, NOT that the charge succeeded.
     if (response.transaction_result) {
-      if (response.transaction_result.processor_response_code && response.transaction_result.processor_response_code !== '000') {
-         return false
+      const txn = response.transaction_result
+      const processorCode = txn.processor_response_code
+      const approved = txn.approved
+      const txnStatus = typeof txn.status === 'string' ? txn.status.toLowerCase() : null
+
+      // Explicit decline flags
+      if (approved === false) {
+        console.log('[TRANZILA] transaction_result.approved=false → DECLINED')
+        return false
       }
+      if (txnStatus && ['declined', 'failed', 'error', 'rejected'].includes(txnStatus)) {
+        console.log(`[TRANZILA] transaction_result.status=${txn.status} → DECLINED`)
+        return false
+      }
+      if (processorCode && processorCode !== '000') {
+        console.log(`[TRANZILA] processor_response_code=${processorCode} → DECLINED`)
+        return false
+      }
+
+      // Require at least one positive success indicator from the processor
+      const hasPositiveConfirmation =
+        processorCode === '000' ||
+        approved === true ||
+        !!txn.auth_number ||
+        txnStatus === 'approved' ||
+        txnStatus === 'success'
+
+      if (!hasPositiveConfirmation) {
+        console.log('[TRANZILA] transaction_result present but no positive confirmation → DECLINED', JSON.stringify(txn))
+        return false
+      }
+
+      return true
     }
 
-    // Code Response legacy
+    // Legacy Response field (non-3DS responses)
     if (response.Response) {
-      if (response.Response === '000') return true
-      return false
+      return response.Response === '000'
     }
 
-    // Tableau errors[]
-    if (Array.isArray(response.errors) && response.errors.length > 0) {
-      return false
-    }
-    
-    // String errors
-    if (response.error) {
-       return false
-    }
-
-    // Champ status (insensible à la casse)
+    // Explicit status field
     if (typeof response.status === 'string') {
       const s = response.status.toLowerCase()
       if (s === 'success' || s === 'approved' || s === 'ok') return true
       if (s === 'failed' || s === 'error' || s === 'declined') return false
     }
 
-    // Champ success explicite
+    // Explicit success field
     if (response.success === true) return true
     if (response.success === false) return false
 
-    // Finally, if it has error_code: 0 and no transaction_result errors and hasn't returned yet:
+    // error_code: 0 with no transaction_result — require a confirmation code
     if (typeof response.error_code === 'number' && response.error_code === 0) {
-      return true
+      if (response.ConfirmationCode || response.transaction_id || response.index) return true
+      // error_code: 0 alone is not sufficient proof of payment
+      console.log('[TRANZILA] error_code=0 but no confirmation code and no transaction_result → ambiguous, treating as failure')
+      return false
     }
 
-    // Présence d'un code de confirmation = transaction approuvée
+    // Confirmation code present without other context
     if (response.ConfirmationCode || response.transaction_id || response.index) return true
 
     return false
