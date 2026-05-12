@@ -870,6 +870,16 @@ export function PaymentForm({
             console.log(`[PAY][${submitId}] STEP 9 — sdkSuccess=${sdkSuccess} | isBit=${isBitPayment} | had3DS=${had3DSChallengeRef.current}`)
             console.log(`[PAY][${submitId}] STEP 9 — tzResult:`, JSON.stringify(tzResult))
 
+            if (tzResult.processor_response_code !== '000') {
+              console.error(`[PAY][${submitId}] STEP 9 — processor_response_code: ${tzResult.processor_response_code}`)
+              setLoadingStep(null)
+              setPaymentError(parseTranzilaError(tzResult, isBitPayment))
+              setIsSubmitting(false)
+              isSubmittingRef.current = false
+              return
+
+              
+            }
             // ── Helper: redirect to success from session data ─────────────────
             const resolveSuccess = (sd: any) => {
               clearPoll(); clearListeners()

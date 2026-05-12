@@ -136,6 +136,18 @@ export const translations = {
       en: 'Phone is required',
       he: 'נדרש טלפון',
     },
+    phoneInvalidFormat: {
+      en: 'Invalid phone number for {country}. Expected format: {example}',
+      he: 'מספר טלפון לא תקין עבור {country}. פורמט נדרש: {example}',
+    },
+    phoneTooShort: {
+      en: 'Phone number is too short',
+      he: 'מספר הטלפון קצר מדי',
+    },
+    phoneTooLong: {
+      en: 'Phone number is too long',
+      he: 'מספר הטלפון ארוך מדי',
+    },
     // Countries
     israel: {
       en: 'Israel',

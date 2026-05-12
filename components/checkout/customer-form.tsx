@@ -9,6 +9,80 @@ interface CustomerFormProps {
   onSubmit: (data: CustomerInfo) => void
 }
 
+interface PhoneRule {
+  regex: RegExp
+  placeholder: string
+  example: string
+  minDigits: number
+  maxDigits: number
+}
+
+const PHONE_RULES: Record<string, PhoneRule> = {
+  'Israel': {
+    // 05X-XXXXXXX (mobile) or 0X-XXXXXXX (landline), optionally +972 prefix
+    regex: /^(\+?972|0)(5[0-9]|[2-4679])\d{7}$/,
+    placeholder: '050-0000000',
+    example: '050-0000000 or +972-50-0000000',
+    minDigits: 9,
+    maxDigits: 12,
+  },
+  'United States': {
+    // +1XXXXXXXXXX or 10-digit local
+    regex: /^(\+?1)?[2-9]\d{2}[2-9]\d{6}$/,
+    placeholder: '(555) 000-0000',
+    example: '(555) 000-0000 or +1 555 000-0000',
+    minDigits: 10,
+    maxDigits: 11,
+  },
+  'United Kingdom': {
+    // 07XXXXXXXXX (mobile) or +44XXXXXXXXXX
+    regex: /^(\+?44|0)[1-9]\d{9,10}$/,
+    placeholder: '07700 900000',
+    example: '07700 900000 or +44 7700 900000',
+    minDigits: 10,
+    maxDigits: 13,
+  },
+  'France': {
+    // 0X XX XX XX XX or +33XXXXXXXXX
+    regex: /^(\+?33|0)[1-9]\d{8}$/,
+    placeholder: '06 00 00 00 00',
+    example: '06 00 00 00 00 or +33 6 00 00 00 00',
+    minDigits: 9,
+    maxDigits: 12,
+  },
+  'Germany': {
+    // 0XXX XXXXXXXX or +49XXX XXXXXXXX, variable length
+    regex: /^(\+?49|0)[1-9]\d{8,11}$/,
+    placeholder: '0151 00000000',
+    example: '0151 00000000 or +49 151 00000000',
+    minDigits: 9,
+    maxDigits: 13,
+  },
+}
+
+function validatePhone(phone: string, country: string): string | null {
+  const cleanPhone = phone.replace(/[\s\-().]/g, '')
+  const rule = PHONE_RULES[country]
+
+  if (!rule) {
+    // Generic validation for unknown countries
+    const digits = cleanPhone.replace(/\D/g, '')
+    if (digits.length < 7) return 'Phone number is too short'
+    if (digits.length > 15) return 'Phone number is too long'
+    return null
+  }
+
+  const digits = cleanPhone.replace(/\D/g, '')
+  if (digits.length < rule.minDigits) return null // let regex give the specific error
+  if (digits.length > rule.maxDigits) return `Phone number is too long (max ${rule.maxDigits} digits for ${country})`
+
+  if (!rule.regex.test(cleanPhone)) {
+    return `Invalid phone number for ${country}. Expected format: ${rule.example}`
+  }
+
+  return null
+}
+
 export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
   const [formData, setFormData] = useState<CustomerInfo>(initialData)
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
@@ -58,12 +132,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     if (!formData.phone) {
       newErrors.phone = t('customerForm.phoneRequired')
     } else {
-      const cleanPhone = formData.phone.replace(/\D/g, '')
-      if (cleanPhone.length < 9) {
-        newErrors.phone = 'Phone number must be at least 9 digits'
-      } else if (cleanPhone.length > 15) {
-        newErrors.phone = 'Phone number is too long'
-      }
+      const phoneError = validatePhone(formData.phone, formData.country)
+      if (phoneError) newErrors.phone = phoneError
     }
 
     setErrors(newErrors)
@@ -233,7 +303,7 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               name="phone"
               value={formData.phone}
               onChange={handleChange}
-              placeholder={t('customerForm.phone')}
+              placeholder={PHONE_RULES[formData.country]?.placeholder ?? t('customerForm.phone')}
               className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
                 errors.phone ? 'border-destructive' : 'border-input'
               }`}
