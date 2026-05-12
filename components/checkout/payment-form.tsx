@@ -909,8 +909,8 @@ export function PaymentForm({
               // reset the session in tranzila and in supabase
               resetSession(sessionId)
               // wait for session to reset and then reload the page
-              await new Promise(r => setTimeout(r, 1000))
-              window.location.reload()
+              // await new Promise(r => setTimeout(r, 1000))
+              // window.location.reload()
 
               
             }
