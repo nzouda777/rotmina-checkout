@@ -1470,7 +1470,7 @@ export function PaymentForm({
             className={`w-full sm:flex-1 py-4 px-6 rounded-lg font-semibold text-base transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
               paymentMethod === 'bit'
                 ? 'bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] text-white hover:opacity-90 focus:ring-[#2b5686]'
-                : 'bg-[#7c7a7a45] text-black hover:opacity-90 focus:ring-ring'
+                : 'bg-[#7c7a7a45] text-gray-700 hover:opacity-90 focus:ring-ring'
             }`}
           >
             {isSubmitting
