@@ -38,24 +38,26 @@ function getTranslation(key: string, lang: Language): string {
   return key
 }
 
+function resolveInitialLang(): Language {
+  if (typeof window === 'undefined') return 'he'
+  const urlParam = new URLSearchParams(window.location.search).get('language')
+  if (urlParam === 'en' || urlParam === 'he') {
+    try { localStorage.setItem('rotmina-lang', urlParam) } catch {}
+    return urlParam
+  }
+  try {
+    const saved = localStorage.getItem('rotmina-lang')
+    if (saved === 'en' || saved === 'he') return saved
+  } catch {}
+  return 'he'
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  // Default to Hebrew for Israeli audience
-  const [lang, setLangState] = useState<Language>('he')
+  const [lang, setLangState] = useState<Language>(resolveInitialLang)
 
   const setLang = useCallback((newLang: Language) => {
     setLangState(newLang)
-    // Persist preference
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('rotmina-lang', newLang)
-    }
-  }, [])
-
-  // Load saved preference on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('rotmina-lang') as Language | null
-    if (saved && (saved === 'en' || saved === 'he')) {
-      setLangState(saved)
-    }
+    try { localStorage.setItem('rotmina-lang', newLang) } catch {}
   }, [])
 
   // Update <html> dir and lang attributes when language changes
