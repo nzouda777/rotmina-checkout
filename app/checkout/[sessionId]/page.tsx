@@ -28,7 +28,7 @@ export default function CheckoutPage() {
   const params = useParams()
   const router = useRouter()
   const sessionId = params?.sessionId as string
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
   
   console.log('Session ID from useParams:', sessionId);
 
@@ -142,6 +142,18 @@ export default function CheckoutPage() {
 
   const giftCardAmount = appliedGiftCard?.appliedAmount || 0
 
+  const shippingFeeAmount = lang === 'en' && session
+    ? Math.round(session.cart.total * 0.20 * 100) / 100
+    : 0
+
+  const adjustedCartData = shippingFeeAmount > 0
+    ? {
+        ...session.cart,
+        shipping: session.cart.shipping + shippingFeeAmount,
+        total: session.cart.total + shippingFeeAmount,
+      }
+    : session.cart
+
   return (
     <div className="min-h-screen bg-background">
       <CheckoutHeader shopName={session.shop} />
@@ -186,7 +198,7 @@ export default function CheckoutPage() {
                   appliedGiftCard={appliedGiftCard}
                   orderTotal={session.cart.total}
                 />
-
+ 
                 {/* Divider */}
                 <div className="border-t border-border" />
 
@@ -194,7 +206,7 @@ export default function CheckoutPage() {
                 <PaymentForm
                   sessionId={sessionId}
                   customerInfo={customerInfo}
-                  total={session.cart.total}
+                  total={adjustedCartData.total}
                   currency={session.cart.currency}
                   shopDomain={session.shop}
                   onBack={() => setStep('information')}
@@ -204,6 +216,7 @@ export default function CheckoutPage() {
                   giftCardId={appliedGiftCard?.id}
                   giftCardCode={appliedGiftCard?.code}
                   giftCardAmount={giftCardAmount}
+                  shippingFeeAmount={shippingFeeAmount}
                 />
               </div>
             )}
@@ -221,7 +234,7 @@ export default function CheckoutPage() {
           <div className="w-full lg:w-[400px] order-1 lg:order-2">
             <div className="lg:sticky lg:top-8">
               <OrderSummary
-                cartData={session.cart}
+                cartData={adjustedCartData}
                 giftCardAmount={giftCardAmount}
                 giftCardCode={appliedGiftCard?.code}
               />

@@ -157,6 +157,7 @@ export async function POST(request: NextRequest) {
       giftCardId,
       giftCardCode,
       giftCardAmount = 0,
+      shippingFeeAmount = 0,
     } = body
 
     console.log(`[CHARGE][${logId}] Session: ${sessionId} | Method: ${paymentMethod}`)
@@ -211,7 +212,7 @@ export async function POST(request: NextRequest) {
       console.log(`[CHARGE][${logId}] Customer saved via fallback (status not changed to processing)`)
     }
 
-    const orderTotal = Number(session.cart.total)
+    const orderTotal = Number(session.cart.total) + (Number(shippingFeeAmount) || 0)
     const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, orderTotal)
     const rawChargeAmount = Math.max(orderTotal - validGiftCardAmount, 0)
     const chargeAmount = Math.round(rawChargeAmount * 100) / 100

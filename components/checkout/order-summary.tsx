@@ -13,7 +13,7 @@ interface OrderSummaryProps {
 
 export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: OrderSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true)
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
 
   const finalTotal = Math.max(cartData.total - giftCardAmount, 0)
 
@@ -52,6 +52,12 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
         <h2 className="hidden lg:block text-lg font-semibold text-foreground mb-4">
           {t('orderSummary.title')}
         </h2>
+
+        {lang === 'en' && (
+          <div className="mb-4 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs leading-snug dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-300">
+            {t('orderSummary.shippingNotice')}
+          </div>
+        )}
 
         <div className="space-y-4">
           {cartData.items.map((item) => (

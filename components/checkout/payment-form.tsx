@@ -29,6 +29,7 @@ interface PaymentFormProps {
   giftCardId?: string
   giftCardCode?: string
   giftCardAmount?: number
+  shippingFeeAmount?: number
 }
 
 function getMaxInstallments(amount: number, currency: string): number {
@@ -73,6 +74,7 @@ export function PaymentForm({
   giftCardId,
   giftCardCode,
   giftCardAmount = 0,
+  shippingFeeAmount = 0,
 }: PaymentFormProps) {
   const [errors, setErrors]               = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting]   = useState(false)
@@ -723,9 +725,10 @@ export function PaymentForm({
           customerInfo,
           installments:   paymentMethod === 'card' ? installments : 1,
           paymentMethod,
-          giftCardId:     giftCardId   || undefined,
-          giftCardCode:   giftCardCode || undefined,
-          giftCardAmount: giftCardAmount || undefined,
+          giftCardId:        giftCardId   || undefined,
+          giftCardCode:      giftCardCode || undefined,
+          giftCardAmount:    giftCardAmount || undefined,
+          shippingFeeAmount: shippingFeeAmount || undefined,
         }),
       })
 

@@ -209,6 +209,10 @@ export const translations = {
       en: 'Total',
       he: 'סה"כ',
     },
+    shippingNotice: {
+      en: '🚚 Please note: a 20% shipping fee will be added to your order total.',
+      he: 'שים לב: 20% דמי משלוח יתווספו לסכום ההזמנה שלך.',
+    },
   },
 
   // ─── Gift Card Form ──────────────────────────────────
