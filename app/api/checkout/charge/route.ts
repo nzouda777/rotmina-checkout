@@ -4,6 +4,7 @@ import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail } from '@/lib/email'
+import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -131,6 +132,25 @@ async function createOrderAndNotify(params: {
     })
   } catch (emailErr) {
     console.error(`[CHARGE][${logId}] Failed to send order confirmation email:`, emailErr)
+  }
+
+  // Send Morning Receipt (non-blocking)
+  try {
+    console.log(`[CHARGE][${logId}] Sending Morning receipt...`)
+    await sendMorningReceipt({
+      customerEmail: customerInfo.email,
+      customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
+      amount: Number(session.cart.total),
+      currency: session.cart.currency,
+      paymentMethod: detectPaymentMethod(session.raw_response),
+      items: session.cart.items.map((item: any) => ({
+        description: item.title,
+        quantity: item.quantity,
+        price: Number(item.price),
+      })),
+    })
+  } catch (morningErr) {
+    console.error(`[CHARGE][${logId}] Failed to send Morning receipt:`, morningErr)
   }
 
   return { shopifyOrderId, shopifyOrderUrl }

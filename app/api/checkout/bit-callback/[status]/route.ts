@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail } from '@/lib/email'
+import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 export async function GET(
@@ -248,6 +249,22 @@ async function processSuccess(
           orderStatusUrl: shopifyOrderUrl || undefined,
         }).catch((emailErr: any) =>
           console.error(`[BIT-CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
+        )
+
+        // 4. Send Morning Receipt (non-blocking)
+        sendMorningReceipt({
+          customerEmail: customer.email,
+          customerName: `${customer.firstName} ${customer.lastName}`,
+          amount: Number(session.cart?.total || 0),
+          currency: session.cart?.currency,
+          paymentMethod: detectPaymentMethod(session.raw_response),
+          items: (session.cart?.items || []).map((item: any) => ({
+            description: item.title,
+            quantity: item.quantity,
+            price: Number(item.price),
+          })),
+        }).catch((morningErr: any) =>
+          console.error(`[BIT-CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
         )
       } catch (orderErr: any) {
         console.error(`[BIT-CALLBACK][${logId}] ❌ Shopify order creation failed:`, orderErr.message)

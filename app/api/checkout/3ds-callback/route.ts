@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // Tranzila peut appeler en GET ou POST selon la config
@@ -178,6 +179,28 @@ async function handleCallback(request: NextRequest) {
         } catch (err) {
           console.error('[3DS-CALLBACK] Shopify order failed:', err)
         }
+      }
+
+      // ── Send Morning Receipt ───────────────────────────────
+      try {
+        const customerInfo = session.customer as CustomerInfo
+        if (customerInfo) {
+          console.log(`[3DS-CALLBACK][${actualSessionId}] Sending Morning receipt...`)
+          await sendMorningReceipt({
+            customerEmail: customerInfo.email,
+            customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
+            amount: Number(session.cart.total),
+            currency: session.cart.currency,
+            paymentMethod: detectPaymentMethod(session.raw_response),
+            items: session.cart.items.map((item: any) => ({
+              description: item.title,
+              quantity: item.quantity,
+              price: Number(item.price),
+            })),
+          })
+        }
+      } catch (morningErr) {
+        console.error(`[3DS-CALLBACK][${actualSessionId}] Failed to send Morning receipt:`, morningErr)
       }
 
       await supabase

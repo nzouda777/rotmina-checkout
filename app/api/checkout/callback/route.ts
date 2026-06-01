@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { sendOrderConfirmationEmail } from '@/lib/email'
+import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
 const TRANZILA_RESPONSE_CODES: Record<string, string> = {
@@ -164,6 +165,22 @@ export async function POST(request: NextRequest) {
             orderStatusUrl: shopifyOrderUrl ?? undefined,
           }).catch((emailErr: any) =>
             console.error(`[CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
+          )
+
+          // Send Morning Receipt (non-blocking)
+          sendMorningReceipt({
+            customerEmail: customer.email,
+            customerName: `${customer.firstName} ${customer.lastName}`,
+            amount: Number(session.cart?.total || 0),
+            currency: session.cart?.currency,
+            paymentMethod: detectPaymentMethod(session.raw_response),
+            items: (session.cart?.items || []).map((item: any) => ({
+              description: item.title,
+              quantity: item.quantity,
+              price: Number(item.price),
+            })),
+          }).catch((morningErr: any) =>
+            console.error(`[CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
           )
         } catch (err: any) {
           console.error(`[CALLBACK][${logId}] ❌ Shopify order creation failed:`, err?.message || err)
