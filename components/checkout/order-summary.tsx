@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { CartData } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
+import { getProductTitle, translateVariant } from '@/lib/translations'
 
 interface OrderSummaryProps {
   cartData: CartData
@@ -84,11 +85,11 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
-                  {item.title}
+                  {getProductTitle(item.handle, item.title, lang, item.url)}
                 </p>
                 {item.variant && (
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {item.variant}
+                    {translateVariant(item.variant, lang)}
                   </p>
                 )}
               </div>

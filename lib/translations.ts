@@ -1,5 +1,92 @@
 export type Language = 'en' | 'he'
 
+// ─── Product title translations (keyed by Shopify handle) ────────────────────
+export const productTitles: Record<string, { en: string; he: string }> = {
+  'personal-stylist':    { en: 'Personal Stylist',       he: 'סטייליסט אישי' },
+  'גקט-חייטים-מעולה':   { en: 'Premium Tailored Jacket', he: "ג'קט חייטים מעולה" },
+  'ווסט-חייטים-מהודק':  { en: 'Fitted Tailored Vest',   he: 'ווסט חייטים מהודק' },
+  'מכנס-חייטים-סיגר':   { en: 'Tailored Slim Pants',    he: 'מכנס חייטים סיגר' },
+  'מכנס-מוקפד':         { en: 'Refined Pants',           he: 'מכנס מוקפד' },
+  'חולצה-מורדת':        { en: 'Rebel Blouse',            he: 'חולצה מורדת' },
+  'חולצה-נוכחת':        { en: 'Present Blouse',          he: 'חולצה נוכחת' },
+  'חולצת-טופ-שיק':      { en: 'Top Chic Blouse',         he: 'חולצת טופ שיק' },
+  'gift-card':           { en: 'Gift Card',               he: 'כרטיס מתנה' },
+}
+
+// Normalize a string for comparison: lowercase + collapse whitespace
+function normalizeStr(s: string): string {
+  return s.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+// Reverse lookup: normalized English title → translation entry (built once at module load)
+const productTitlesByEnglish: Record<string, { en: string; he: string }> = {}
+for (const entry of Object.values(productTitles)) {
+  productTitlesByEnglish[normalizeStr(entry.en)] = entry
+}
+
+// ─── Variant color translations ───────────────────────────────────────────────
+const variantColors: Record<string, { en: string; he: string }> = {
+  gray:   { en: 'Gray',  he: 'אפור' },
+  grey:   { en: 'Grey',  he: 'אפור' },
+  brown:  { en: 'Brown', he: 'חום' },
+  black:  { en: 'Black', he: 'שחור' },
+  white:  { en: 'White', he: 'לבן' },
+  blue:   { en: 'Blue',  he: 'כחול' },
+}
+
+/**
+ * Returns the translated product title. Lookup order:
+ * 1. Direct handle match
+ * 2. Handle extracted from Shopify product URL (/products/<handle>?...)
+ * 3. Normalized English title match (trim + collapse whitespace, case-insensitive)
+ * 4. Original title unchanged
+ */
+export function getProductTitle(
+  handle: string | undefined,
+  fallback: string,
+  lang: Language,
+  url?: string,
+): string {
+  // 1. handle passed directly
+  if (handle) {
+    const byHandle = productTitles[handle]
+    if (byHandle) return byHandle[lang]
+  }
+
+  // 2. extract handle from Shopify product URL
+  if (url) {
+    const match = url.match(/\/products\/([^?#/]+)/)
+    if (match) {
+      const urlHandle = decodeURIComponent(match[1])
+      const byUrlHandle = productTitles[urlHandle]
+      if (byUrlHandle) return byUrlHandle[lang]
+    }
+  }
+
+  // 3. match by normalized English title — strip variant suffix (e.g. "... - Gray / XS")
+  const baseName = fallback.includes(' - ') ? fallback.split(' - ')[0] : fallback
+  const byTitle = productTitlesByEnglish[normalizeStr(baseName)]
+  return byTitle ? byTitle[lang] : baseName
+}
+
+/**
+ * Translates a Shopify variant string (e.g. "gray / XS") per language.
+ * Color words are translated; size tokens (XS, S, M, L, XL, numbers) stay as-is.
+ */
+export function translateVariant(
+  variant: string | undefined,
+  lang: Language
+): string | undefined {
+  if (!variant || lang === 'en') return variant
+  return variant
+    .split(' / ')
+    .map((part) => {
+      const lower = part.trim().toLowerCase()
+      return variantColors[lower] ? variantColors[lower][lang] : part.trim()
+    })
+    .join(' / ')
+}
+
 export const translations = {
   // ─── Header ──────────────────────────────────────────
   header: {

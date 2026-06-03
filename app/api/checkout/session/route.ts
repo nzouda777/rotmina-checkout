@@ -73,6 +73,8 @@ export async function POST(request: NextRequest) {
           id: String(item.id),
           variant_id: item.variant_id,
           product_id: item.product_id,
+          handle: item.handle,
+          url: item.url,
           title: item.title,
           quantity: item.quantity,
           price: Math.round((item.price / 100) * rate * 100) / 100,

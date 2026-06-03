@@ -19,7 +19,7 @@ async function runTest() {
   
   // Dummy data representing a Tranzila transaction using the test card
   const mockCustomer = {
-    email: 'rodriguenzouda35@gmail.com',
+    email: 'Liorger535@gmail.com',
     firstName: 'Test',
     lastName: 'Card',
   }

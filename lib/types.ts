@@ -9,6 +9,7 @@ export interface CartItem {
   variant_id?: string | number
   product_id?: string | number
   handle?: string
+  url?: string
   properties?: Record<string, string>
 }
 

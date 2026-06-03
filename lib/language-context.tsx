@@ -60,6 +60,15 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem('rotmina-lang', newLang) } catch {}
   }, [])
 
+  // Re-read the URL param on mount (resolveInitialLang may have run server-side
+  // where window is undefined, so the ?language= param gets ignored on SSR).
+  useEffect(() => {
+    const urlParam = new URLSearchParams(window.location.search).get('language')
+    if (urlParam === 'en' || urlParam === 'he') {
+      setLang(urlParam)
+    }
+  }, [])
+
   // Update <html> dir and lang attributes when language changes
   useEffect(() => {
     const html = document.documentElement
