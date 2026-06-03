@@ -70,13 +70,13 @@ async function runTest() {
     amount: amount,
     client: {
       name: 'Test Card User',
-      emails: ['Liorger535@gmail.com'], // Updated to requested email
+      emails: ['rodriguenzouda35@gmail.com'], // Updated to requested email
       add: true,
     },
     email: {
       to: [
         {
-          email: 'Liorger535@gmail.com',
+          email: 'rodriguenzouda35@gmail.com',
         }
       ],
       lang: 'he'

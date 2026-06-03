@@ -1546,9 +1546,16 @@ export function PaymentForm({
 
       {/* ── 3DS SDK challenge overlay — SDK handles its own UI, we show a waiting screen ── */}
       {show3DS && !threeDSUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => close3DS('User Cancel')}>
+          <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+            <button
+              onClick={() => close3DS('User Cancel')}
+              className="absolute top-3 right-3 h-7 w-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors text-xs font-bold"
+              aria-label="Close"
+            >
+              ✕
+            </button>
             <div className="px-8 py-10 text-center space-y-6">
               {/* Shield icon */}
               <div className="mx-auto h-16 w-16 rounded-full bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
@@ -1578,8 +1585,8 @@ export function PaymentForm({
 
       {/* ── Iframe fallback — popup was blocked, 3DS/Bit shown inline ── */}
       {show3DS && threeDSUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => close3DS('User Cancel')}>
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <div className="flex items-center gap-2.5">
@@ -1627,7 +1634,7 @@ export function PaymentForm({
               </div>
               <div className="space-y-2">
                 <h3 className="text-lg font-bold text-foreground">{t('paymentForm.paymentDeclined')}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{paymentError}</p>
+                {/* <p className="text-sm text-muted-foreground leading-relaxed">{paymentError}</p> */}
               </div>
               <div className="pt-2 space-y-3">
                 <button
@@ -1642,7 +1649,7 @@ export function PaymentForm({
                 >
                   {t('paymentForm.returnToStore')}
                 </a>
-                <p className="text-xs text-muted-foreground">{paymentError ? getErrorHint(paymentError) : t('paymentForm.verifyCardBalance')}</p>
+                <p className="text-xs text-muted-foreground"> t('paymentForm.verifyCardBalance')</p>
               </div>
             </div>
           </div>

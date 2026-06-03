@@ -518,7 +518,7 @@ export const translations = {
     },
     verifyCardBalance: {
       en: 'Please verify your card balance or try a different payment method.',
-      he: 'נא לבדוק את יתרת הכרטיס או לנסות אמצעי תשלום אחר.',
+      he:  'יש לוודא את אמצעי התשלום או לנסות באמצעי תשלום אחר.',
     },
     returnToStore: {
       en: 'Return to store',
