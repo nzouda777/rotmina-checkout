@@ -1649,7 +1649,7 @@ export function PaymentForm({
                 >
                   {t('paymentForm.returnToStore')}
                 </a>
-                <p className="text-xs text-muted-foreground"> t('paymentForm.verifyCardBalance')</p>
+                <p className="text-xs text-muted-foreground"> {t('paymentForm.verifyCardBalance')}</p>
               </div>
             </div>
           </div>
