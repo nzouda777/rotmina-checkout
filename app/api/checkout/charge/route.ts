@@ -23,6 +23,8 @@ function getIsoCountryCode(country: string): string {
     'Canada': 'CA',
     'Australia': 'AU',
     'Germany': 'DE',
+    'Switzerland': 'CH',
+    'Europe': 'EU',
   }
   return mapping[country] || country
 }

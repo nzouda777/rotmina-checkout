@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { CustomerInfo } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
 
@@ -86,7 +86,20 @@ function validatePhone(phone: string, country: string): string | null {
 export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
   const [formData, setFormData] = useState<CustomerInfo>(initialData)
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
-  const { t } = useLanguage()
+  const { t, lang } = useLanguage()
+
+  useEffect(() => {
+    if (lang === 'he') {
+      if (formData.country !== 'Israel') {
+        setFormData((prev) => ({ ...prev, country: 'Israel' }))
+      }
+    } else {
+      const englishCountries = ['United States', 'Canada', 'Europe', 'United Kingdom', 'Australia', 'Switzerland']
+      if (!englishCountries.includes(formData.country)) {
+        setFormData((prev) => ({ ...prev, country: 'United States' }))
+      }
+    }
+  }, [lang])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -186,12 +199,18 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 errors.country ? 'border-destructive' : 'border-input'
               }`}
             >
-              {/* <option value="">{t('customerForm.selectCountry')}</option> */}
-              <option value="Israel">{t('customerForm.israel')}</option>
-              <option value="United States">{t('customerForm.unitedStates')}</option>
-              <option value="United Kingdom">{t('customerForm.unitedKingdom')}</option>
-              <option value="France">{t('customerForm.france')}</option>
-              <option value="Germany">{t('customerForm.germany')}</option>
+              {lang === 'he' ? (
+                <option value="Israel">{t('customerForm.israel')}</option>
+              ) : (
+                <>
+                  <option value="United States">{t('customerForm.unitedStates')}</option>
+                  <option value="Canada">{t('customerForm.canada')}</option>
+                  <option value="Europe">{t('customerForm.europe')}</option>
+                  <option value="United Kingdom">{t('customerForm.unitedKingdom')}</option>
+                  <option value="Australia">{t('customerForm.australia')}</option>
+                  <option value="Switzerland">{t('customerForm.switzerland')}</option>
+                </>
+              )}
             </select>
             <div className="pointer-events-none absolute inset-y-0 end-4 flex items-center text-muted-foreground">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -279,6 +298,7 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
             <div>
               <label htmlFor="postalCode" className="sr-only">{t('customerForm.postalCode')}</label>
               <input
+              required
                 type="text"
                 id="postalCode"
                 name="postalCode"

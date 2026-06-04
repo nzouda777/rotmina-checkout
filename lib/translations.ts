@@ -244,9 +244,25 @@ export const translations = {
       en: 'United States',
       he: 'ארצות הברית',
     },
+    canada: {
+      en: 'Canada',
+      he: 'קנדה',
+    },
+    europe: {
+      en: 'Europe',
+      he: 'אירופה',
+    },
     unitedKingdom: {
       en: 'United Kingdom',
       he: 'בריטניה',
+    },
+    australia: {
+      en: 'Australia',
+      he: 'אוסטרליה',
+    },
+    switzerland: {
+      en: 'Switzerland',
+      he: 'שווייץ',
     },
     france: {
       en: 'France',
