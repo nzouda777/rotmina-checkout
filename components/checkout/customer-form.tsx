@@ -83,8 +83,36 @@ function validatePhone(phone: string, country: string): string | null {
   return null
 }
 
+function validateIsraeliId(id: string): boolean {
+  const cleanId = id.trim().replace(/\D/g, '')
+  if (!/^\d{1,9}$/.test(cleanId)) return false
+  const padded = cleanId.padStart(9, '0')
+  
+  let sum = 0
+  for (let i = 0; i < 9; i++) {
+    let digit = parseInt(padded[i], 10)
+    let step = digit * ((i % 2) + 1)
+    if (step > 9) {
+      step = (step % 10) + Math.floor(step / 10)
+    }
+    sum += step
+  }
+  return sum % 10 === 0
+}
+
 export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
-  const [formData, setFormData] = useState<CustomerInfo>(initialData)
+  const [formData, setFormData] = useState<CustomerInfo>(() => ({
+    email: '',
+    firstName: '',
+    lastName: '',
+    address: '',
+    city: '',
+    postalCode: '',
+    country: '',
+    phone: '',
+    nationalId: '',
+    ...initialData,
+  }))
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
   const { t, lang } = useLanguage()
 
@@ -147,6 +175,15 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     } else {
       const phoneError = validatePhone(formData.phone, formData.country)
       if (phoneError) newErrors.phone = phoneError
+    }
+
+    // National ID validation (required for Hebrew version)
+    if (lang === 'he') {
+      if (!formData.nationalId) {
+        newErrors.nationalId = t('customerForm.idRequired')
+      } else if (!validateIsraeliId(formData.nationalId)) {
+        newErrors.nationalId = t('customerForm.invalidId')
+      }
     }
 
     setErrors(newErrors)
@@ -332,6 +369,26 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               <p className="mt-1 text-sm text-destructive">{errors.phone}</p>
             )}
           </div>
+
+          {lang === 'he' && (
+            <div>
+              <label htmlFor="nationalId" className="sr-only">{t('customerForm.nationalId')}</label>
+              <input
+                type="text"
+                id="nationalId"
+                name="nationalId"
+                value={formData.nationalId || ''}
+                onChange={handleChange}
+                placeholder={t('customerForm.nationalId')}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
+                  errors.nationalId ? 'border-destructive' : 'border-input'
+                }`}
+              />
+              {errors.nationalId && (
+                <p className="mt-1 text-sm text-destructive">{errors.nationalId}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

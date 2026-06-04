@@ -22,6 +22,7 @@ export interface CustomerInfo {
   postalCode: string
   country: string
   phone: string
+  nationalId?: string
 }
 
 export interface CartData {

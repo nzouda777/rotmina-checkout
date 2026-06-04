@@ -829,6 +829,10 @@ export function PaymentForm({
             payment_plan: installments > 1 ? installments : 1,
             tranmode:  'A',
           }
+          if (customerInfo.nationalId) {
+            tzParams.my_id = customerInfo.nationalId
+            tzParams.myid = customerInfo.nationalId
+          }
           if (result.thtk) tzParams.thtk = result.thtk
           if (installments > 1) {
             tzParams.npay = String(installments)

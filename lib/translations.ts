@@ -223,6 +223,18 @@ export const translations = {
       en: 'Phone is required',
       he: 'נדרש טלפון',
     },
+    idRequired: {
+      en: 'ID number is required',
+      he: 'נדרש ת.ז.',
+    },
+    invalidId: {
+      en: 'Invalid ID number',
+      he: 'ת.ז. לא תקין',
+    },
+    nationalId: {
+      en: 'ID',
+      he: 'ת.ז.',
+    },
     phoneInvalidFormat: {
       en: 'Invalid phone number for {country}. Expected format: {example}',
       he: 'מספר טלפון לא תקין עבור {country}. פורמט נדרש: {example}',

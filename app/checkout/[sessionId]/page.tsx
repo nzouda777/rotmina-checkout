@@ -45,6 +45,7 @@ export default function CheckoutPage() {
     postalCode: '',
     country: 'Israel',
     phone: '',
+    nationalId: '',
   })
 
   // Gift card state

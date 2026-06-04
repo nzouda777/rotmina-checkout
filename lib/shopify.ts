@@ -60,6 +60,9 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
   if (giftCard && giftCard.appliedAmount > 0) {
     note += ` | Gift Card ${giftCard.code}: -${giftCard.appliedAmount} ${session.cart.currency}`
   }
+  if (customer.nationalId) {
+    note += ` | ID: ${customer.nationalId}`
+  }
 
   // Build line items with safe variant_id parsing
   const lineItems = session.cart.items.map((item) => {
