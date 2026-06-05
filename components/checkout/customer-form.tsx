@@ -217,9 +217,11 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
         <h2 className="text-lg font-semibold text-foreground mb-4">{t('customerForm.shippingAddress')}</h2>
         <div className="space-y-3">
           <div className="relative">
-            <label htmlFor="country" className="sr-only">{t('customerForm.countryRegion')}</label>
+            
 
             {lang === 'he' ? (
+              <>
+                  <label htmlFor="country" className="sr-only">ישראל</label>
               <input
                 type="text"
                 id="country"
@@ -231,8 +233,10 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.country ? 'border-destructive' : 'border-input'
                   }`}
               />
+              </>
             ) : (
               <>
+              <label htmlFor="country" className="sr-only">{t('customerForm.countryRegion')}</label>
                 <select
                   id="country"
                   name="country"
