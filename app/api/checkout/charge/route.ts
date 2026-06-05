@@ -180,13 +180,20 @@ export async function POST(request: NextRequest) {
       giftCardCode,
       giftCardAmount = 0,
       shippingFeeAmount = 0,
+      israeliId,
     } = body
 
     console.log(`[CHARGE][${logId}] Session: ${sessionId} | Method: ${paymentMethod}`)
     console.log(`[CHARGE][${logId}] Gift card: Code=${giftCardCode || 'none'}, Amount=${giftCardAmount}`)
+    console.log(`[CHARGE][${logId}] Israeli ID: ${israeliId || 'none'}`)
 
     if (!sessionId || !customerInfo) {
       return NextResponse.json({ error: 'Missing required payment information' }, { status: 400 })
+    }
+
+    // Add Israeli ID to customerInfo if provided
+    if (israeliId) {
+      customerInfo.nationalId = israeliId
     }
 
     const supabase = await createClient()

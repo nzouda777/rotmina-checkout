@@ -179,7 +179,7 @@ export const translations = {
       he: 'עיר',
     },
     postalCode: {
-      en: 'Postal code (optional)',
+      en: 'Postal code ',
       he: 'מיקוד',
     },
     phone: {
@@ -414,7 +414,7 @@ export const translations = {
     },
     expiryDate: {
       en: 'Expiration date (MM/YY)',
-      he: '(MM/YY) תאריך תפוגה',
+      he: 'תוקף',
     },
     expiryPlaceholder: {
       en: 'MM / YY',

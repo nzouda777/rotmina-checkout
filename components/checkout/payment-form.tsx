@@ -87,6 +87,7 @@ export function PaymentForm({
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms]         = useState(false)
   const [loadingStep, setLoadingStep]     = useState<'connecting' | 'completing' | null>(null)
+  const [israeliId, setIsraeliId]         = useState('')
   const { t, lang } = useLanguage()
 
   // ── Refs that survive re-renders without triggering them ──────────────────
@@ -729,6 +730,7 @@ export function PaymentForm({
           giftCardCode:      giftCardCode || undefined,
           giftCardAmount:    giftCardAmount || undefined,
           shippingFeeAmount: shippingFeeAmount || undefined,
+          israeliId:         israeliId || undefined,
         }),
       })
 
@@ -1323,16 +1325,33 @@ export function PaymentForm({
 
                 <div className="p-4 space-y-4 bg-background">
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">
-                        {t('paymentForm.cardNumber') || 'Card Number'}
-                      </label>
-                      {/* No padding here — Tranzila's styles.input.padding handles it */}
-                      <div
-                        id="credit_card_number"
-                        className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
-                        style={{ minHeight: '44px' }}
-                      />
+                    <div className={lang === 'he' ? 'grid grid-cols-2 gap-4' : ''}>
+                      <div className={lang === 'he' ? '' : ''}>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('paymentForm.cardNumber') || 'Card Number'}
+                        </label>
+                        {/* No padding here — Tranzila's styles.input.padding handles it */}
+                        <div
+                          id="credit_card_number"
+                          className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
+                          style={{ minHeight: '44px' }}
+                        />
+                      </div>
+                      {lang === 'he' && (
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">
+                            ת.ז.
+                          </label>
+                          <input
+                            type="text"
+                            value={israeliId}
+                            onChange={(e) => setIsraeliId(e.target.value)}
+                            placeholder="ת.ז."
+                            className="h-11 px-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow w-full"
+                            maxLength={9}
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>

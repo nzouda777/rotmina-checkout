@@ -102,14 +102,6 @@ function validateIsraeliId(id: string): boolean {
 
 export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
   const [formData, setFormData] = useState<CustomerInfo>(() => ({
-    email: '',
-    firstName: '',
-    lastName: '',
-    address: '',
-    city: '',
-    postalCode: '',
-    country: '',
-    phone: '',
     nationalId: '',
     ...initialData,
   }))
@@ -227,6 +219,21 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
         <div className="space-y-3">
           <div className="relative">
             <label htmlFor="country" className="sr-only">{t('customerForm.countryRegion')}</label>
+
+              {lang === 'he' ? (
+                <input
+                  type="text"
+                  id="country"
+                  disabled
+                  name="country"
+                  value={formData.country}
+                  onChange={handleChange}
+                  placeholder={t('customerForm.countryRegion')}
+                  className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
+                    errors.country ? 'border-destructive' : 'border-input'
+                  }`}
+                />
+                 ) : (
             <select
               id="country"
               name="country"
@@ -236,9 +243,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 errors.country ? 'border-destructive' : 'border-input'
               }`}
             >
-              {lang === 'he' ? (
                 <option value="Israel">{t('customerForm.israel')}</option>
-              ) : (
+             
                 <>
                   <option value="United States">{t('customerForm.unitedStates')}</option>
                   <option value="Canada">{t('customerForm.canada')}</option>
@@ -247,8 +253,9 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                   <option value="Australia">{t('customerForm.australia')}</option>
                   <option value="Switzerland">{t('customerForm.switzerland')}</option>
                 </>
-              )}
             </select>
+
+              )}
             <div className="pointer-events-none absolute inset-y-0 end-4 flex items-center text-muted-foreground">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

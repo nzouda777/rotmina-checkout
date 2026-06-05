@@ -165,17 +165,31 @@ export default function CheckoutPage() {
           <div className="flex-1 order-2 lg:order-1">
             {/* Breadcrumb */}
             <nav className="flex items-center justify-end rtl:flex-row-reverse gap-2 text-sm mb-8">
-              <span className={step === 'payment' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                {t('checkout.payment')}
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground rotate-180" />
-              <span className={step === 'information' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-                {t('checkout.information')}
-              </span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground rotate-180" />
-              
-              <span className="text-muted-foreground">{t('checkout.cart')}</span>
-              
+              {lang === 'he' ? (
+                <>
+                  <span className={step === 'payment' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                    {t('checkout.payment')}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground rotate-180" />
+                  <span className={step === 'information' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                    {t('checkout.information')}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground rotate-180" />
+                  <span className="text-muted-foreground">{t('checkout.cart')}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">{t('checkout.cart')}</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <span className={step === 'information' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                    {t('checkout.information')}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  <span className={step === 'payment' ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+                    {t('checkout.payment')}
+                  </span>
+                </>
+              )}
             </nav>
 
             {error && (
