@@ -87,7 +87,7 @@ function validateIsraeliId(id: string): boolean {
   const cleanId = id.trim().replace(/\D/g, '')
   if (!/^\d{1,9}$/.test(cleanId)) return false
   const padded = cleanId.padStart(9, '0')
-  
+
   let sum = 0
   for (let i = 0; i < 9; i++) {
     let digit = parseInt(padded[i], 10)
@@ -144,12 +144,12 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     if (!formData.lastName) newErrors.lastName = t('customerForm.lastNameRequired')
     if (!formData.address) newErrors.address = t('customerForm.addressRequired')
     if (!formData.city) newErrors.city = t('customerForm.cityRequired')
-    
+
     // Country validation (required for Shopify)
     if (!formData.country) {
       newErrors.country = 'Country is required for order processing'
     }
-    
+
     // Postal code validation (required for Shopify)
     if (!formData.postalCode) {
       newErrors.postalCode = 'Postal code is required for order processing'
@@ -160,7 +160,7 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     } else if (formData.country === 'United Kingdom' && !/^[A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2}$/.test(formData.postalCode.toUpperCase())) {
       newErrors.postalCode = 'Invalid UK postal code format (e.g., SW1A 1AA)'
     }
-    
+
     // Phone validation (required for Shopify)
     if (!formData.phone) {
       newErrors.phone = t('customerForm.phoneRequired')
@@ -203,9 +203,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
             value={formData.email}
             onChange={handleChange}
             placeholder={t('customerForm.email')}
-            className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-              errors.email ? 'border-destructive' : 'border-input'
-            }`}
+            className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.email ? 'border-destructive' : 'border-input'
+              }`}
           />
           {errors.email && (
             <p className="mt-1 text-sm text-destructive">{errors.email}</p>
@@ -220,47 +219,47 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
           <div className="relative">
             <label htmlFor="country" className="sr-only">{t('customerForm.countryRegion')}</label>
 
-              {lang === 'he' ? (
-                <input
-                  type="text"
+            {lang === 'he' ? (
+              <input
+                type="text"
+                id="country"
+                disabled
+                name="country"
+                value={formData.country}
+                onChange={handleChange}
+                placeholder={t('customerForm.countryRegion')}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.country ? 'border-destructive' : 'border-input'
+                  }`}
+              />
+            ) : (
+              <>
+                <select
                   id="country"
-                  disabled
                   name="country"
                   value={formData.country}
                   onChange={handleChange}
-                  placeholder={t('customerForm.countryRegion')}
-                  className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                    errors.country ? 'border-destructive' : 'border-input'
-                  }`}
-                />
-                 ) : (
-            <select
-              id="country"
-              name="country"
-              value={formData.country}
-              onChange={handleChange}
-              className={`w-full px-4 py-3 pe-12 appearance-none rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer ${
-                errors.country ? 'border-destructive' : 'border-input'
-              }`}
-            >
-                <option value="Israel">{t('customerForm.israel')}</option>
-             
-                <>
-                  <option value="United States">{t('customerForm.unitedStates')}</option>
-                  <option value="Canada">{t('customerForm.canada')}</option>
-                  <option value="Europe">{t('customerForm.europe')}</option>
-                  <option value="United Kingdom">{t('customerForm.unitedKingdom')}</option>
-                  <option value="Australia">{t('customerForm.australia')}</option>
-                  <option value="Switzerland">{t('customerForm.switzerland')}</option>
-                </>
-            </select>
+                  className={`w-full px-4 py-3 pe-12 appearance-none rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer ${errors.country ? 'border-destructive' : 'border-input'
+                    }`}
+                >
+                  <option value="Israel">{t('customerForm.israel')}</option>
 
-              )}
-            <div className="pointer-events-none absolute inset-y-0 end-4 flex items-center text-muted-foreground">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
+                  <>
+                    <option value="United States">{t('customerForm.unitedStates')}</option>
+                    <option value="Canada">{t('customerForm.canada')}</option>
+                    <option value="Europe">{t('customerForm.europe')}</option>
+                    <option value="United Kingdom">{t('customerForm.unitedKingdom')}</option>
+                    <option value="Australia">{t('customerForm.australia')}</option>
+                    <option value="Switzerland">{t('customerForm.switzerland')}</option>
+                  </>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 end-4 flex items-center text-muted-foreground">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </>
+            )}
+
             {errors.country && (
               <p className="mt-1 text-sm text-destructive">{errors.country}</p>
             )}
@@ -276,9 +275,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 value={formData.firstName}
                 onChange={handleChange}
                 placeholder={t('customerForm.firstName')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                  errors.firstName ? 'border-destructive' : 'border-input'
-                }`}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.firstName ? 'border-destructive' : 'border-input'
+                  }`}
               />
               {errors.firstName && (
                 <p className="mt-1 text-sm text-destructive">{errors.firstName}</p>
@@ -293,9 +291,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 value={formData.lastName}
                 onChange={handleChange}
                 placeholder={t('customerForm.lastName')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                  errors.lastName ? 'border-destructive' : 'border-input'
-                }`}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.lastName ? 'border-destructive' : 'border-input'
+                  }`}
               />
               {errors.lastName && (
                 <p className="mt-1 text-sm text-destructive">{errors.lastName}</p>
@@ -312,9 +309,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               value={formData.address}
               onChange={handleChange}
               placeholder={t('customerForm.address')}
-              className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                errors.address ? 'border-destructive' : 'border-input'
-              }`}
+              className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.address ? 'border-destructive' : 'border-input'
+                }`}
             />
             {errors.address && (
               <p className="mt-1 text-sm text-destructive">{errors.address}</p>
@@ -331,9 +327,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 value={formData.city}
                 onChange={handleChange}
                 placeholder={t('customerForm.city')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                  errors.city ? 'border-destructive' : 'border-input'
-                }`}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.city ? 'border-destructive' : 'border-input'
+                  }`}
               />
               {errors.city && (
                 <p className="mt-1 text-sm text-destructive">{errors.city}</p>
@@ -342,16 +337,15 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
             <div>
               <label htmlFor="postalCode" className="sr-only">{t('customerForm.postalCode')}</label>
               <input
-              required
+                required
                 type="text"
                 id="postalCode"
                 name="postalCode"
                 value={formData.postalCode}
                 onChange={handleChange}
                 placeholder={t('customerForm.postalCode')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                  errors.postalCode ? 'border-destructive' : 'border-input'
-                }`}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.postalCode ? 'border-destructive' : 'border-input'
+                  }`}
               />
               {errors.postalCode && (
                 <p className="mt-1 text-sm text-destructive">{errors.postalCode}</p>
@@ -368,9 +362,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               value={formData.phone}
               onChange={handleChange}
               placeholder={PHONE_RULES[formData.country]?.placeholder ?? t('customerForm.phone')}
-              className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                errors.phone ? 'border-destructive' : 'border-input'
-              }`}
+              className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.phone ? 'border-destructive' : 'border-input'
+                }`}
             />
             {errors.phone && (
               <p className="mt-1 text-sm text-destructive">{errors.phone}</p>
@@ -387,9 +380,8 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 value={formData.nationalId || ''}
                 onChange={handleChange}
                 placeholder={t('customerForm.nationalId')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${
-                  errors.nationalId ? 'border-destructive' : 'border-input'
-                }`}
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.nationalId ? 'border-destructive' : 'border-input'
+                  }`}
               />
               {errors.nationalId && (
                 <p className="mt-1 text-sm text-destructive">{errors.nationalId}</p>
