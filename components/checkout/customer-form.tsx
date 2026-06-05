@@ -373,25 +373,6 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
               <p className="mt-1 text-sm text-destructive">{errors.phone}</p>
             )}
           </div>
-
-          {lang === 'he' && (
-            <div>
-              <label htmlFor="nationalId" className="sr-only">{t('customerForm.nationalId')}</label>
-              <input
-                type="text"
-                id="nationalId"
-                name="nationalId"
-                value={formData.nationalId || ''}
-                onChange={handleChange}
-                placeholder={t('customerForm.nationalId')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.nationalId ? 'border-destructive' : 'border-input'
-                  }`}
-              />
-              {errors.nationalId && (
-                <p className="mt-1 text-sm text-destructive">{errors.nationalId}</p>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
