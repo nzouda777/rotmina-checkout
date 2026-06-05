@@ -1346,7 +1346,7 @@ export function PaymentForm({
                             type="text"
                             value={israeliId}
                             onChange={(e) => setIsraeliId(e.target.value)}
-                            placeholder="ת.ז."
+                            // placeholder="ת.ז."
                             className="h-11 px-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow w-full"
                             maxLength={9}
                           />
