@@ -722,6 +722,14 @@ export const translations = {
     },
   },
 
+  // ─── Order Summary ───────────────────────────────────
+  orderSummaryExtra: {
+    keepExploring: {
+      en: 'Keep Exploring...',
+      he: 'המשיכי לגלות את הקולקציה...',
+    },
+  },
+
   // ─── Success Modal (popup design) ────────────────────
   successModal: {
     title: {
