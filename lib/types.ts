@@ -5,6 +5,10 @@ export interface CartItem {
   price: number
   image?: string
   variant?: string
+  featured_image?: string
+  product?: {
+    featured_image?: string
+  }
   sku?: string
   variant_id?: string | number
   product_id?: string | number

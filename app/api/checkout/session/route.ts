@@ -2,6 +2,60 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { randomInt } from 'crypto'
 
+function sanitizeShopDomain(shop: string): string {
+  return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
+}
+
+async function enrichItemsWithProductImages(items: any[]): Promise<any[]> {
+  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN
+  const shopDomain = sanitizeShopDomain(process.env.SHOPIFY_STORE_DOMAIN || '')
+  const apiVersion = process.env.SHOPIFY_API_VERSION || '2024-04'
+
+  if (!accessToken || !shopDomain) {
+    console.warn('[IMAGES] Missing SHOPIFY_ACCESS_TOKEN or SHOPIFY_STORE_DOMAIN — skipping product image fetch')
+    return items
+  }
+
+  const uniqueIds = [...new Set(
+    items.map((i) => String(i.product_id || '').replace(/\D/g, '')).filter(Boolean)
+  )]
+
+  if (uniqueIds.length === 0) {
+    console.warn('[IMAGES] No product_id found on cart items — cannot fetch product images')
+    return items
+  }
+
+  const results = await Promise.allSettled(
+    uniqueIds.map(async (numericId) => {
+      const res = await fetch(
+        `https://${shopDomain}/admin/api/${apiVersion}/products/${numericId}.json?fields=id,image`,
+        { headers: { 'X-Shopify-Access-Token': accessToken } }
+      )
+      if (!res.ok) {
+        console.warn(`[IMAGES] Failed to fetch product ${numericId}: ${res.status}`)
+        return null
+      }
+      const data = await res.json()
+      const src: string | null = data.product?.image?.src ?? null
+      console.log(`[IMAGES] Product ${numericId} main image: ${src}`)
+      return src ? { id: numericId, src } : null
+    })
+  )
+
+  const imageMap: Record<string, string> = {}
+  results.forEach((r) => {
+    if (r.status === 'fulfilled' && r.value) {
+      imageMap[r.value.id] = r.value.src
+    }
+  })
+
+  return items.map((item) => {
+    const numericId = String(item.product_id || '').replace(/\D/g, '')
+    const mainImage = imageMap[numericId] ?? item.product?.featured_image ?? item.image ?? null
+    return { ...item, product: { ...item.product, featured_image: mainImage } }
+  })
+}
+
 const ALLOWED_ORIGINS = [
   'https://rotmina-israel.myshopify.com',
   'https://step-devserver.com',
@@ -79,6 +133,9 @@ export async function POST(request: NextRequest) {
           quantity: item.quantity,
           price: Math.round((item.price / 100) * rate * 100) / 100,
           image: item.image,
+          product: {
+            featured_image: item.featured_image?.url ?? item.image ?? null,
+          },
           variant: item.variant_title,
           sku: item.sku,
           properties: item.properties || undefined,
@@ -105,13 +162,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!shop || !finalCart) {
-      console.error('Missing fields:', { 
-        hasShop: !!shop, 
+      console.error('Missing fields:', {
+        hasShop: !!shop,
         hasCart: !!finalCart,
-        body 
+        body
       })
       return corsResponse(request, { error: 'Missing required fields' }, 400)
     }
+
+    // Fetch main product images from Shopify Admin API and enrich each item
+    finalCart.items = await enrichItemsWithProductImages(finalCart.items || [])
 
     // Force ILS locally so components don't display $ and Tranzila/Shopify act in ILS
     finalCart.currency = 'ILS';
@@ -182,7 +242,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    return corsResponse(request, data)
+    // Enrich product images on every load (covers sessions created before this fix)
+    const enrichedCart = {
+      ...data.cart,
+      items: await enrichItemsWithProductImages(data.cart?.items || []),
+    }
+
+    return corsResponse(request, { ...data, cart: enrichedCart })
   } catch (error) {
     console.error('Session fetch error:', error)
     return corsResponse(

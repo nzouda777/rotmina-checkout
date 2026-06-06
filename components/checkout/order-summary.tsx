@@ -11,13 +11,13 @@ interface OrderSummaryProps {
   giftCardAmount?: number
   giftCardCode?: string
 }
-
 export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: OrderSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const { t, lang } = useLanguage()
 
   const finalTotal = Math.max(cartData.total - giftCardAmount, 0)
 
+  console.log(cartData)
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat('he-IL', {
       style: 'currency',
@@ -67,7 +67,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
                 <div className="h-16 w-16 rounded-lg border border-border bg-background overflow-hidden">
                   {item.image ? (
                     <img
-                      src={item.image}
+                      src={item.product?.featured_image || item.image}
                       alt={item.title}
                       className="h-full w-full object-cover"
                     />
