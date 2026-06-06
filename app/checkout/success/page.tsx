@@ -2,149 +2,155 @@
 
 import { useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
-import { CheckCircle, Gift, Copy, Check } from 'lucide-react'
+import Image from 'next/image'
+import { X, Gift, Copy, Check } from 'lucide-react'
 import { useLanguage } from '@/lib/language-context'
 
-function SuccessContent() {
+function SuccessModal() {
   const searchParams = useSearchParams()
-  const { t } = useLanguage()
-  const confirmation = searchParams.get('confirmation')
+  const { t, lang, dir } = useLanguage()
   const giftCardsParam = searchParams.get('gift_cards')
   const usedGcCode = searchParams.get('used_gc')
   const gcRemaining = searchParams.get('gc_remaining')
-
-  // Parse gift card codes from query params (comma-separated)
   const giftCardCodes = giftCardsParam ? giftCardsParam.split(',').filter(Boolean) : []
+  const hasGiftCards = giftCardCodes.length > 0
+
+  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? '/'
+
+  const titleLines = t('successModal.title').split('\n')
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
-      <div className="max-w-md w-full text-center">
-        <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-green-100 mb-6">
-          <CheckCircle className="h-10 w-10 text-green-600" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" dir={dir}>
+      <div
+        className="relative flex w-full overflow-hidden bg-white shadow-2xl"
+        style={{
+          maxWidth: hasGiftCards ? 640 : 560,
+          borderRadius: 2,
+        }}
+      >
+        {/* ── Left: product image ── */}
+        <div className="relative hidden sm:block" style={{ width: '44%', minHeight: hasGiftCards ? 480 : 380, flexShrink: 0 }}>
+          <Image
+            src="/checkout/success-bg.webp"
+            alt=""
+            fill
+            className="object-cover object-center"
+            priority
+          />
         </div>
-        
-        <h1 className="text-3xl font-bold text-foreground mb-2">
-          {t('success.paymentSuccessful')}
-        </h1>
-        
-        <p className="text-muted-foreground mb-6">
-          {t('success.thankYou')}
-        </p>
 
-        {confirmation && (
-          <div className="bg-muted/50 rounded-lg p-4 mb-6">
-            <p className="text-sm text-muted-foreground mb-1">{t('success.confirmationCode')}</p>
-            <p className="text-lg font-mono font-semibold text-foreground">{confirmation}</p>
-          </div>
-        )}
+        {/* ── Right: content ── */}
+        <div className="flex flex-1 flex-col items-center justify-center bg-white px-10 py-10 text-center relative">
+          {/* Close button */}
+          <button
+            onClick={() => window.close()}
+            aria-label="Close"
+            className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition-colors"
+          >
+            <X size={16} strokeWidth={1.5} />
+          </button>
 
-        {/* Used Gift Card Info */}
-        {usedGcCode && gcRemaining !== null && (
-          <div className="bg-green-50/50 dark:bg-green-900/10 border border-green-200 dark:border-green-800/50 rounded-lg p-4 mb-6 text-left">
-            <div className="flex items-center gap-2 mb-2">
-              <Gift className="h-4 w-4 text-green-600 dark:text-green-400" />
-              <p className="text-sm font-medium text-foreground">{t('success.giftCardUsed')}</p>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {t('success.paidWithGiftCard')} <span className="font-mono text-foreground">{usedGcCode}</span>.
-            </p>
-            <p className="text-sm font-medium text-green-600 dark:text-green-400 mt-2">
-              {t('success.remainingBalance')}: {
-                new Intl.NumberFormat('he-IL', {
-                  style: 'currency',
-                  currency: 'ILS', // fallback to ILS if unknown
-                }).format(Number(gcRemaining))
-              }
-            </p>
-          </div>
-        )}
+          {/* Title */}
+          <h1
+            className="text-[2rem] leading-[1.15] text-gray-900 mb-4"
+            style={{ fontFamily: 'var(--font-playfair)', fontStyle: 'italic' }}
+          >
+            {titleLines.map((line, i) => (
+              <span key={i}>
+                {line}
+                {i < titleLines.length - 1 && <br />}
+              </span>
+            ))}
+          </h1>
 
-        {/* Generated Gift Card Codes */}
-        {giftCardCodes.length > 0 && (
-          <div className="mt-6 mb-6">
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <Gift className="h-5 w-5 text-foreground" />
-              <h2 className="text-lg font-semibold text-foreground">
-                {giftCardCodes.length === 1 ? t('success.yourGiftCard') : t('success.yourGiftCards')}
-              </h2>
-            </div>
+          {/* Body */}
+          <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6" style={{ maxWidth: 195 }}>
+            {t('successModal.body')}
+          </p>
 
-            <div className="space-y-3">
-              {giftCardCodes.map((code, index) => (
-                <GiftCardCodeDisplay key={index} code={code} />
+          {/* Gift cards (conditional) */}
+          {hasGiftCards && (
+            <div className="w-full mb-5 space-y-2">
+              <div className="flex items-center justify-center gap-1.5 mb-3">
+                <Gift className="h-4 w-4 text-gray-700" />
+                <p className="text-xs font-medium text-gray-700 uppercase tracking-wider">
+                  {giftCardCodes.length === 1 ? t('success.yourGiftCard') : t('success.yourGiftCards')}
+                </p>
+              </div>
+              {giftCardCodes.map((code, i) => (
+                <GiftCodeRow key={i} code={code} />
               ))}
-            </div>
-
-            <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
-              <p className="text-sm text-amber-700 dark:text-amber-300">
+              <p className="text-[0.7rem] text-amber-600 mt-2">
                 ⚠️ {giftCardCodes.length === 1 ? t('success.saveCode') : t('success.saveCodes')}
               </p>
             </div>
-          </div>
-        )}
+          )}
 
-        <p className="text-sm text-muted-foreground">
-          {t('success.confirmationEmailSent')}
-        </p>
+          {usedGcCode && gcRemaining !== null && (
+            <div className="w-full mb-5 rounded border border-green-200 bg-green-50/60 p-3 text-left">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Gift className="h-3.5 w-3.5 text-green-600" />
+                <p className="text-xs font-medium text-gray-800">{t('success.giftCardUsed')}</p>
+              </div>
+              <p className="text-xs text-gray-500">
+                {t('success.paidWithGiftCard')}{' '}
+                <span className="font-mono text-gray-800">{usedGcCode}</span>.
+              </p>
+              <p className="text-xs font-medium text-green-600 mt-1">
+                {t('success.remainingBalance')}:{' '}
+                {new Intl.NumberFormat(lang === 'he' ? 'he-IL' : 'en-IL', {
+                  style: 'currency',
+                  currency: 'ILS',
+                }).format(Number(gcRemaining))}
+              </p>
+            </div>
+          )}
+
+          {/* CTA */}
+          <a
+            href={storeUrl}
+            className="text-[0.7rem] uppercase tracking-[0.18em] text-gray-900 border-b border-gray-900 pb-px hover:opacity-60 transition-opacity"
+          >
+            {t('successModal.cta')}
+          </a>
+        </div>
       </div>
     </div>
   )
 }
 
-function GiftCardCodeDisplay({ code }: { code: string }) {
+function GiftCodeRow({ code }: { code: string }) {
   const [copied, setCopied] = useState(false)
   const { t } = useLanguage()
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(code)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Fallback for browsers without clipboard API
-      const textArea = document.createElement('textarea')
-      textArea.value = code
-      document.body.appendChild(textArea)
-      textArea.select()
+      const ta = document.createElement('textarea')
+      ta.value = code
+      document.body.appendChild(ta)
+      ta.select()
       document.execCommand('copy')
-      document.body.removeChild(textArea)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      document.body.removeChild(ta)
     }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
-    <div className="rounded-lg border-2 border-dashed border-green-300 dark:border-green-700 bg-green-50/50 dark:bg-green-900/10 p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center h-10 w-10 rounded-full bg-green-100 dark:bg-green-900/30">
-            <Gift className="h-5 w-5 text-green-600 dark:text-green-400" />
-          </div>
-          <div className="text-left">
-            <p className="text-xs text-muted-foreground mb-0.5">{t('success.giftCardCode')}</p>
-            <p className="text-lg font-mono font-bold text-foreground tracking-wider">
-              {code}
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-background border border-border hover:bg-muted transition-colors text-sm"
-          title="Copy to clipboard"
-        >
-          {copied ? (
-            <>
-              <Check className="h-4 w-4 text-green-600" />
-              <span className="text-green-600">{t('success.copied')}</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">{t('success.copy')}</span>
-            </>
-          )}
-        </button>
-      </div>
+    <div className="flex items-center justify-between rounded border border-dashed border-green-300 bg-green-50/50 px-3 py-2">
+      <p className="font-mono text-sm font-bold tracking-wider text-gray-900">{code}</p>
+      <button
+        onClick={handleCopy}
+        className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+      >
+        {copied ? (
+          <><Check className="h-3 w-3 text-green-600" /><span className="text-green-600">{t('success.copied')}</span></>
+        ) : (
+          <><Copy className="h-3 w-3" /><span>{t('success.copy')}</span></>
+        )}
+      </button>
     </div>
   )
 }
@@ -152,11 +158,11 @@ function GiftCardCodeDisplay({ code }: { code: string }) {
 export default function SuccessPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-foreground" />
+      <div className="fixed inset-0 flex items-center justify-center bg-black/60">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
       </div>
     }>
-      <SuccessContent />
+      <SuccessModal />
     </Suspense>
   )
 }

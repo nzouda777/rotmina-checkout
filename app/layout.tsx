@@ -1,11 +1,16 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Playfair_Display } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { LanguageProvider } from '@/lib/language-context'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const playfair = Playfair_Display({
+  subsets: ['latin'],
+  style: ['italic'],
+  variable: '--font-playfair',
+});
 
 export const metadata: Metadata = {
   title: 'Checkout - Secure Payment',
@@ -36,7 +41,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl" suppressHydrationWarning>
-      <body className="font-sans antialiased">
+      <body className={`font-sans antialiased ${playfair.variable}`}>
         <LanguageProvider>
           {children}
         </LanguageProvider>

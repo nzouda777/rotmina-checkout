@@ -722,6 +722,38 @@ export const translations = {
     },
   },
 
+  // ─── Success Modal (popup design) ────────────────────
+  successModal: {
+    title: {
+      en: 'Order\nConfirmed!',
+      he: 'ההזמנה\nאושרה!',
+    },
+    body: {
+      en: 'Thank you for choosing Rotmina. A confirmation email is on its way to you — your order is being carefully packed and will be shipped soon.',
+      he: 'תודה שבחרת ב-Rotmina. אימייל אישור בדרך אליך — ההזמנה שלך נארזת בקפידה ותישלח בקרוב.',
+    },
+    cta: {
+      en: 'EXPLORE MORE',
+      he: 'המשך לגלישה',
+    },
+  },
+
+  // ─── Error Modal (popup design) ──────────────────────
+  errorModal: {
+    title: {
+      en: 'Sorry',
+      he: 'מצטערים',
+    },
+    body: {
+      en: 'Something went wrong. Your order cannot be confirmed.',
+      he: 'משהו השתבש. לא ניתן לאשר את ההזמנה שלך.',
+    },
+    cta: {
+      en: 'Try again',
+      he: 'נסה שוב',
+    },
+  },
+
   // ─── Demo Page ───────────────────────────────────────
   demo: {
     badge: {

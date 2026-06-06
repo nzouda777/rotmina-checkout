@@ -28,7 +28,7 @@ export default function CheckoutPage() {
   const params = useParams()
   const router = useRouter()
   const sessionId = params?.sessionId as string
-  const { t, lang } = useLanguage()
+  const { t, lang, dir } = useLanguage()
   
   console.log('Session ID from useParams:', sessionId);
 
@@ -128,10 +128,54 @@ export default function CheckoutPage() {
 
   if (error && !session) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold text-foreground mb-2">{t('checkout.checkoutError')}</h1>
-          <p className="text-muted-foreground">{error}</p>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" dir={dir}>
+        <div
+          className="relative flex w-full overflow-hidden bg-white shadow-2xl"
+          style={{ maxWidth: 560, borderRadius: 2 }}
+        >
+          {/* Left: product image */}
+          <div className="relative hidden sm:block" style={{ width: '44%', minHeight: 380, flexShrink: 0 }}>
+            <img
+              src="/checkout/error-bg.webp"
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover object-center"
+            />
+          </div>
+
+          {/* Right: content */}
+          <div className="flex flex-1 flex-col items-center justify-center bg-white px-10 py-10 text-center relative">
+            {/* Close button */}
+            <button
+              onClick={() => router.back()}
+              aria-label="Close"
+              className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+
+            {/* Title */}
+            <h1
+              className="text-[2.4rem] leading-[1.1] text-gray-900 mb-4"
+              style={{ fontFamily: 'var(--font-playfair)', fontStyle: 'italic' }}
+            >
+              {t('errorModal.title')}
+            </h1>
+
+            {/* Body */}
+            <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6" style={{ maxWidth: 195 }}>
+              {t('errorModal.body')}
+            </p>
+
+            {/* CTA */}
+            <button
+              onClick={() => router.back()}
+              className="text-[0.82rem] text-gray-900 underline underline-offset-2 hover:opacity-60 transition-opacity"
+            >
+              {t('errorModal.cta')}
+            </button>
+          </div>
         </div>
       </div>
     )

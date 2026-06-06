@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { ArrowLeft, CreditCard, Shield, Info } from 'lucide-react'
+import { ArrowLeft, CreditCard, Shield, Info, X } from 'lucide-react'
 import type { CustomerInfo } from '@/lib/types'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { RealtimeChannel } from '@supabase/supabase-js'
@@ -87,8 +87,9 @@ export function PaymentForm({
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [showTerms, setShowTerms]         = useState(false)
   const [loadingStep, setLoadingStep]     = useState<'connecting' | 'completing' | null>(null)
+  const [isBitQrActive, setIsBitQrActive] = useState(false)
   const [israeliId, setIsraeliId]         = useState('')
-  const { t, lang } = useLanguage()
+  const { t, lang, dir } = useLanguage()
 
   // ── Refs that survive re-renders without triggering them ──────────────────
   const isSubmittingRef   = useRef(false)
@@ -147,12 +148,18 @@ export function PaymentForm({
     setThreeDSUrl('')
     setPopupWindowActive(false)
     setLoadingStep(null)
+    setIsBitQrActive(false)
     setIsSubmitting(false)
     isSubmittingRef.current = false
   }, [clearListeners, sessionId])
 
   // Unmount cleanup
   useEffect(() => () => clearListeners(), [clearListeners])
+
+  // Auto-clear the Bit QR flag whenever the payment flow ends
+  useEffect(() => {
+    if (!isSubmitting) setIsBitQrActive(false)
+  }, [isSubmitting])
 
   const chargeAmount    = Math.max(total - giftCardAmount, 0)
   const maxInstallments = getMaxInstallments(chargeAmount, currency)
@@ -885,6 +892,7 @@ export function PaymentForm({
         // Clear the 'connecting' loader: the SDK handles its own UI from here
         // (BIT: full-screen overlay; card: no UI until showChallenge or callback)
         setLoadingStep(null)
+        if (isBitPayment) setIsBitQrActive(true)
         const sdkMethod = isBitPayment ? 'chargeBit' : 'charge'
         console.log(`[PAY][${submitId}] STEP 8 — Calling hostedFieldsRef.current.${sdkMethod}()...`)
         try {
@@ -1514,7 +1522,7 @@ export function PaymentForm({
       {/* Mini banner — shown when 3DS popup window is open (no overlay, no loader) */}
       {popupWindowActive && (
         <div className="fixed bottom-6 inset-x-0 flex justify-center z-[100] px-4 pointer-events-none">
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 px-5 py-4 flex items-center gap-4 max-w-sm w-full pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-100 px-5 py-4 flex items-center gap-4 max-w-sm w-full pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="h-8 w-8 flex-shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900">
@@ -1524,12 +1532,33 @@ export function PaymentForm({
             </div>
             <button
               onClick={() => close3DS('User Cancel')}
-              className="text-xs text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0 font-medium"
+              aria-label="Close"
+              className="flex-shrink-0 h-7 w-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
             >
-              {t('paymentForm.cancel')}
+              <X size={14} strokeWidth={2} />
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Bit QR close button — floats above the SDK's own overlay ── */}
+      {isBitQrActive && (
+        <button
+          onClick={() => {
+            // Best-effort: remove any SDK-injected fixed/absolute overlay from body
+            const appRoot = document.getElementById('__next') ?? document.body.firstElementChild
+            Array.from(document.body.children).forEach(el => {
+              if (el === appRoot) return
+              const s = window.getComputedStyle(el)
+              if (s.position === 'fixed' || s.position === 'absolute') el.remove()
+            })
+            close3DS('User Cancel')
+          }}
+          aria-label="Close Bit payment"
+          className="fixed top-4 right-4 z-[99999] flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm text-gray-700 hover:bg-white hover:text-gray-900 transition-colors"
+        >
+          <X size={18} strokeWidth={2} />
+        </button>
       )}
 
       {/* ── Loader overlay — connecting / completing (never shown alongside 3DS) ── */}
@@ -1646,34 +1675,62 @@ export function PaymentForm({
 
       {/* Payment Error Popup */}
       {!show3DS && !popupWindowActive && paymentError && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="relative w-full max-w-md mx-4 bg-background rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="h-1.5 w-full bg-gradient-to-r from-red-500 via-red-400 to-orange-400" />
-            <div className="p-6 text-center space-y-4">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-                <svg className="h-8 w-8 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4" dir={dir}>
+          <div
+            className="relative flex w-full overflow-hidden bg-white shadow-2xl"
+            style={{ maxWidth: 560, borderRadius: 2 }}
+          >
+            {/* Left: product image */}
+            <div className="relative hidden sm:block" style={{ width: '44%', minHeight: 380, flexShrink: 0 }}>
+              <Image
+                src="/checkout/error-bg.webp"
+                alt=""
+                fill
+                className="object-cover object-center"
+              />
+            </div>
+
+            {/* Right: content */}
+            <div className="flex flex-1 flex-col items-center justify-center bg-white px-10 py-10 text-center relative">
+              {/* Close button */}
+              <button
+                onClick={() => setPaymentError(null)}
+                aria-label="Close"
+                className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                 </svg>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-bold text-foreground">{t('paymentForm.paymentDeclined')}</h3>
-                {/* <p className="text-sm text-muted-foreground leading-relaxed">{paymentError}</p> */}
-              </div>
-              <div className="pt-2 space-y-3">
-                <button
-                  onClick={() => setPaymentError(null)}
-                  className="w-full py-3 px-6 rounded-xl bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  {t('paymentForm.tryAgain')}
-                </button>
-                <a
-                  href={`https://${shopDomain || 'rotmina.co'}`}
-                  className="block w-full py-3 px-6 rounded-xl border border-border text-foreground font-semibold text-sm text-center hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  {t('paymentForm.returnToStore')}
-                </a>
-                <p className="text-xs text-muted-foreground"> {t('paymentForm.verifyCardBalance')}</p>
-              </div>
+              </button>
+
+              {/* Title */}
+              <h3
+                className="text-[2.4rem] leading-[1.1] text-gray-900 mb-4"
+                style={{ fontFamily: 'var(--font-playfair)', fontStyle: 'italic' }}
+              >
+                {t('errorModal.title')}
+              </h3>
+
+              {/* Body */}
+              <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6" style={{ maxWidth: 195 }}>
+                {t('errorModal.body')}
+              </p>
+
+              {/* Try again CTA */}
+              <button
+                onClick={() => setPaymentError(null)}
+                className="text-[0.82rem] text-gray-900 underline underline-offset-2 hover:opacity-60 transition-opacity mb-3"
+              >
+                {t('errorModal.cta')}
+              </button>
+
+              {/* Return to store */}
+              <a
+                href={`https://${shopDomain || 'rotmina.co'}`}
+                className="text-[0.72rem] uppercase tracking-[0.15em] text-gray-400 hover:text-gray-700 transition-colors"
+              >
+                {t('paymentForm.returnToStore')}
+              </a>
             </div>
           </div>
         </div>
