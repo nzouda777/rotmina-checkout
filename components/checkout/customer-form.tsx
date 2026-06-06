@@ -202,7 +202,7 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                 id="country"
                 disabled
                 name="country"
-                value={formData.country}
+                value="ישראל "
                 onChange={handleChange}
                 placeholder={t('customerForm.countryRegion')}
                 className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.country ? 'border-destructive' : 'border-input'
