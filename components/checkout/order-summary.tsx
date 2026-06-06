@@ -156,8 +156,8 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
         {/* Return to site */}
         <div className="border-t border-border mt-4 pt-4 flex justify-center">
           <a
-            href={process.env.NEXT_PUBLIC_STORE_URL ?? '/collections/shop'}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            href={process.env.NEXT_PUBLIC_STORE_URL ? process.env.NEXT_PUBLIC_STORE_URL + '/collections/shop' : '#'}
+            className="text-xs text-black font-medium hover:text-black transition-colors bg-[#7c7a7a45] w-full text-center py-2 rounded-md"
           >
             {t('orderSummaryExtra.keepExploring')}
           </a>

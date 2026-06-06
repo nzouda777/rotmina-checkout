@@ -83,22 +83,6 @@ function validatePhone(phone: string, country: string): string | null {
   return null
 }
 
-function validateIsraeliId(id: string): boolean {
-  const cleanId = id.trim().replace(/\D/g, '')
-  if (!/^\d{1,9}$/.test(cleanId)) return false
-  const padded = cleanId.padStart(9, '0')
-
-  let sum = 0
-  for (let i = 0; i < 9; i++) {
-    let digit = parseInt(padded[i], 10)
-    let step = digit * ((i % 2) + 1)
-    if (step > 9) {
-      step = (step % 10) + Math.floor(step / 10)
-    }
-    sum += step
-  }
-  return sum % 10 === 0
-}
 
 export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
   const [formData, setFormData] = useState<CustomerInfo>(() => ({
@@ -167,15 +151,6 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     } else {
       const phoneError = validatePhone(formData.phone, formData.country)
       if (phoneError) newErrors.phone = phoneError
-    }
-
-    // National ID validation (required for Hebrew version)
-    if (lang === 'he') {
-      if (!formData.nationalId) {
-        newErrors.nationalId = t('customerForm.idRequired')
-      } else if (!validateIsraeliId(formData.nationalId)) {
-        newErrors.nationalId = t('customerForm.invalidId')
-      }
     }
 
     setErrors(newErrors)
