@@ -97,12 +97,12 @@ export default function CheckoutPage() {
     usedGiftCardCode?: string
   ) => {
     const storeUrl = process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co'
-    window.location.href = `${storeUrl}/pages/success?session=${sessionId}&confirmation=${confirmationCode}`
+    window.location.href = `${storeUrl}/pages/success?session=${sessionId}&confirmation=${confirmationCode}&language=${lang}`
   }
 
   const handlePaymentError = (errorMessage: string) => {
     const baseUrl = window.location.origin
-    window.location.href = `${baseUrl}/checkout/s=error`
+    window.location.href = `${baseUrl}/checkout/error?session=${sessionId}&language=${lang}`
   }
 
   const handleGiftCardApply = (giftCard: AppliedGiftCard) => {

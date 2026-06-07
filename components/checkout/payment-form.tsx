@@ -280,7 +280,7 @@ export function PaymentForm({
     if (paymentMethod === 'card') {
       // Check if hosted fields are initialized
       if (!hostedFieldsRef.current) {
-        newErrors.card = 'Payment system is not ready. Please wait a moment and try again.'
+        newErrors.card = t('paymentForm.paymentSystemNotReady')
         setErrors(newErrors)
         return false
       }
@@ -652,6 +652,13 @@ export function PaymentForm({
     }
     // processor_response_code at top level
     if (res.processor_response_code === '000') return true
+    // Explicit bank/processor decline takes priority over ConfirmationCode presence.
+    // Tranzila can return a non-empty ConfirmationCode even on declined transactions
+    // (e.g. Diners Club refusals), so we must check decline codes first.
+    if (res.Response && res.Response !== '000') return false
+    if (res.processor_response_code && res.processor_response_code !== '000') return false
+    if (res.transaction_result?.processor_response_code &&
+        res.transaction_result.processor_response_code !== '000') return false
     // ConfirmationCode / transaction_id present → Tranzila approved the charge
     if (res.ConfirmationCode || res.transaction_id) return true
     // Nested transaction_response structure (new hosted-fields SDK response shape)
@@ -749,7 +756,7 @@ export function PaymentForm({
       if (!response.ok) {
         console.error(`[PAY][${submitId}] STEP 2 — API returned error status ${response.status}`)
         setLoadingStep(null)
-        setPaymentError(result.error || 'Payment request failed. Please try again.')
+        setPaymentError(result.error || t('paymentForm.paymentRequestFailed'))
         setIsSubmitting(false)
         isSubmittingRef.current = false
         return
@@ -785,7 +792,7 @@ export function PaymentForm({
 
         if (!hostedFieldsRef.current) {
           console.error(`[PAY][${submitId}] STEP 5 — ❌ Hosted fields NOT initialized! SDK may not have loaded yet.`)
-          setPaymentError('Payment system is not ready. Please wait a moment and try again.')
+          setPaymentError(t('paymentForm.paymentSystemNotReady'))
           setIsSubmitting(false)
           isSubmittingRef.current = false
           return
@@ -1019,7 +1026,15 @@ export function PaymentForm({
               //   • had3DSChallengeRef.current — set when 3DS *starts*, not when it succeeds
               //   • (!err && !!response)       — any SDK response triggered selfComplete
               const sdkExplicitFailure = !!err && !response
-              const approvalSignal = !sdkExplicitFailure && (
+              // A non-'000' response/processor code is an explicit bank decline (e.g. Diners Club
+              // refusals). Guard approvalSignal so selfComplete() is never triggered for declines.
+              const hasExplicitDecline = !!(
+                (tzResult?.Response && tzResult.Response !== '000')
+                || (tzResult?.processor_response_code && tzResult.processor_response_code !== '000')
+                || (tzResult?.transaction_result?.processor_response_code &&
+                    tzResult.transaction_result.processor_response_code !== '000')
+              )
+              const approvalSignal = !sdkExplicitFailure && !hasExplicitDecline && (
                 sdkSuccess                                    // Bit + card: SDK confirmed payment
                 || (!isBitPayment && (                        // card-only: only hard proof
                   !!(tzResult?.ConfirmationCode || tzResult?.transaction_result?.ConfirmationCode)
@@ -1058,12 +1073,12 @@ export function PaymentForm({
                 // selfComplete failed (very rare) — fall through to polling
               }
 
-              // ── 3DS not validated or explicit SDK failure ─────────────────────
-              // The 3DS challenge was shown but not successfully completed, OR the SDK
-              // reported an explicit error. In both cases the charge did not go through.
-              // Show an error popup immediately instead of polling indefinitely.
-              if (had3DSChallengeRef.current || sdkExplicitFailure) {
-                console.log(`[PAY][${submitId}] STEP 9 — 3DS not validated / SDK failure → showing error`)
+              // ── 3DS not validated, explicit SDK failure, or explicit bank decline ───
+              // Covers: 3DS challenge not completed, SDK error flag, or a non-'000'
+              // response code (e.g. Diners Club refusals that carry a ConfirmationCode
+              // but still have a decline code in Response/processor_response_code).
+              if (had3DSChallengeRef.current || sdkExplicitFailure || hasExplicitDecline) {
+                console.log(`[PAY][${submitId}] STEP 9 — 3DS not validated / SDK failure / explicit decline → showing error`)
                 clearListeners()
                 setLoadingStep(null)
                 setPaymentError(parseTranzilaError(tzResult, isBitPayment))
@@ -1143,7 +1158,7 @@ export function PaymentForm({
         } catch (err: any) {
           console.error(`[PAY][${submitId}] STEP 8 — ❌ Exception thrown by ${sdkMethod}():`, err?.message || err)
           setLoadingStep(null)
-          setPaymentError('Failed to initiate payment. Please refresh the page and try again.')
+          setPaymentError(t('paymentForm.paymentInitFailed'))
           setIsSubmitting(false)
           isSubmittingRef.current = false
           is3DSActiveRef.current = false
@@ -1541,24 +1556,29 @@ export function PaymentForm({
         </div>
       )}
 
-      {/* ── Bit QR close button — floats above the SDK's own overlay ── */}
+      {/* ── Bit QR close button + backdrop ── */}
       {isBitQrActive && (
-        <button
-          onClick={() => {
-            // Best-effort: remove any SDK-injected fixed/absolute overlay from body
-            const appRoot = document.getElementById('__next') ?? document.body.firstElementChild
-            Array.from(document.body.children).forEach(el => {
-              if (el === appRoot) return
-              const s = window.getComputedStyle(el)
-              if (s.position === 'fixed' || s.position === 'absolute') el.remove()
-            })
-            close3DS('User Cancel')
-          }}
-          aria-label="Close Bit payment"
-          className="fixed top-4 right-4 z-[99999] flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm text-gray-700 hover:bg-white hover:text-gray-900 transition-colors"
-        >
-          <X size={18} strokeWidth={2} />
-        </button>
+        <>
+          {/* Dark backdrop to frame the SDK's QR overlay */}
+          <div className="fixed inset-0 z-[99997] bg-black/60 backdrop-blur-sm" />
+          {/* Close button anchored near the top-right of the centered QR card */}
+          <button
+            onClick={() => {
+              // Best-effort: remove any SDK-injected fixed/absolute overlay from body
+              const appRoot = document.getElementById('__next') ?? document.body.firstElementChild
+              Array.from(document.body.children).forEach(el => {
+                if (el === appRoot) return
+                const s = window.getComputedStyle(el)
+                if (s.position === 'fixed' || s.position === 'absolute') el.remove()
+              })
+              close3DS('User Cancel')
+            }}
+            aria-label="Close Bit payment"
+            className="fixed z-[99999] top-1/2 left-1/2 -translate-y-[195px] translate-x-[135px] flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+          >
+            <X size={18} strokeWidth={2} />
+          </button>
+        </>
       )}
 
       {/* ── Loader overlay — connecting / completing (never shown alongside 3DS) ── */}

@@ -58,6 +58,12 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLang = useCallback((newLang: Language) => {
     setLangState(newLang)
     try { localStorage.setItem('rotmina-lang', newLang) } catch {}
+    // Keep URL query param in sync so the language survives refresh/sharing
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      url.searchParams.set('language', newLang)
+      window.history.replaceState(null, '', url.toString())
+    }
   }, [])
 
   // Re-read the URL param on mount (resolveInitialLang may have run server-side

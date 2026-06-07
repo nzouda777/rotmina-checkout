@@ -644,6 +644,18 @@ export const translations = {
       en: 'Payment was declined by your bank.',
       he: 'התשלום נדחה על ידי הבנק שלך.',
     },
+    paymentRequestFailed: {
+      en: 'Payment request failed. Please try again.',
+      he: 'בקשת התשלום נכשלה. נא לנסות שוב.',
+    },
+    paymentSystemNotReady: {
+      en: 'Payment system is not ready. Please wait a moment and try again.',
+      he: 'מערכת התשלומים אינה מוכנה. נא להמתין רגע ולנסות שוב.',
+    },
+    paymentInitFailed: {
+      en: 'Failed to initiate payment. Please refresh the page and try again.',
+      he: 'אתחול התשלום נכשל. נא לרענן את הדף ולנסות שוב.',
+    },
   },
 
   // ─── Success Page ────────────────────────────────────

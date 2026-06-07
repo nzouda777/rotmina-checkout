@@ -26,15 +26,15 @@ export function CheckoutHeader({ shopName }: CheckoutHeaderProps) {
           </a>
         </div>
         <div className="flex items-center gap-3">
-          {/* Language Toggle */}
+          {/* Language Toggle — shows the active language; click to switch */}
           <button
             onClick={() => setLang(lang === 'he' ? 'en' : 'he')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-muted/50 hover:bg-muted transition-colors text-sm font-medium text-foreground"
             aria-label={lang === 'he' ? 'Switch to English' : 'עבור לעברית'}
           >
-            <span className="text-base leading-none">{lang === 'he' ? '🇬🇧' : '🇮🇱'}</span>
+            <span className="text-base leading-none">{lang === 'he' ? '🇮🇱' : '🇬🇧'}</span>
             <span className="hidden sm:inline text-xs">
-              {lang === 'he' ? 'EN' : 'עב'}
+              {lang === 'he' ? 'עב' : 'EN'}
             </span>
           </button>
           <div className="flex items-center gap-2 text-muted-foreground">
