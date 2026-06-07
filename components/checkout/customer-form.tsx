@@ -135,15 +135,13 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     }
 
     // Postal code validation (required for Shopify)
-    if (!formData.postalCode) {
-      newErrors.postalCode = 'Postal code is required for order processing'
-    } else if (formData.country === 'Israel' && !/^\d{5,7}$/.test(formData.postalCode.replace(/\D/g, ''))) {
-      newErrors.postalCode = 'Invalid Israeli postal code (5-7 digits)'
-    } else if (formData.country === 'United States' && !/^\d{5}(-\d{4})?$/.test(formData.postalCode)) {
-      newErrors.postalCode = 'Invalid US postal code format (12345 or 12345-6789)'
-    } else if (formData.country === 'United Kingdom' && !/^[A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2}$/.test(formData.postalCode.toUpperCase())) {
-      newErrors.postalCode = 'Invalid UK postal code format (e.g., SW1A 1AA)'
-    }
+    //  if (formData.country === 'Israel' && !/^\d{5,7}$/.test(formData.postalCode.replace(/\D/g, ''))) {
+    //   newErrors.postalCode = 'Invalid Israeli postal code (5-7 digits)'
+    // } else if (formData.country === 'United States' && !/^\d{5}(-\d{4})?$/.test(formData.postalCode)) {
+    //   newErrors.postalCode = 'Invalid US postal code format (12345 or 12345-6789)'
+    // } else if (formData.country === 'United Kingdom' && !/^[A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2}$/.test(formData.postalCode.toUpperCase())) {
+    //   newErrors.postalCode = 'Invalid UK postal code format (e.g., SW1A 1AA)'
+    // }
 
     // Phone validation (required for Shopify)
     if (!formData.phone) {
