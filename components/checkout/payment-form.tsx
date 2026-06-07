@@ -1683,7 +1683,7 @@ export function PaymentForm({
             {/* Left: product image */}
             <div className="relative hidden sm:block" style={{ width: '44%', minHeight: 380, flexShrink: 0 }}>
               <Image
-                src="/checkout/error-bg.webp"
+                src="/checkout/error-image.jpg"
                 alt=""
                 fill
                 className="object-cover object-center"
@@ -1712,7 +1712,7 @@ export function PaymentForm({
               </h3>
 
               {/* Body */}
-              <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6" style={{ maxWidth: 195 }}>
+              <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6 whitespace-pre-line" style={{ maxWidth: 195 }}>
                 {t('errorModal.body')}
               </p>
 

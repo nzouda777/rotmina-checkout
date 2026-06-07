@@ -316,7 +316,6 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
             <div>
               <label htmlFor="postalCode" className="sr-only">{t('customerForm.postalCode')}</label>
               <input
-                required
                 type="text"
                 id="postalCode"
                 name="postalCode"

@@ -179,8 +179,8 @@ export const translations = {
       he: 'עיר',
     },
     postalCode: {
-      en: 'Postal code ',
-      he: 'מיקוד',
+      en: 'Postal code (Optional)',
+      he: 'מיקוד (אופציונלי)',
     },
     phone: {
       en: 'Phone',
@@ -750,15 +750,15 @@ export const translations = {
   errorModal: {
     title: {
       en: 'Sorry',
-      he: 'מצטערים',
+      he: 'מצטערת',
     },
     body: {
-      en: 'Something went wrong. Your order cannot be confirmed.',
-      he: 'משהו השתבש. לא ניתן לאשר את ההזמנה שלך.',
+      en: "Something went wrong.\n Your order cannot be confirmed",
+      he: 'משהו השתבש\nלא ניתן לאשר את ההזמנה כרגע'
     },
     cta: {
-      en: 'Try again',
-      he: 'נסה שוב',
+      en: 'TRY AGAIN',
+      he: 'נסי שוב',
     },
   },
 
