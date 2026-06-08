@@ -278,11 +278,11 @@ export async function generateGiftCardsForOrder(params: {
         console.log(`[GIFT-CARD-GEN] Generating card #${q + 1} for item ${item.title}...`)
         const props = item.properties || {}
         console.log(`[GIFT-CARD-GEN] Item properties for ${item.title}:`, JSON.stringify(props))
-        const recipientName = props['Recipient name'] || props['recipient_name'] || undefined
-        const recipientEmail = props['Recipient email'] || props['recipient_email'] || undefined
-        const senderName = props['Your name'] || props['your_name'] || props['sender_name'] || undefined
-        const senderEmail = props['Your email'] || props['your_email'] || props['sender_email'] || undefined
-        const personalMessage = props['Message'] || props['message'] || undefined
+        const recipientName = props['Recipient name'] || props['recipient_name'] || props['שם המקבלת'] || undefined
+        const recipientEmail = props['Recipient email'] || props['recipient_email'] || props['מייל המקבלת'] || undefined
+        const senderName = props['Your name'] || props['your_name'] || props['sender_name'] || props['שם השולח/ת'] || undefined
+        const senderEmail = props['Your email'] || props['your_email'] || props['sender_email'] || props['מייל השולח/ת'] || undefined
+        const personalMessage = props['Message'] || props['message'] || props['ברכה אישית'] || undefined
 
         const card = await createGiftCard({
           amount: item.price,
