@@ -230,7 +230,7 @@ export async function sendMorningReceipt(
         },
       ],
       // Remarks
-      remarks: lang === 'he' ?  '!תתחדשי' : 'Thank you !',
+      remarks: lang === 'he' ?   " !תתחדשי" : 'Wear it well!',
       // Footer
       footer: '',
     }
