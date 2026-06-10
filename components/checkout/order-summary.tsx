@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { CartData } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
 import { getProductTitle, translateVariant } from '@/lib/translations'
+import { isGiftCardProduct } from '@/lib/gift-cards'
 
 interface OrderSummaryProps {
   cartData: CartData
@@ -87,7 +88,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
                 <p className="text-sm font-medium text-foreground truncate">
                   {getProductTitle(item.handle, item.title, lang, item.url)}
                 </p>
-                {item.variant && (
+                {item.variant && !isGiftCardProduct(item) && (
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {translateVariant(item.variant, lang)}
                   </p>
