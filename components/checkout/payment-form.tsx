@@ -1695,12 +1695,21 @@ export function PaymentForm({
 
       {/* Payment Error Popup */}
       {!show3DS && !popupWindowActive && paymentError && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4" dir={dir}>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center sm:bg-black/60 px-4" dir={dir}>
+          {/* Mobile background image */}
+          <Image
+            src="/checkout/error-image.jpg"
+            alt=""
+            fill
+            className="sm:hidden object-cover object-center"
+          />
+          <div className="sm:hidden absolute inset-0 bg-black/30" />
+
           <div
             className="relative flex w-full overflow-hidden bg-white shadow-2xl"
             style={{ maxWidth: 560, borderRadius: 2 }}
           >
-            {/* Left: product image */}
+            {/* Left: product image - desktop only */}
             <div className="relative hidden sm:block" style={{ width: '44%', minHeight: 380, flexShrink: 0 }}>
               <Image
                 src="/checkout/error-image.jpg"
