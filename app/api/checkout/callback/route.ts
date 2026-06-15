@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     const redirectUrl = isSuccess
       ? (shopifyOrderUrl || `https://${session.shop}/pages/success?session=${actualSessionId}`)
-      : `${baseUrl}/checkout/s=error`
+      : `${baseUrl}/checkout/error?session=${actualSessionId}`
 
     return breakoutRedirect(redirectUrl, actualSessionId, errorMsg)
   } catch (error) {
@@ -234,7 +234,7 @@ function breakoutRedirect(url: string, sessionId?: string, errorMessage?: string
           try {
             var isSuccess = "${url}".includes('/checkout/success') || "${url}".includes('order_status_url') || "${url}".includes('/pages/success');
             var result = {
-              type: '3DS_COMPLETE', // Reusing the same message type so the frontend listens to it
+              type: '3DS_COMPLETE',
               success: isSuccess,
               url: "${url}",
               sessionId: "${sessionId || ''}",
@@ -246,7 +246,15 @@ function breakoutRedirect(url: string, sessionId?: string, errorMessage?: string
               window.opener.postMessage(result, '*');
               window.close();
             } else {
-              window.location.href = "${url}";
+              // Preserve the language setting so the success/error page renders in the right language
+              var destUrl = "${url}";
+              try {
+                var savedLang = localStorage.getItem('rotmina-lang');
+                if (savedLang === 'en' || savedLang === 'he') {
+                  destUrl += (destUrl.indexOf('?') !== -1 ? '&' : '?') + 'language=' + savedLang;
+                }
+              } catch(le) {}
+              window.location.href = destUrl;
             }
           } catch(e) {
             window.location.href = "${url}";

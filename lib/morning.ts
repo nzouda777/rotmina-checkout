@@ -194,6 +194,8 @@ export async function sendMorningReceipt(
           },
         ]
 
+    const remarksText = lang === 'he' ? '!תתחדשי' : 'Wear it well!'
+
     // Build the document payload
     const documentPayload = {
       type: RECEIPT_DOC_TYPE,
@@ -209,7 +211,7 @@ export async function sendMorningReceipt(
         emails: [customerEmail],
         add: true, // Auto-create client if not found
       },
-      // Trigger email sending
+      // Trigger email sending — remarks appears as the personal message in the email body
       email: {
         to: [
           {
@@ -217,6 +219,7 @@ export async function sendMorningReceipt(
           }
         ],
         lang: lang,
+        remarks: remarksText,
       },
       // Line items
       income,
@@ -229,8 +232,8 @@ export async function sendMorningReceipt(
           date: payDate,
         },
       ],
-      // Remarks
-      remarks: lang === 'he' ?   " !תתחדשי" : 'Wear it well!',
+      // Remarks on the document itself
+      remarks: remarksText,
       // Footer
       footer: '',
     }

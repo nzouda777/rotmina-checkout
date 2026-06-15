@@ -120,7 +120,7 @@ export default function CheckoutPage() {
       <div className="min-h-screen bg-background flex items-center justify-center" dir={dir}>
         <div className="flex flex-col items-center gap-4" dir={dir}>
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-foreground" />
-          <p className="text-muted-foreground" dir="ltr" style={{ direction: dir, unicodeBidi: 'embed' }}>{t('checkout.loadingCheckout')}</p>
+          <p className="text-muted-foreground" dir={dir}>{t('checkout.loadingCheckout')}</p>
         </div>
       </div>
     )

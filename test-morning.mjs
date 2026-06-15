@@ -57,48 +57,135 @@ async function runTest() {
   console.log(`\n🚀 Proceeding with receipt creation on ${baseUrl}...`);
 
   const payDate = new Date().toISOString().split('T')[0];
+  const customerName = 'Test Card';
+  const customerEmail = 'rodriguenzouda35@gmail.com';
   const amount = 150.50;
   const morningPaymentType = 3; // Credit Card
+  const lang = 'en';
+
+  const items = [
+    { description: 'Test Product 1', quantity: 1, price: 100.00 },
+    { description: 'Test Product 2', quantity: 2, price: 25.25 },
+  ];
+
+  const formatILS = (n) =>
+    new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(n);
+
+  const itemRows = items.map(item => `
+    <tr>
+      <td style="padding:12px 0;border-bottom:1px solid #eee;color:#333;font-size:15px;font-weight:bold;">
+        ${item.description}
+      </td>
+      <td style="padding:12px 0;border-bottom:1px solid #eee;color:#888;font-size:14px;text-align:center;">
+        x${item.quantity}
+      </td>
+      <td style="padding:12px 0;border-bottom:1px solid #eee;color:#333;font-size:15px;font-weight:bold;text-align:right;">
+        ${formatILS(item.price * item.quantity)}
+      </td>
+    </tr>`).join('');
+
+  const remarks = lang === 'he' ? '!תתחדשי' : 'Wear it well!';
+
+  const emailBody = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f6f9fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Ubuntu,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f9fc;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.05);padding:40px;max-width:600px;">
+
+        <!-- Header -->
+        <tr>
+          <td style="text-align:center;padding-bottom:30px;">
+            <h1 style="margin:0;color:#333;font-size:28px;font-weight:bold;">Order Confirmation</h1>
+            <p style="margin:5px 0 0;color:#888;font-size:16px;">Receipt #TEST-${Date.now().toString().slice(-6)}</p>
+          </td>
+        </tr>
+
+        <!-- Greeting -->
+        <tr>
+          <td style="padding-bottom:10px;">
+            <p style="margin:0 0 10px;color:#555;font-size:16px;line-height:24px;">Hi ${customerName},</p>
+            <p style="margin:0 0 10px;color:#555;font-size:16px;line-height:24px;">
+              Thank you for your purchase! We've received your order and are getting it ready.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Order Summary -->
+        <tr>
+          <td style="padding-top:20px;">
+            <h2 style="margin:0 0 10px;font-size:18px;font-weight:bold;color:#333;">Order Summary</h2>
+            <hr style="border:none;border-top:1px solid #eee;margin:10px 0;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              ${itemRows}
+              <!-- Total -->
+              <tr>
+                <td colspan="2" style="padding:15px 0 5px;font-size:18px;font-weight:bold;color:#333;border-top:2px solid #eee;">
+                  Total
+                </td>
+                <td style="padding:15px 0 5px;text-align:right;font-size:22px;font-weight:bold;color:#10b981;border-top:2px solid #eee;">
+                  ${formatILS(amount)}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Remarks -->
+        <tr>
+          <td style="padding-top:24px;text-align:center;">
+            <p style="margin:0;color:#10b981;font-size:18px;font-weight:bold;letter-spacing:0.5px;">
+              ${remarks}
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding-top:24px;text-align:center;border-top:1px solid #eee;margin-top:24px;">
+            <p style="margin:0;color:#888;font-size:12px;line-height:18px;">
+              rotmina Store<br>
+              Thank you for shopping with us!
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 
   const documentPayload = {
     type: 400, // Receipt
     date: payDate,
     dueDate: payDate,
-    lang: 'he',
+    lang,
     currency: 'ILS',
     vatType: 0,
     amount: amount,
     client: {
-      name: 'Test Card User',
-      emails: ['rodriguenzouda35@gmail.com'], // Updated to requested email
+      name: customerName,
+      emails: [customerEmail],
       add: true,
     },
     email: {
-      to: [
-        {
-          email: 'rodriguenzouda35@gmail.com',
-        }
-      ],
-      lang: 'he'
+      to: [{ email: customerEmail }],
+      lang,
+      subject: `Order Confirmation - rotmina Store`,
+      remarks,
+      body: emailBody,
     },
-    income: [
-      {
-        catalogNum: '',
-        description: 'Test Product 1',
-        quantity: 1,
-        price: 100.00,
-        currency: 'ILS',
-        vatType: 0,
-      },
-      {
-        catalogNum: '',
-        description: 'Test Product 2',
-        quantity: 2,
-        price: 25.25,
-        currency: 'ILS',
-        vatType: 0,
-      }
-    ],
+    income: items.map(item => ({
+      catalogNum: '',
+      description: item.description,
+      quantity: item.quantity,
+      price: item.price,
+      currency: 'ILS',
+      vatType: 0,
+    })),
     payment: [
       {
         type: morningPaymentType,
@@ -107,8 +194,8 @@ async function runTest() {
         date: payDate,
       },
     ],
-    remarks: 'Test created from CLI using test card flow',
-    footer: '',
+    remarks,
+    footer: 'rotmina Store — Thank you for shopping with us!',
   };
 
   const docRes = await fetch(`${baseUrl}/documents`, {

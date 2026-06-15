@@ -270,7 +270,7 @@ export function PaymentForm({
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
-    
+
     // Terms validation
     if (!termsAccepted) {
       newErrors.terms = t('paymentForm.acceptTermsError')
@@ -278,6 +278,11 @@ export function PaymentForm({
 
     // Card field validation - check if hosted fields are ready
     if (paymentMethod === 'card') {
+      // Israeli ID is required for Hebrew card payments
+      if (lang === 'he' && chargeAmount > 0 && !israeliId.trim()) {
+        newErrors.israeliId = t('customerForm.idRequired')
+      }
+
       // Check if hosted fields are initialized
       if (!hostedFieldsRef.current) {
         newErrors.card = t('paymentForm.paymentSystemNotReady')
@@ -1065,7 +1070,44 @@ export function PaymentForm({
                   return
                 }
 
-                // Still pending → server callback is not coming. Self-trigger the full
+                // Still pending. For card payments, verify authoritative result via track_id
+                // before self-completing — this catches Diners Club declines that return a
+                // ConfirmationCode but no explicit Response decline code in the SDK callback.
+                if (!isBitPayment) {
+                  const sdkTrackId = tzResult?.track_id || tzResult?.trackId
+                  if (sdkTrackId) {
+                    console.log(`[PAY][${submitId}] STEP 9 — still pending, verifying via track_id=${sdkTrackId} before self-complete`)
+                    try {
+                      const verifyRes = await fetch('/api/checkout/3ds-complete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ trackId: sdkTrackId, sessionId }),
+                      })
+                      const verifyData = verifyRes.ok ? await verifyRes.json() : null
+                      console.log(`[PAY][${submitId}] STEP 9 — track_id verify result:`, JSON.stringify(verifyData))
+                      if (verifyData?.success) {
+                        clearPoll(); clearListeners()
+                        setLoadingStep(null)
+                        setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                        onSuccess(verifyData.confirmationCode || 'confirmed', verifyData.shopifyOrderUrl, verifyData.generatedGiftCards, verifyData.giftCardRemainingBalance, giftCardCode)
+                        return
+                      }
+                      if (verifyData && !verifyData.pending) {
+                        clearListeners()
+                        setLoadingStep(null)
+                        setPaymentError(verifyData.error || parseTranzilaError(tzResult, isBitPayment))
+                        setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
+                        resetSession(sessionId)
+                        return
+                      }
+                      // verifyData.pending → still in flight, fall through to selfComplete
+                    } catch (verifyErr) {
+                      console.error(`[PAY][${submitId}] STEP 9 — track_id verify error (will attempt selfComplete):`, verifyErr)
+                    }
+                  }
+                }
+
+                // Server callback is not coming. Self-trigger the full
                 // post-payment flow (Shopify order + email + session → paid).
                 console.log(`[PAY][${submitId}] STEP 9 — still pending after 2 s → self-completing`)
                 const done = await selfComplete()
@@ -1363,16 +1405,21 @@ export function PaymentForm({
                       {lang === 'he' && (
                         <div>
                           <label className="block text-sm font-medium text-foreground mb-1">
-                            ת.ז.
+                            ת.ז. <span className="text-destructive">*</span>
                           </label>
                           <input
                             type="text"
                             value={israeliId}
-                            onChange={(e) => setIsraeliId(e.target.value)}
-                            // placeholder="ת.ז."
-                            className="h-11 px-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow w-full"
+                            onChange={(e) => {
+                              setIsraeliId(e.target.value)
+                              if (errors.israeliId) setErrors(prev => ({ ...prev, israeliId: '' }))
+                            }}
+                            className={`h-11 px-3 rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow w-full ${errors.israeliId ? 'border-destructive' : 'border-input'}`}
                             maxLength={9}
                           />
+                          {errors.israeliId && (
+                            <p className="mt-1 text-xs text-destructive">{errors.israeliId}</p>
+                          )}
                         </div>
                       )}
                     </div>

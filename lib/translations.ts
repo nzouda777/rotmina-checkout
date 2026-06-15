@@ -394,7 +394,7 @@ export const translations = {
     },
     secureEncrypted: {
       en: 'All transactions are secure and encrypted.',
-      he: '.כל העסקאות מאובטחות ומוצפנות',
+      he: 'כל העסקאות מאובטחות ומוצפנות.',
     },
     creditCard: {
       en: 'Credit Card',
@@ -746,7 +746,7 @@ export const translations = {
   successModal: {
     title: {
       en: 'Order\nConfirmed!',
-      he: '!ההזמנה\nאושרה',
+      he: 'ההזמנה!\nאושרה',
     },
     body: {
       en: 'Thank you for choosing Rotmina. A confirmation email is on its way to you — your order is being carefully packed and will be shipped soon.',
