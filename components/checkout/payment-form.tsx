@@ -1389,39 +1389,36 @@ export function PaymentForm({
 
                 <div className="p-4 space-y-4 bg-background">
                   <div className="space-y-4">
-                    <div className={lang === 'he' ? 'grid grid-cols-2 gap-4' : ''}>
-                      <div className={lang === 'he' ? '' : ''}>
-                        <label className="block text-sm font-medium text-foreground mb-1">
-                          {t('paymentForm.cardNumber') || 'Card Number'}
-                        </label>
-                        {/* No padding here — Tranzila's styles.input.padding handles it */}
-                        <div
-                          id="credit_card_number"
-                          className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
-                          style={{ minHeight: '44px' }}
-                        />
-                      </div>
-                      {lang === 'he' && (
-                        <div>
-                          <label className="block text-sm font-medium text-foreground mb-1">
-                            {t('customerForm.nationalId')} <span className="text-destructive">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={israeliId}
-                            onChange={(e) => {
-                              setIsraeliId(e.target.value)
-                              if (errors.israeliId) setErrors(prev => ({ ...prev, israeliId: '' }))
-                            }}
-                            className={`h-11 px-3 rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow w-full ${errors.israeliId ? 'border-destructive' : 'border-input'}`}
-                            maxLength={9}
-                          />
-                          {errors.israeliId && (
-                            <p className="mt-1 text-xs text-destructive">{errors.israeliId}</p>
-                          )}
-                        </div>
-                      )}
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('paymentForm.cardNumber') || 'Card Number'}
+                      </label>
+                      <div
+                        id="credit_card_number"
+                        className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
+                        style={{ minHeight: '44px' }}
+                      />
                     </div>
+                    {lang === 'he' && (
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('customerForm.nationalId')} <span className="text-destructive">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={israeliId}
+                          onChange={(e) => {
+                            setIsraeliId(e.target.value)
+                            if (errors.israeliId) setErrors(prev => ({ ...prev, israeliId: '' }))
+                          }}
+                          className={`h-11 px-3 rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-shadow w-full ${errors.israeliId ? 'border-destructive' : 'border-input'}`}
+                          maxLength={9}
+                        />
+                        {errors.israeliId && (
+                          <p className="mt-1 text-xs text-destructive">{errors.israeliId}</p>
+                        )}
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">

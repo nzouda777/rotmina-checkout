@@ -132,7 +132,7 @@ export const translations = {
     },
     loadingCheckout: {
       en: 'Loading checkout...',
-      he: '...טוען את עמוד התשלום',
+      he: 'טוען את עמוד התשלום',
     },
     checkoutError: {
       en: 'Checkout Error',
