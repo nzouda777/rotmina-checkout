@@ -746,10 +746,12 @@ export const translations = {
   successModal: {
     title: {
       en: 'Order\nConfirmed!',
-      he: 'ההזמנה‏!\nאושרה',
+//       he: ההזמנה אושרה
+// תתחדשי!
+      he: ' ההזמנה אושרה ‏\n תתחדשי!',
     },
     body: {
-      en: 'Thank you for choosing Rotmina. A confirmation email is on its way to you — your order is being carefully packed and will be shipped soon.',
+      en: 'Thank you for choosing Rotmina. A confirmation email is on its way to you, your order is being carefully packed and will be shipped soon.',
       he: 'תודה שבחרת ב-Rotmina. אימייל אישור בדרך אליך — ההזמנה שלך נארזת בקפידה ותישלח בקרוב.',
     },
     cta: {
