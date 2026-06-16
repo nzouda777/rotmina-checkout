@@ -1330,8 +1330,8 @@ export function PaymentForm({
                 type="button"
                 onClick={() => setPaymentMethod('card')}
                 className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${paymentMethod === 'card'
-                    ? 'border-foreground bg-foreground/5 shadow-sm'
-                    : 'border-border bg-background hover:border-muted-foreground/30'
+                  ? 'border-foreground bg-foreground/5 shadow-sm'
+                  : 'border-border bg-background hover:border-muted-foreground/30'
                   }`}
               >
                 <div className="flex items-center gap-2">
@@ -1346,8 +1346,8 @@ export function PaymentForm({
                 type="button"
                 onClick={() => setPaymentMethod('bit')}
                 className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${paymentMethod === 'bit'
-                    ? 'border-[#2b5686] bg-gradient-to-b from-[#2b5686]/10 to-[#2eb3b8]/10 shadow-sm'
-                    : 'border-border bg-background hover:border-muted-foreground/30'
+                  ? 'border-[#2b5686] bg-gradient-to-b from-[#2b5686]/10 to-[#2eb3b8]/10 shadow-sm'
+                  : 'border-border bg-background hover:border-muted-foreground/30'
                   }`}
               >
                 <div className="flex items-center gap-2">
@@ -1387,18 +1387,20 @@ export function PaymentForm({
 
                 <div className="p-4 space-y-4 bg-background">
                   <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-foreground mb-1">
-                          {t('paymentForm.cardNumber') || 'Card Number'}
-                        </label>
+
+
+                    {lang === 'he' && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">
+                            {t('paymentForm.cardNumber') || 'Card Number'}
+                          </label>
                           <div
                             id="credit_card_number"
                             className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
                             style={{ minHeight: '44px' }}
                           />
-                      </div>
-                      {lang === 'he' && (
+                        </div>
                         <div>
                           <label className="block text-sm font-medium text-foreground mb-1">
                             {t('customerForm.nationalId')} <span className="text-destructive">*</span>
@@ -1417,8 +1419,22 @@ export function PaymentForm({
                             <p className="mt-1 text-xs text-destructive">{errors.israeliId}</p>
                           )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+
+                    )}
+                    {lang === 'en' && (
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('paymentForm.cardNumber') || 'Card Number'}
+                        </label>
+                        <div
+                          id="credit_card_number"
+                          className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
+                          style={{ minHeight: '44px' }}
+                        />
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">
@@ -1443,423 +1459,423 @@ export function PaymentForm({
                     </div>
                   </div>
 
-                {maxInstallments > 1 && (
-                  <div className="space-y-2">
-                    <label htmlFor="installments" className="sr-only">{t('paymentForm.installments')}</label>
-                    <select
-                      id="installments"
-                      value={installments}
-                      onChange={e => setInstallments(parseInt(e.target.value))}
-                      className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
-                    >
-                      <option value={1}>{t('paymentForm.fullPayment')} — {formatPrice(chargeAmount)}</option>
-                      {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 2).map(num => (
-                        <option key={num} value={num}>
-                          {num} {t('paymentForm.installments')} — {formatPrice(chargeAmount / num)} {t('paymentForm.perMonth')}
-                        </option>
-                      ))}
-                    </select>
-                    {installments > 1 && (
-                      <div className="rounded-md bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 px-3 py-2">
-                        <p className="text-xs text-blue-700 dark:text-blue-300">
-                          💳 {installments} {t('paymentForm.interestFreePayments')} {formatPrice(perInstallment)}
-                          {giftCardAmount > 0 && (
-                            <> ({t('paymentForm.giftCardChargedSeparately').replace('{amount}', formatPrice(giftCardAmount))})</>
-                          )}
-                        </p>
-                      </div>
-                    )}
+                  {maxInstallments > 1 && (
+                    <div className="space-y-2">
+                      <label htmlFor="installments" className="sr-only">{t('paymentForm.installments')}</label>
+                      <select
+                        id="installments"
+                        value={installments}
+                        onChange={e => setInstallments(parseInt(e.target.value))}
+                        className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+                      >
+                        <option value={1}>{t('paymentForm.fullPayment')} — {formatPrice(chargeAmount)}</option>
+                        {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 2).map(num => (
+                          <option key={num} value={num}>
+                            {num} {t('paymentForm.installments')} — {formatPrice(chargeAmount / num)} {t('paymentForm.perMonth')}
+                          </option>
+                        ))}
+                      </select>
+                      {installments > 1 && (
+                        <div className="rounded-md bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 px-3 py-2">
+                          <p className="text-xs text-blue-700 dark:text-blue-300">
+                            💳 {installments} {t('paymentForm.interestFreePayments')} {formatPrice(perInstallment)}
+                            {giftCardAmount > 0 && (
+                              <> ({t('paymentForm.giftCardChargedSeparately').replace('{amount}', formatPrice(giftCardAmount))})</>
+                            )}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Bit section ── */}
+            {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK
+                show a full-screen overlay with the Bit QR / deeplink.
+                No hosted-field container is needed here. */}
+            <div style={{ display: paymentMethod === 'bit' ? 'block' : 'none' }}>
+              <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
+                    <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
                   </div>
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
+                    <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+        }
+
+        {/* Security Badge */}
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Shield className="h-4 w-4" />
+          <span>{t('paymentForm.paymentInfoSecure')}</span>
+        </div>
+
+        {/* Terms */}
+        <div className="flex flex-col items-center justify-center mt-6">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="terms"
+              checked={termsAccepted}
+              onChange={e => setTermsAccepted(e.target.checked)}
+              className="w-4 h-4 text-primary border-2 border-input rounded focus:ring-2 focus:ring-ring bg-background"
+            />
+            <label htmlFor="terms" className="text-sm text-muted-foreground">
+              {t('paymentForm.agreeTerms')}{' '}
+              <button
+                type="button"
+                onClick={() => setShowTerms(!showTerms)}
+                className="text-primary hover:underline underline-offset-2"
+              >
+                {t('paymentForm.theTerms')}
+              </button>
+            </label>
+          </div>
+          {errors.terms && (
+            <p className="mt-1 text-sm text-destructive">{errors.terms}</p>
+          )}
+        </div>
+
+        {/* Payment Method Specific Errors */}
+        {
+          errors.card && (
+            <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive">{errors.card}</p>
+            </div>
+          )
+        }
+
+        {
+          errors.installments && (
+            <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive">{errors.installments}</p>
+            </div>
+          )
+        }
+
+        {
+          errors.bit && (
+            <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
+              <p className="text-sm text-destructive">{errors.bit}</p>
+            </div>
+          )
+        }
+
+        {/* Actions */}
+        <div className="flex flex-col-reverse sm:flex-row rtl:sm:flex-row-reverse gap-4 items-center mt-6">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center rtl:flex-row-reverse gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t('paymentForm.returnToInfo')}
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className={`w-full sm:flex-1 py-4 px-6 rounded-lg font-semibold text-base transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${paymentMethod === 'bit'
+              ? 'bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] text-white hover:opacity-90 focus:ring-[#2b5686]'
+              : 'bg-[#7c7a7a45] text-gray-700 hover:opacity-90 focus:ring-ring'
+              }`}
+          >
+            {isSubmitting
+              ? t('paymentForm.processing')
+              : chargeAmount > 0
+                ? (paymentMethod === 'bit'
+                  ? t('paymentForm.payWithBit')
+                  : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
+                : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
+            }
+          </button>
+        </div>
+      </form >
+
+      {/* Mini banner — shown when 3DS popup window is open (no overlay, no loader) */}
+      {
+        popupWindowActive && (
+          <div className="fixed bottom-6 inset-x-0 flex justify-center z-[100] px-4 pointer-events-none">
+            <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-100 px-5 py-4 flex items-center gap-4 max-w-sm w-full pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="h-8 w-8 flex-shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">
+                  {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
+                </p>
+                <p className="text-xs text-gray-400 truncate">{t('paymentForm.completeInPopup')}</p>
+              </div>
+              <button
+                onClick={() => close3DS('User Cancel')}
+                aria-label="Close"
+                className="flex-shrink-0 h-7 w-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        )
+      }
+
+      {/* ── Bit QR close button + backdrop ── */}
+      {
+        isBitQrActive && (
+          <>
+            {/* Dark backdrop to frame the SDK's QR overlay */}
+            <div className="fixed inset-0 z-[99997] bg-black/60 backdrop-blur-sm" />
+            {/* Close button anchored near the top-right of the centered QR card */}
+            <button
+              onClick={() => {
+                // Best-effort: remove any SDK-injected fixed/absolute overlay from body
+                const appRoot = document.getElementById('__next') ?? document.body.firstElementChild
+                Array.from(document.body.children).forEach(el => {
+                  if (el === appRoot) return
+                  const s = window.getComputedStyle(el)
+                  if (s.position === 'fixed' || s.position === 'absolute') el.remove()
+                })
+                close3DS('User Cancel')
+              }}
+              aria-label="Close Bit payment"
+              className="fixed z-[99999] top-1/2 left-1/2 -translate-y-[195px] translate-x-[135px] flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+            >
+              <X size={18} strokeWidth={2} />
+            </button>
+          </>
+        )
+      }
+
+      {/* ── Loader overlay — connecting / completing (never shown alongside 3DS) ── */}
+      {
+        !!loadingStep && !show3DS && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className={`h-1 w-full bg-gradient-to-r ${loadingStep === 'completing' ? 'from-emerald-400 via-teal-500 to-emerald-500' : 'from-blue-500 via-indigo-500 to-violet-500'}`} />
+              <div className="px-8 py-10 text-center space-y-5">
+                <div className={`mx-auto h-14 w-14 rounded-full border-4 border-gray-100 animate-spin ${loadingStep === 'completing' ? 'border-t-emerald-500' : 'border-t-blue-500'}`} />
+                <div className="space-y-1.5">
+                  <p className="text-base font-bold text-gray-900">
+                    {loadingStep === 'completing'
+                      ? t('paymentForm.loadingCompleting')
+                      : paymentMethod === 'bit'
+                        ? t('paymentForm.loadingConnectingBit')
+                        : t('paymentForm.loadingConnecting')}
+                  </p>
+                  <p className="text-sm text-gray-400 leading-relaxed">
+                    {loadingStep === 'completing'
+                      ? t('paymentForm.loadingCompletingSubtitle')
+                      : t('paymentForm.loadingConnectingSubtitle')}
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2">
+                  <div className={`h-1.5 w-1.5 rounded-full animate-pulse ${loadingStep === 'completing' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                  <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
+                </div>
+                {loadingStep !== 'completing' && (
+                  <button onClick={() => close3DS('User Cancel')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                    {t('paymentForm.cancel')}
+                  </button>
                 )}
               </div>
             </div>
           </div>
+        )
+      }
 
-            {/* ── Bit section ── */}
-        {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK
-                show a full-screen overlay with the Bit QR / deeplink.
-                No hosted-field container is needed here. */}
-        <div style={{ display: paymentMethod === 'bit' ? 'block' : 'none' }}>
-          <div className="rounded-xl border-2 border-[#2b5686] bg-gradient-to-b from-[#2b5686]/5 to-[#2eb3b8]/5 p-6">
-            <div className="flex items-center justify-center gap-3">
-              <div className="flex items-center justify-center h-14 w-14 rounded-full bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] shadow-md">
-                <Image src="/bit.png" alt="Bit" width={36} height={22} style={{ objectFit: 'contain' }} />
+      {/* ── 3DS SDK challenge overlay — SDK handles its own UI, we show a waiting screen ── */}
+      {
+        show3DS && !threeDSUrl && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => close3DS('User Cancel')}>
+            <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+              <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+              <button
+                onClick={() => close3DS('User Cancel')}
+                className="absolute top-3 right-3 h-7 w-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors text-xs font-bold"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+              <div className="px-8 py-10 text-center space-y-6">
+                {/* Shield icon */}
+                <div className="mx-auto h-16 w-16 rounded-full bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
+                  <Shield className="h-8 w-8 text-blue-600" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-lg font-bold text-gray-900">
+                    {t('paymentForm.securePayment')}
+                  </p>
+                  <p className="text-sm text-gray-500 leading-relaxed">
+                    {t('paymentForm.verifyingPayment')}
+                  </p>
+                </div>
+                {/* Animated dots */}
+                <div className="flex items-center justify-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+                <button onClick={() => close3DS('User Cancel')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                  {t('paymentForm.cancel')}
+                </button>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-foreground">{t('paymentForm.payWithBitTitle')}</h3>
-                <p className="text-xs text-muted-foreground">{t('paymentForm.bitDescription')}</p>
+            </div>
+          </div>
+        )
+      }
+
+      {/* ── Iframe fallback — popup was blocked, 3DS/Bit shown inline ── */}
+      {
+        show3DS && threeDSUrl && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => close3DS('User Cancel')}>
+            <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+              <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-7 w-7 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <Shield className="h-3.5 w-3.5 text-blue-600" />
+                  </div>
+                  <span className="text-sm font-semibold text-gray-900">
+                    {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
+                  </div>
+                  <button
+                    onClick={() => close3DS('User Cancel')}
+                    className="h-7 w-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors text-xs font-bold"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
+              <iframe
+                src={threeDSUrl}
+                className="w-full border-0"
+                style={{ height: '520px' }}
+                title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
+              />
             </div>
           </div>
-        </div>
-    </div>
-  )
-}
+        )
+      }
 
-{/* Security Badge */ }
-<div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-  <Shield className="h-4 w-4" />
-  <span>{t('paymentForm.paymentInfoSecure')}</span>
-</div>
+      {/* Payment Error Popup */}
+      {
+        !show3DS && !popupWindowActive && paymentError && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center sm:bg-black/60 px-4" dir={dir}>
+            {/* Mobile background image */}
+            <Image
+              src="/checkout/error-image.jpg"
+              alt=""
+              fill
+              className="sm:hidden object-cover object-center"
+            />
+            <div className="sm:hidden absolute inset-0 bg-black/30" />
 
-{/* Terms */ }
-<div className="flex flex-col items-center justify-center mt-6">
-  <div className="flex items-center gap-2">
-    <input
-      type="checkbox"
-      id="terms"
-      checked={termsAccepted}
-      onChange={e => setTermsAccepted(e.target.checked)}
-      className="w-4 h-4 text-primary border-2 border-input rounded focus:ring-2 focus:ring-ring bg-background"
-    />
-    <label htmlFor="terms" className="text-sm text-muted-foreground">
-      {t('paymentForm.agreeTerms')}{' '}
-      <button
-        type="button"
-        onClick={() => setShowTerms(!showTerms)}
-        className="text-primary hover:underline underline-offset-2"
-      >
-        {t('paymentForm.theTerms')}
-      </button>
-    </label>
-  </div>
-  {errors.terms && (
-    <p className="mt-1 text-sm text-destructive">{errors.terms}</p>
-  )}
-</div>
-
-{/* Payment Method Specific Errors */ }
-{
-  errors.card && (
-    <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
-      <p className="text-sm text-destructive">{errors.card}</p>
-    </div>
-  )
-}
-
-{
-  errors.installments && (
-    <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
-      <p className="text-sm text-destructive">{errors.installments}</p>
-    </div>
-  )
-}
-
-{
-  errors.bit && (
-    <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/20">
-      <p className="text-sm text-destructive">{errors.bit}</p>
-    </div>
-  )
-}
-
-{/* Actions */ }
-<div className="flex flex-col-reverse sm:flex-row rtl:sm:flex-row-reverse gap-4 items-center mt-6">
-  <button
-    type="button"
-    onClick={onBack}
-    className="flex items-center rtl:flex-row-reverse gap-2 text-sm text-foreground hover:opacity-70 transition-opacity"
-  >
-    <ArrowLeft className="h-4 w-4" />
-    {t('paymentForm.returnToInfo')}
-  </button>
-  <button
-    type="submit"
-    disabled={isSubmitting}
-    className={`w-full sm:flex-1 py-4 px-6 rounded-lg font-semibold text-base transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${paymentMethod === 'bit'
-        ? 'bg-gradient-to-b from-[#2b5686] to-[#2eb3b8] text-white hover:opacity-90 focus:ring-[#2b5686]'
-        : 'bg-[#7c7a7a45] text-gray-700 hover:opacity-90 focus:ring-ring'
-      }`}
-  >
-    {isSubmitting
-      ? t('paymentForm.processing')
-      : chargeAmount > 0
-        ? (paymentMethod === 'bit'
-          ? t('paymentForm.payWithBit')
-          : `${t('paymentForm.pay')} ${formatPrice(chargeAmount)}`)
-        : t('paymentForm.completeOrderGiftCard').replace('{amount}', formatPrice(0))
-    }
-  </button>
-</div>
-      </form >
-
-  {/* Mini banner — shown when 3DS popup window is open (no overlay, no loader) */ }
-{
-  popupWindowActive && (
-    <div className="fixed bottom-6 inset-x-0 flex justify-center z-[100] px-4 pointer-events-none">
-      <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-100 px-5 py-4 flex items-center gap-4 max-w-sm w-full pointer-events-auto animate-in fade-in slide-in-from-bottom-4 duration-300">
-        <div className="h-8 w-8 flex-shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900">
-            {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
-          </p>
-          <p className="text-xs text-gray-400 truncate">{t('paymentForm.completeInPopup')}</p>
-        </div>
-        <button
-          onClick={() => close3DS('User Cancel')}
-          aria-label="Close"
-          className="flex-shrink-0 h-7 w-7 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
-        >
-          <X size={14} strokeWidth={2} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-{/* ── Bit QR close button + backdrop ── */ }
-{
-  isBitQrActive && (
-    <>
-      {/* Dark backdrop to frame the SDK's QR overlay */}
-      <div className="fixed inset-0 z-[99997] bg-black/60 backdrop-blur-sm" />
-      {/* Close button anchored near the top-right of the centered QR card */}
-      <button
-        onClick={() => {
-          // Best-effort: remove any SDK-injected fixed/absolute overlay from body
-          const appRoot = document.getElementById('__next') ?? document.body.firstElementChild
-          Array.from(document.body.children).forEach(el => {
-            if (el === appRoot) return
-            const s = window.getComputedStyle(el)
-            if (s.position === 'fixed' || s.position === 'absolute') el.remove()
-          })
-          close3DS('User Cancel')
-        }}
-        aria-label="Close Bit payment"
-        className="fixed z-[99999] top-1/2 left-1/2 -translate-y-[195px] translate-x-[135px] flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-      >
-        <X size={18} strokeWidth={2} />
-      </button>
-    </>
-  )
-}
-
-{/* ── Loader overlay — connecting / completing (never shown alongside 3DS) ── */ }
-{
-  !!loadingStep && !show3DS && (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className={`h-1 w-full bg-gradient-to-r ${loadingStep === 'completing' ? 'from-emerald-400 via-teal-500 to-emerald-500' : 'from-blue-500 via-indigo-500 to-violet-500'}`} />
-        <div className="px-8 py-10 text-center space-y-5">
-          <div className={`mx-auto h-14 w-14 rounded-full border-4 border-gray-100 animate-spin ${loadingStep === 'completing' ? 'border-t-emerald-500' : 'border-t-blue-500'}`} />
-          <div className="space-y-1.5">
-            <p className="text-base font-bold text-gray-900">
-              {loadingStep === 'completing'
-                ? t('paymentForm.loadingCompleting')
-                : paymentMethod === 'bit'
-                  ? t('paymentForm.loadingConnectingBit')
-                  : t('paymentForm.loadingConnecting')}
-            </p>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              {loadingStep === 'completing'
-                ? t('paymentForm.loadingCompletingSubtitle')
-                : t('paymentForm.loadingConnectingSubtitle')}
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-2">
-            <div className={`h-1.5 w-1.5 rounded-full animate-pulse ${loadingStep === 'completing' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-            <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
-          </div>
-          {loadingStep !== 'completing' && (
-            <button onClick={() => close3DS('User Cancel')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
-              {t('paymentForm.cancel')}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-{/* ── 3DS SDK challenge overlay — SDK handles its own UI, we show a waiting screen ── */ }
-{
-  show3DS && !threeDSUrl && (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => close3DS('User Cancel')}>
-      <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-        <button
-          onClick={() => close3DS('User Cancel')}
-          className="absolute top-3 right-3 h-7 w-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors text-xs font-bold"
-          aria-label="Close"
-        >
-          ✕
-        </button>
-        <div className="px-8 py-10 text-center space-y-6">
-          {/* Shield icon */}
-          <div className="mx-auto h-16 w-16 rounded-full bg-blue-50 border-2 border-blue-100 flex items-center justify-center">
-            <Shield className="h-8 w-8 text-blue-600" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-lg font-bold text-gray-900">
-              {t('paymentForm.securePayment')}
-            </p>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              {t('paymentForm.verifyingPayment')}
-            </p>
-          </div>
-          {/* Animated dots */}
-          <div className="flex items-center justify-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-            <span className="h-2 w-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-            <span className="h-2 w-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-          </div>
-          <button onClick={() => close3DS('User Cancel')} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
-            {t('paymentForm.cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-{/* ── Iframe fallback — popup was blocked, 3DS/Bit shown inline ── */ }
-{
-  show3DS && threeDSUrl && (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => close3DS('User Cancel')}>
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-              <Shield className="h-3.5 w-3.5 text-blue-600" />
-            </div>
-            <span className="text-sm font-semibold text-gray-900">
-              {paymentMethod === 'bit' ? t('paymentForm.bitVerification') : t('paymentForm.securePayment')}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-              <span className="text-xs text-gray-400">{t('paymentForm.verifying')}</span>
-            </div>
-            <button
-              onClick={() => close3DS('User Cancel')}
-              className="h-7 w-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors text-xs font-bold"
-              aria-label="Close"
+            <div
+              className="relative flex w-full overflow-hidden bg-white shadow-2xl"
+              style={{ maxWidth: 560, borderRadius: 2 }}
             >
-              ✕
-            </button>
+              {/* Left: product image - desktop only */}
+              <div className="relative hidden sm:block" style={{ width: '44%', minHeight: 380, flexShrink: 0 }}>
+                <Image
+                  src="/checkout/error-image.jpg"
+                  alt=""
+                  fill
+                  className="object-cover object-center"
+                />
+              </div>
+
+              {/* Right: content */}
+              <div className="flex flex-1 flex-col items-center justify-center bg-white px-10 py-10 text-center relative">
+                {/* Close button */}
+                <button
+                  onClick={() => setPaymentError(null)}
+                  aria-label="Close"
+                  className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+
+                {/* Title */}
+                <h3
+                  className="text-[2.4rem] leading-[1.1] text-gray-900 mb-4"
+                  style={{ fontFamily: 'var(--font-playfair)', fontStyle: 'italic' }}
+                >
+                  {t('errorModal.title')}
+                </h3>
+
+                {/* Body */}
+                <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6 whitespace-pre-line" style={{ maxWidth: 195 }}>
+                  {t('errorModal.body')}
+                </p>
+
+                {/* Try again CTA */}
+                <button
+                  onClick={() => setPaymentError(null)}
+                  className="text-[0.82rem] text-gray-900 underline underline-offset-2 hover:opacity-60 transition-opacity mb-3"
+                >
+                  {t('errorModal.cta')}
+                </button>
+
+                {/* Return to store */}
+                <a
+                  href={`https://${shopDomain || 'rotmina.co'}`}
+                  className="text-[0.72rem] uppercase tracking-[0.15em] text-gray-400 hover:text-gray-700 transition-colors"
+                >
+                  {t('paymentForm.returnToStore')}
+                </a>
+              </div>
+            </div>
           </div>
-        </div>
-        <iframe
-          src={threeDSUrl}
-          className="w-full border-0"
-          style={{ height: '520px' }}
-          title={paymentMethod === 'bit' ? 'Bit Payment' : '3D Secure Verification'}
-        />
-      </div>
-    </div>
-  )
-}
+        )
+      }
 
-{/* Payment Error Popup */ }
-{
-  !show3DS && !popupWindowActive && paymentError && (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center sm:bg-black/60 px-4" dir={dir}>
-      {/* Mobile background image */}
-      <Image
-        src="/checkout/error-image.jpg"
-        alt=""
-        fill
-        className="sm:hidden object-cover object-center"
-      />
-      <div className="sm:hidden absolute inset-0 bg-black/30" />
-
-      <div
-        className="relative flex w-full overflow-hidden bg-white shadow-2xl"
-        style={{ maxWidth: 560, borderRadius: 2 }}
-      >
-        {/* Left: product image - desktop only */}
-        <div className="relative hidden sm:block" style={{ width: '44%', minHeight: 380, flexShrink: 0 }}>
-          <Image
-            src="/checkout/error-image.jpg"
-            alt=""
-            fill
-            className="object-cover object-center"
-          />
-        </div>
-
-        {/* Right: content */}
-        <div className="flex flex-1 flex-col items-center justify-center bg-white px-10 py-10 text-center relative">
-          {/* Close button */}
-          <button
-            onClick={() => setPaymentError(null)}
-            aria-label="Close"
-            className="absolute top-3 right-3 text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-
-          {/* Title */}
-          <h3
-            className="text-[2.4rem] leading-[1.1] text-gray-900 mb-4"
-            style={{ fontFamily: 'var(--font-playfair)', fontStyle: 'italic' }}
-          >
-            {t('errorModal.title')}
-          </h3>
-
-          {/* Body */}
-          <p className="text-[0.8rem] text-gray-500 leading-relaxed mb-6 whitespace-pre-line" style={{ maxWidth: 195 }}>
-            {t('errorModal.body')}
-          </p>
-
-          {/* Try again CTA */}
-          <button
-            onClick={() => setPaymentError(null)}
-            className="text-[0.82rem] text-gray-900 underline underline-offset-2 hover:opacity-60 transition-opacity mb-3"
-          >
-            {t('errorModal.cta')}
-          </button>
-
-          {/* Return to store */}
-          <a
-            href={`https://${shopDomain || 'rotmina.co'}`}
-            className="text-[0.72rem] uppercase tracking-[0.15em] text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            {t('paymentForm.returnToStore')}
-          </a>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-{/* Terms Modal */ }
-{
-  showTerms && (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
-          <h2 className="text-xl font-bold text-foreground">{t('paymentForm.termsOfUse')}</h2>
-          <button
-            onClick={() => setShowTerms(false)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Close"
-          >
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="p-6 overflow-y-auto space-y-4 text-sm text-foreground overflow-x-hidden leading-relaxed">
-          <div className="whitespace-pre-wrap">
-            {lang === 'he' ? TERMS_TEXT_HE : TERMS_TEXT_EN}
+      {/* Terms Modal */}
+      {
+        showTerms && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="relative w-full max-w-2xl bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
+                <h2 className="text-xl font-bold text-foreground">{t('paymentForm.termsOfUse')}</h2>
+                <button
+                  onClick={() => setShowTerms(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-4 text-sm text-foreground overflow-x-hidden leading-relaxed">
+                <div className="whitespace-pre-wrap">
+                  {lang === 'he' ? TERMS_TEXT_HE : TERMS_TEXT_EN}
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-border bg-muted/30 flex justify-end">
+                <button
+                  onClick={() => setShowTerms(false)}
+                  className="py-2 px-6 rounded-lg bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  {t('paymentForm.close')}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="px-6 py-4 border-t border-border bg-muted/30 flex justify-end">
-          <button
-            onClick={() => setShowTerms(false)}
-            className="py-2 px-6 rounded-lg bg-foreground text-background font-semibold text-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-          >
-            {t('paymentForm.close')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+        )
+      }
     </div >
   )
 }
