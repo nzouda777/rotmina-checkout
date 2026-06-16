@@ -52,6 +52,7 @@ function SuccessModal() {
 
           {/* Title */}
           <h1
+            dir={dir}
             className="text-[2rem] leading-[1.15] text-gray-900 mb-4"
             style={{ fontFamily: 'var(--font-playfair)', fontStyle: 'italic' }}
           >

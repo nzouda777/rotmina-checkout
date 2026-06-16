@@ -278,8 +278,7 @@ export function PaymentForm({
 
     // Card field validation - check if hosted fields are ready
     if (paymentMethod === 'card') {
-      // Israeli ID is required for Israeli card payments regardless of UI language
-      if (customerInfo.country === 'Israel' && chargeAmount > 0 && !israeliId.trim()) {
+      if (lang === 'he' && chargeAmount > 0 && !israeliId.trim()) {
         newErrors.israeliId = t('customerForm.idRequired')
       }
 
@@ -1402,7 +1401,7 @@ export function PaymentForm({
                           style={{ minHeight: '44px' }}
                         />
                       </div>
-                      {customerInfo.country === 'Israel' && (
+                      {lang === 'he' && (
                         <div>
                           <label className="block text-sm font-medium text-foreground mb-1">
                             {t('customerForm.nationalId')} <span className="text-destructive">*</span>

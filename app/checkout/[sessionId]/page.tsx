@@ -90,14 +90,14 @@ export default function CheckoutPage() {
   }
 
   const handlePaymentSuccess = (
-    confirmationCode: string, 
+    confirmationCode: string,
     shopifyOrderUrl?: string,
     generatedGiftCards?: { code: string; amount: number }[],
     giftCardRemainingBalance?: number,
     usedGiftCardCode?: string
   ) => {
-    const storeUrl = process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co'
-    window.location.href = `${storeUrl}/pages/success?session=${sessionId}&confirmation=${confirmationCode}&language=${lang}`
+    const baseUrl = window.location.origin
+    window.location.href = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}&language=${lang}`
   }
 
   const handlePaymentError = (errorMessage: string) => {
