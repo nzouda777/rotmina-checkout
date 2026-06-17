@@ -589,6 +589,7 @@ export function PaymentForm({
     '065': 'Card usage frequency limit exceeded',
     '091': 'Card issuer unavailable – please try again',
     '096': 'Payment system error – please try again',
+    '900': 'Transaction cancelled or declined by processor',
   }
 
   const parseTranzilaError = useCallback((res: any, isBit?: boolean): string => {
@@ -614,6 +615,19 @@ export function PaymentForm({
       }
       console.log('[PARSE-ERROR] error_code path →', msg)
       return msg
+    }
+    // transaction_response is the format used by the Hosted Fields SDK (Diners Club, non-3DS)
+    const txnResponse = res.transaction_response
+    if (txnResponse?.success === false || (txnResponse?.processor_response_code && txnResponse.processor_response_code !== '000')) {
+      const code = txnResponse?.processor_response_code
+      if (code && code !== '000') {
+        const msg = TRANZILA_CODE_MAP[code] || `Card declined (code: ${code})`
+        console.log('[PARSE-ERROR] transaction_response.processor_response_code:', code, '→', msg)
+        return msg
+      }
+      const errMsg = txnResponse?.error || 'Card declined during payment validation'
+      console.log('[PARSE-ERROR] transaction_response.success=false →', errMsg)
+      return errMsg
     }
     const txnResult = res.transaction_result
     if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
@@ -686,7 +700,12 @@ export function PaymentForm({
     if (res.transaction_result?.approved === false) return false
     // ConfirmationCode / transaction_id present → Tranzila approved the charge
     if (res.ConfirmationCode || res.transaction_id) return true
-    // Nested transaction_response structure (new hosted-fields SDK response shape)
+    // Nested transaction_response structure (new hosted-fields SDK response shape).
+    // IMPORTANT: check success/processor_code BEFORE transaction_id — Tranzila returns
+    // a transaction_id even for declined transactions (it is an internal reference, not an approval).
+    if (res.transaction_response?.success === false) return false
+    if (res.transaction_response?.processor_response_code &&
+      res.transaction_response.processor_response_code !== '000') return false
     if (res.transaction_response?.success === true) return true
     if (res.transaction_response?.processor_response_code === '000') return true
     if (res.transaction_response?.transaction_id || res.transaction_response?.auth_number) return true
@@ -1059,6 +1078,9 @@ export function PaymentForm({
                 || (tzResult?.transaction_result?.processor_response_code &&
                   tzResult.transaction_result.processor_response_code !== '000')
                 || tzResult?.transaction_result?.approved === false
+                || tzResult?.transaction_response?.success === false
+                || (tzResult?.transaction_response?.processor_response_code &&
+                  tzResult.transaction_response.processor_response_code !== '000')
               )
               const approvalSignal = !sdkExplicitFailure && !hasExplicitDecline && (
                 sdkSuccess                                    // Bit + card: SDK confirmed payment
