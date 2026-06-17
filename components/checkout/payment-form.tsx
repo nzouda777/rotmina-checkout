@@ -622,6 +622,13 @@ export function PaymentForm({
       console.log('[PARSE-ERROR] processor_response_code:', code, '→', msg)
       return msg
     }
+    // Diners Club and some non-3DS cards return approved:false without a processor code
+    if (txnResult?.approved === false) {
+      const txnSt = typeof txnResult.status === 'string' ? txnResult.status : ''
+      const msg = txnSt ? `Card declined by bank (${txnSt})` : 'Card declined by bank. Please contact your bank or try a different card.'
+      console.log('[PARSE-ERROR] transaction_result.approved=false →', msg)
+      return msg
+    }
     if (Array.isArray(res.errors) && res.errors.length > 0) {
       const msg = res.errors.map((e: any) => e.message || e.code || 'Unknown').join(', ')
       console.log('[PARSE-ERROR] errors[] →', msg)
@@ -645,8 +652,20 @@ export function PaymentForm({
     if (res.success === true) return true
     if (res.Response === '000') return true
     if (typeof res.error_code === 'number' && res.error_code === 0) {
-      const pc = res.transaction_result?.processor_response_code
-      if (!pc || pc === '000') return true
+      const txnResult = res.transaction_result
+      if (txnResult) {
+        // Diners Club (and other cards) can return approved:false without a processor code
+        if (txnResult.approved === false) return false
+        const pc = txnResult.processor_response_code
+        const txnSt = typeof txnResult.status === 'string' ? txnResult.status.toLowerCase() : null
+        if (pc && pc !== '000') return false
+        // Require at least one positive signal — error_code:0 alone is not enough
+        if (pc === '000' || txnResult.approved === true || txnResult.auth_number || txnSt === 'approved' || txnSt === 'success') return true
+        return false
+      }
+      // No transaction_result: require a confirmation code
+      if (res.ConfirmationCode || res.transaction_id || res.index) return true
+      return false
     }
     // New API: status field
     if (typeof res.status === 'string') {
@@ -663,6 +682,8 @@ export function PaymentForm({
     if (res.processor_response_code && res.processor_response_code !== '000') return false
     if (res.transaction_result?.processor_response_code &&
       res.transaction_result.processor_response_code !== '000') return false
+    // Also catch approved:false at the top-level transaction_result check
+    if (res.transaction_result?.approved === false) return false
     // ConfirmationCode / transaction_id present → Tranzila approved the charge
     if (res.ConfirmationCode || res.transaction_id) return true
     // Nested transaction_response structure (new hosted-fields SDK response shape)
@@ -1037,6 +1058,7 @@ export function PaymentForm({
                 || (tzResult?.processor_response_code && tzResult.processor_response_code !== '000')
                 || (tzResult?.transaction_result?.processor_response_code &&
                   tzResult.transaction_result.processor_response_code !== '000')
+                || tzResult?.transaction_result?.approved === false
               )
               const approvalSignal = !sdkExplicitFailure && !hasExplicitDecline && (
                 sdkSuccess                                    // Bit + card: SDK confirmed payment
