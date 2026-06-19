@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
+import { generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
@@ -182,6 +183,39 @@ export async function POST(request: NextRequest) {
           }).catch((morningErr: any) =>
             console.error(`[CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
           )
+
+          // Generate gift card codes for gift card products in the cart
+          try {
+            const generatedGiftCards = await generateGiftCardsForOrder({
+              items: session.cart?.items || [],
+              sessionId: actualSessionId,
+              orderId: shopifyOrderId || undefined,
+              buyerEmail: customer.email,
+              currency: session.cart?.currency,
+            })
+            if (generatedGiftCards.length > 0) {
+              console.log(`[CALLBACK][${logId}] Generated gift cards:`, generatedGiftCards.map((c: any) => c.code))
+              // Store generated codes so the frontend polling can surface them on the success page
+              await createClient().then(sb => sb
+                .from('payment_sessions')
+                .update({
+                  raw_response: {
+                    ...params,
+                    shopifyOrderUrl: shopifyOrderUrl || undefined,
+                    _gift_card: (session.raw_response as any)?._gift_card || undefined,
+                    _generated_gift_cards: generatedGiftCards.map((c: any) => ({
+                      code: c.code, amount: c.original_amount, currency: c.currency,
+                    })),
+                  },
+                })
+                .eq('id', actualSessionId)
+              ).catch((gcSaveErr: any) =>
+                console.error(`[CALLBACK][${logId}] Failed to save generated gift cards (non-fatal):`, gcSaveErr)
+              )
+            }
+          } catch (gcErr: any) {
+            console.error(`[CALLBACK][${logId}] Gift card generation error (non-fatal):`, gcErr)
+          }
         } catch (err: any) {
           console.error(`[CALLBACK][${logId}] ❌ Shopify order creation failed:`, err?.message || err)
           // shopifyOrderId stays null — session will be marked paid without order_id.

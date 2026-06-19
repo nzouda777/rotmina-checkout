@@ -1,4 +1,5 @@
 import { ShopifyOrderCreateData } from './types'
+import { separateGiftCardItems } from './gift-card-utils'
 
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
@@ -64,6 +65,10 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     note += ` | ID: ${customer.nationalId}`
   }
 
+  // Determine if this is a digital-only (gift card) order — no physical shipping needed
+  const { regularItems } = separateGiftCardItems(session.cart.items)
+  const isGiftCardOnly = regularItems.length === 0 && session.cart.items.length > 0
+
   // Build line items with safe variant_id parsing
   const lineItems = session.cart.items.map((item) => {
     // Map our Record<string, string> properties to Shopify's expected array of {name, value}
@@ -86,28 +91,33 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     }
   })
 
+  const shippingAddress = {
+    first_name: customer.firstName,
+    last_name: customer.lastName,
+    address1: customer.address,
+    city: customer.city,
+    zip: customer.postalCode,
+    country: customer.country,
+    phone: customer.phone,
+  }
+
+  // Build order tags — gift card-only orders get a "No Shipping" tag so HFD
+  // fulfillment can be configured to skip them automatically.
+  let orderTags = 'Custom Checkout, Tranzila'
+  if (isGiftCardOnly) {
+    orderTags += ', Digital Product, Gift Card, No Shipping'
+  } else if (giftCard) {
+    orderTags += ', Gift Card Used'
+  }
+
   const orderData = {
     order: {
       inventory_behaviour: 'bypass',
       line_items: lineItems,
-      billing_address: {
-        first_name: customer.firstName,
-        last_name: customer.lastName,
-        address1: customer.address,
-        city: customer.city,
-        zip: customer.postalCode,
-        country: customer.country,
-        phone: customer.phone,
-      },
-      shipping_address: {
-        first_name: customer.firstName,
-        last_name: customer.lastName,
-        address1: customer.address,
-        city: customer.city,
-        zip: customer.postalCode,
-        country: customer.country,
-        phone: customer.phone,
-      },
+      billing_address: shippingAddress,
+      // Omit shipping_address for digital-only orders to prevent HFD from
+      // creating a physical shipment for a gift card.
+      ...(isGiftCardOnly ? {} : { shipping_address: shippingAddress }),
       email: customer.email,
       phone: customer.phone,
       financial_status: 'paid',
@@ -117,9 +127,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
         amount: String(t.amount)
       })),
       note: note + ` | Phone: ${customer.phone}`,
-      tags: giftCard
-        ? 'Custom Checkout, Tranzila, Gift Card Used'
-        : 'Custom Checkout, Tranzila',
+      tags: orderTags,
     },
   }
 

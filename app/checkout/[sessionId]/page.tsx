@@ -97,7 +97,17 @@ export default function CheckoutPage() {
     usedGiftCardCode?: string
   ) => {
     const baseUrl = window.location.origin
-    window.location.href = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}&language=${lang}`
+    let url = `${baseUrl}/checkout/success?session=${sessionId}&confirmation=${confirmationCode}&language=${lang}`
+    if (generatedGiftCards && generatedGiftCards.length > 0) {
+      url += `&gift_cards=${generatedGiftCards.map(gc => gc.code).join(',')}`
+    }
+    if (usedGiftCardCode) {
+      url += `&used_gc=${encodeURIComponent(usedGiftCardCode)}`
+    }
+    if (giftCardRemainingBalance !== undefined) {
+      url += `&gc_remaining=${giftCardRemainingBalance}`
+    }
+    window.location.href = url
   }
 
   const handlePaymentError = (errorMessage: string) => {

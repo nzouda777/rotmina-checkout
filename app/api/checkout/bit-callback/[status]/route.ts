@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
-import { debitGiftCard } from '@/lib/gift-cards'
+import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -176,6 +176,7 @@ async function processSuccess(
   const customer = (session.customer as CustomerInfo) || callbackCustomer
   const storedGiftCard = session.raw_response?._gift_card
   let remainingBalance: number | undefined
+  let generatedGiftCards: any[] = []
 
   // 1. Debit gift card if applicable
   if (storedGiftCard?.code && storedGiftCard?.appliedAmount > 0) {
@@ -266,6 +267,22 @@ async function processSuccess(
         }).catch((morningErr: any) =>
           console.error(`[BIT-CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
         )
+
+        // 5. Generate gift card codes for gift card products in the cart
+        try {
+          generatedGiftCards = await generateGiftCardsForOrder({
+            items: session.cart?.items || [],
+            sessionId,
+            orderId: shopifyOrderId || undefined,
+            buyerEmail: customer.email,
+            currency: session.cart?.currency || 'ILS',
+          })
+          if (generatedGiftCards.length > 0) {
+            console.log(`[BIT-CALLBACK][${logId}] Generated gift cards:`, generatedGiftCards.map((c: any) => c.code))
+          }
+        } catch (gcErr: any) {
+          console.error(`[BIT-CALLBACK][${logId}] Gift card generation error (non-fatal):`, gcErr)
+        }
       } catch (orderErr: any) {
         console.error(`[BIT-CALLBACK][${logId}] ❌ Shopify order creation failed:`, orderErr.message)
         // shopifyOrderId stays null — next callback call will retry (idempotency guard checks order_id)
@@ -291,6 +308,9 @@ async function processSuccess(
         _gift_card: storedGiftCard
           ? { ...storedGiftCard, remainingBalance }
           : null,
+        _generated_gift_cards: generatedGiftCards.map((c: any) => ({
+          code: c.code, amount: c.original_amount, currency: c.currency,
+        })),
       },
     })
     .eq('id', actualSessionId)

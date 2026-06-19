@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { sendGiftCardEmailToRecipient, sendGiftCardEmailToBuyer } from '@/lib/email'
 import type { CartItem } from './types'
+import { isGiftCardProduct, separateGiftCardItems } from './gift-card-utils'
 export { isGiftCardProduct, separateGiftCardItems } from './gift-card-utils'
 
 // ── Gift Card Code Generation ────────────────────────────────────────────────
@@ -239,31 +240,45 @@ export async function generateGiftCardsForOrder(params: {
         
         generatedCards.push(card)
 
-        // Attempt to send emails
+        // ── Send emails ───────────────────────────────────────────────────────
+        // Rule:
+        //  • Gift card receiver  → always gets GiftCardEmail (the prominent code email).
+        //    If a recipientEmail is set that email goes to them; otherwise the buyer
+        //    IS the receiver and gets it themselves.
+        //  • Gift card buyer     → always gets GiftCardBuyerEmail (purchase confirmation
+        //    with code) as long as we have their email address.
+        //    Exception: if buyer == receiver (same address), skip the buyer-confirmation
+        //    to avoid sending two nearly-identical emails to the same inbox.
+
+        const buyerMailToUse = senderEmail || params.buyerEmail
+        const receiverEmail = recipientEmail || buyerMailToUse  // fall back to buyer when no recipient
+        const buyerIsSameAsRecipient = !recipientEmail || recipientEmail === buyerMailToUse
+
         let allEmailsSent = true
 
-        if (recipientEmail) {
-          console.log(`[GIFT-CARD-GEN] Attempting to send email to RECIPIENT: ${recipientEmail}`)
+        // 1. Gift card email → receiver
+        if (receiverEmail) {
+          console.log(`[GIFT-CARD-GEN] Sending gift card email to RECEIVER: ${receiverEmail}`)
           const res = await sendGiftCardEmailToRecipient({
-            recipientEmail,
-            recipientName,
-            senderName,
+            recipientEmail: receiverEmail,
+            recipientName: recipientEmail ? recipientName : (senderName || recipientName),
+            senderName: recipientEmail ? senderName : undefined,
             giftCardCode: card.code,
             amount: item.price,
             currency: params.currency || 'ILS',
             message: personalMessage,
           })
           if (!res.success) {
-            console.error(`[GIFT-CARD-GEN] Failed to send email to recipient ${recipientEmail}:`, res.error)
+            console.error(`[GIFT-CARD-GEN] Failed to send gift card email to receiver ${receiverEmail}:`, res.error)
             allEmailsSent = false
           } else {
-            console.log(`[GIFT-CARD-GEN] Email sent successfully to recipient: ${recipientEmail}`)
+            console.log(`[GIFT-CARD-GEN] Gift card email sent to receiver: ${receiverEmail}`)
           }
         }
 
-        const buyerMailToUse = senderEmail || params.buyerEmail
-        if (buyerMailToUse) {
-          console.log(`[GIFT-CARD-GEN] Attempting to send email to BUYER: ${buyerMailToUse}`)
+        // 2. Buyer confirmation email → buyer (skip when buyer == receiver to avoid duplicate)
+        if (buyerMailToUse && !buyerIsSameAsRecipient) {
+          console.log(`[GIFT-CARD-GEN] Sending buyer confirmation email to BUYER: ${buyerMailToUse}`)
           const res = await sendGiftCardEmailToBuyer({
             buyerEmail: buyerMailToUse,
             buyerName: senderName,
@@ -273,14 +288,14 @@ export async function generateGiftCardsForOrder(params: {
             currency: params.currency || 'ILS',
           })
           if (!res.success) {
-            console.error(`[GIFT-CARD-GEN] Failed to send email to buyer ${buyerMailToUse}:`, res.error)
+            console.error(`[GIFT-CARD-GEN] Failed to send buyer email to ${buyerMailToUse}:`, res.error)
             allEmailsSent = false
           } else {
-            console.log(`[GIFT-CARD-GEN] Email sent successfully to buyer: ${buyerMailToUse}`)
+            console.log(`[GIFT-CARD-GEN] Buyer confirmation email sent to: ${buyerMailToUse}`)
           }
         }
 
-        if (allEmailsSent && (recipientEmail || buyerMailToUse)) {
+        if (allEmailsSent && receiverEmail) {
           const supabase = await createClient()
           await supabase
             .from('gift_cards')

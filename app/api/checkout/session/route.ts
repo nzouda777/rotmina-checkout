@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { randomInt } from 'crypto'
+import { separateGiftCardItems } from '@/lib/gift-card-utils'
+
+const FREE_SHIPPING_THRESHOLD_ILS = 499
+const DOMESTIC_SHIPPING_FEE_ILS = Number(process.env.DOMESTIC_SHIPPING_FEE_ILS || '25')
 
 function sanitizeShopDomain(shop: string): string {
   return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
@@ -175,6 +179,20 @@ export async function POST(request: NextRequest) {
 
     // Force ILS locally so components don't display $ and Tranzila/Shopify act in ILS
     finalCart.currency = 'ILS';
+
+    // ── Shipping threshold logic ──────────────────────────────────────────────
+    // Gift card-only orders are digital → always free shipping.
+    // For regular orders: free shipping at ₪499+, otherwise a flat domestic fee.
+    const { regularItems: regularCartItems } = separateGiftCardItems(finalCart.items || [])
+    const isGiftCardOnlyCart = regularCartItems.length === 0 && (finalCart.items || []).length > 0
+    const subtotalForShipping = finalCart.subtotal || 0
+
+    if (isGiftCardOnlyCart || subtotalForShipping >= FREE_SHIPPING_THRESHOLD_ILS) {
+      finalCart.shipping = 0
+    } else {
+      finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
+    }
+    finalCart.total = Math.round((subtotalForShipping + finalCart.shipping + (finalCart.tax || 0)) * 100) / 100
 
     const supabase = await createClient()
     const orderId = randomInt(0, 9999) 
