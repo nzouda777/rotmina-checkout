@@ -416,7 +416,7 @@ export const translations = {
       he: 'שם בעל הכרטיס',
     },
     expiryDate: {
-      en: 'Expiration date (MM/YY)',
+      en: 'Expiration date',
       he: 'תוקף',
     },
     expiryPlaceholder: {
