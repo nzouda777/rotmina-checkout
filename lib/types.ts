@@ -29,6 +29,11 @@ export interface CustomerInfo {
   nationalId?: string
 }
 
+export interface ShopifyDiscount {
+  amount: number
+  codes: { code: string; amount: string; type: string }[]
+}
+
 export interface CartData {
   items: CartItem[]
   subtotal: number
@@ -36,6 +41,15 @@ export interface CartData {
   tax: number
   total: number
   currency: string
+  shopify_discount?: ShopifyDiscount
+}
+
+export interface AppliedCoupon {
+  id: string
+  code: string
+  discountType: 'amount' | 'percentage'
+  discountValue: number
+  appliedAmount: number
 }
 
 export interface PaymentSession {

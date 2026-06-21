@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ArrowLeft, CreditCard, Shield, Info, X } from 'lucide-react'
-import type { CustomerInfo } from '@/lib/types'
+import type { CustomerInfo, AppliedCoupon, ShopifyDiscount } from '@/lib/types'
 import { createClient as createSupabaseClient } from '@/lib/supabase/client'
 import { RealtimeChannel } from '@supabase/supabase-js'
 import Image from 'next/image'
 import Script from 'next/script'
 import { useLanguage } from '@/lib/language-context'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
+import { CouponForm } from '@/components/checkout/coupon-form'
 
 interface PaymentFormProps {
   sessionId: string
@@ -29,6 +30,12 @@ interface PaymentFormProps {
   giftCardId?: string
   giftCardCode?: string
   giftCardAmount?: number
+  couponCode?: string
+  couponAmount?: number
+  shopifyDiscount?: ShopifyDiscount
+  appliedCoupon: AppliedCoupon | null
+  onCouponApply: (coupon: AppliedCoupon) => void
+  onCouponRemove: () => void
   shippingFeeAmount?: number
 }
 
@@ -74,6 +81,12 @@ export function PaymentForm({
   giftCardId,
   giftCardCode,
   giftCardAmount = 0,
+  couponCode,
+  couponAmount = 0,
+  shopifyDiscount,
+  appliedCoupon,
+  onCouponApply,
+  onCouponRemove,
   shippingFeeAmount = 0,
 }: PaymentFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -161,7 +174,7 @@ export function PaymentForm({
     if (!isSubmitting) setIsBitQrActive(false)
   }, [isSubmitting])
 
-  const chargeAmount = Math.max(total - giftCardAmount, 0)
+  const chargeAmount = Math.max(total - couponAmount - giftCardAmount, 0)
   const maxInstallments = getMaxInstallments(chargeAmount, currency)
 
   useEffect(() => {
@@ -787,6 +800,8 @@ export function PaymentForm({
           giftCardId: giftCardId || undefined,
           giftCardCode: giftCardCode || undefined,
           giftCardAmount: giftCardAmount || undefined,
+          couponCode: couponCode || undefined,
+          couponAmount: couponAmount || undefined,
           shippingFeeAmount: shippingFeeAmount || undefined,
           israeliId: israeliId || undefined,
         }),
@@ -1334,6 +1349,16 @@ export function PaymentForm({
           </button>
         </div>
       </div>
+
+      {/* Coupon Code Section */}
+      <CouponForm
+        currency={currency}
+        orderTotal={total}
+        shopifyDiscount={shopifyDiscount}
+        appliedCoupon={appliedCoupon}
+        onApply={onCouponApply}
+        onRemove={onCouponRemove}
+      />
 
       {/* Gift Card Applied Notice */}
       {giftCardAmount > 0 && (

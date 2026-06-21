@@ -1,0 +1,110 @@
+<!-- À ajouter dans cart.liquid ou un fichier snippet -->
+
+<button
+  id="external-payment-btn"
+  class="btn btn--primary button"
+  style="text-align: center; width: 100%; background: #dfdfdf; color: #000;"
+  data-cart-token="{{ cart.token }}"
+>
+  {% if request.locale.iso_code == 'he' %}
+    לתשלום
+  {% else %}
+    Pay
+  {% endif %}
+</button>
+
+<script>
+  (function() {
+    var btn = document.getElementById('external-payment-btn');
+    if (!btn) return;
+
+    btn.addEventListener('click', async function(e) {
+      e.preventDefault();
+
+      var originalText = btn.textContent.trim();
+      btn.textContent = '...';
+      btn.disabled = true;
+
+      try {
+        // 1. Fetch full Shopify cart
+        var cartRes = await fetch('/cart.js');
+        var cart = await cartRes.json();
+
+        // 2. Detect discount.
+        //
+        //    Shopify exposes discount info across multiple fields:
+        //      - cart_level_discount_applications  → full info (title, value_type, total_allocated_amount)
+        //      - discount_codes                    → only { code, applicable } in newer Shopify versions (no amount/type!)
+        //      - total_discount                    → total cents discounted
+        //      - original_total_price vs total_price → price drop (always reliable)
+        //
+        //    Strategy: always use cart_level_discount_applications as primary source
+        //    because it carries the full title (correct casing) + the exact amount.
+
+        var origCents     = Number(cart.original_total_price || 0);
+        var curCents      = Number(cart.total_price || 0);
+        var totalDiscount = Number(cart.total_discount || 0) || (origCents > curCents ? origCents - curCents : 0);
+        var cartApps      = cart.cart_level_discount_applications || [];
+        var discountCodes = cart.discount_codes || [];
+
+        var codes = [];
+        if (cartApps.length > 0) {
+          // Preferred: cart_level_discount_applications has title + amount + value_type
+          codes = cartApps.map(function(app) {
+            return {
+              code:   app.title || '',
+              amount: String((app.total_allocated_amount || totalDiscount) / 100),
+              type:   app.value_type || 'fixed_amount'
+            };
+          });
+        } else if (discountCodes.length > 0) {
+          // Fallback: discount_codes (may lack amount/type in newer Shopify)
+          codes = discountCodes
+            .filter(function(d) { return d.code; })
+            .map(function(d) {
+              return { code: d.code, amount: String(totalDiscount / 100), type: d.type || 'fixed_amount' };
+            });
+        }
+
+        // Only set shopifyDiscount when there is actually a discount
+        var shopifyDiscount = (totalDiscount > 0 || codes.length > 0)
+          ? { amountCents: totalDiscount, codes: codes }
+          : null;
+
+        console.log('[Checkout] discount detected:', shopifyDiscount);
+
+        // 3. Shopify customer (pre-fills checkout form if logged in)
+        var customer = null;
+        try {
+          var meta = window.ShopifyAnalytics && window.ShopifyAnalytics.meta;
+          var c = meta && meta.page && meta.page.customer;
+          if (c) customer = { email: c.email, firstName: c.first_name, lastName: c.last_name };
+        } catch (_) {}
+
+        // 4. Create checkout session
+        var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
+        var apiUrl = '{{ settings.EXTERNAL_PAYMENT_API_URL | default: "https://rotmina-checkout.vercel.app" }}';
+
+        var response = await fetch(apiUrl + '/api/checkout/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shop: shop, cart: cart, customer: customer, shopify_discount: shopifyDiscount })
+        });
+
+        if (!response.ok) throw new Error('Session creation failed');
+
+        var sessionId = (await response.json()).sessionId;
+
+        // 5. Redirect — path is /checkout/[sessionId] (NOT /pay/)
+        var frontendUrl = '{{ settings.EXTERNAL_PAYMENT_FRONTEND_URL | default: "https://rotmina-checkout.vercel.app" }}';
+        var lang = document.documentElement.lang || 'he';
+        window.location.href = frontendUrl + '/checkout/' + sessionId + '?language=' + lang;
+
+      } catch (err) {
+        console.error('[Checkout] error:', err);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    });
+  })();
+</script>

@@ -323,6 +323,10 @@ export const translations = {
       en: 'Gift card',
       he: 'כרטיס מתנה',
     },
+    discount: {
+      en: 'Discount',
+      he: 'הנחה',
+    },
     total: {
       en: 'Total',
       he: 'סה"כ',
@@ -374,6 +378,66 @@ export const translations = {
     failedValidation: {
       en: 'Failed to validate gift card. Please try again.',
       he: 'אימות כרטיס המתנה נכשל. נא לנסות שוב.',
+    },
+  },
+
+  // ─── Coupon Form ─────────────────────────────────────
+  couponForm: {
+    title: {
+      en: 'Coupon code',
+      he: 'קוד קופון',
+    },
+    placeholder: {
+      en: ' ',
+      he: "",
+    },
+    apply: {
+      en: 'Apply',
+      he: 'החל',
+    },
+    checking: {
+      en: 'Checking…',
+      he: '...בודק',
+    },
+    discountApplied: {
+      en: 'discount applied',
+      he: 'הנחה הוחלה',
+    },
+    off: {
+      en: 'off',
+      he: 'הנחה',
+    },
+    saved: {
+      en: 'saved',
+      he: 'נחסך',
+    },
+    removeCoupon: {
+      en: 'Remove coupon',
+      he: 'הסר קוד קופון',
+    },
+    enterCode: {
+      en: 'Please enter a coupon code',
+      he: 'נא להזין קוד קופון',
+    },
+    notFound: {
+      en: 'Coupon code not found. Please check the code and try again.',
+      he: 'קוד קופון לא נמצא. נא לבדוק את הקוד ולנסות שוב.',
+    },
+    disabled: {
+      en: 'This coupon code has been disabled.',
+      he: 'קוד קופון זה הושבת.',
+    },
+    depleted: {
+      en: 'This coupon code has reached its usage limit.',
+      he: 'קוד קופון זה הגיע למגבלת השימוש.',
+    },
+    invalidCode: {
+      en: 'Invalid coupon code',
+      he: 'קוד קופון לא תקין',
+    },
+    failedValidation: {
+      en: 'Failed to validate coupon. Please try again.',
+      he: 'אימות קוד הקופון נכשל. נא לנסות שוב.',
     },
   },
 

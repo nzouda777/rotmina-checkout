@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -191,6 +192,18 @@ async function processSuccess(
       console.log(`[BIT-CALLBACK][${logId}] Gift card debited — remaining: ${remainingBalance}`)
     } catch (gcErr) {
       console.error(`[BIT-CALLBACK][${logId}] GC debit failed:`, gcErr)
+    }
+  }
+
+  // 1b. Debit coupon if applicable
+  const storedCoupon = (session.raw_response as any)?._coupon
+  if (storedCoupon?.code) {
+    try {
+      console.log(`[BIT-CALLBACK][${logId}] Debiting coupon ${storedCoupon.code}`)
+      await debitCoupon(storedCoupon.code)
+      console.log(`[BIT-CALLBACK][${logId}] Coupon debited`)
+    } catch (cpErr) {
+      console.error(`[BIT-CALLBACK][${logId}] Coupon debit failed:`, cpErr)
     }
   }
 

@@ -8,7 +8,7 @@ import { CustomerForm } from '@/components/checkout/customer-form'
 import { PaymentForm } from '@/components/checkout/payment-form'
 import { GiftCardForm } from '@/components/checkout/gift-card-form'
 import { CheckoutFooter } from '@/components/checkout/checkout-footer'
-import type { PaymentSession, CustomerInfo } from '@/lib/types'
+import type { PaymentSession, CustomerInfo, AppliedCoupon } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
 
 // console.log('CheckoutPage module loaded');
@@ -53,6 +53,9 @@ export default function CheckoutPage() {
   // Gift card state
   const [appliedGiftCard, setAppliedGiftCard] = useState<AppliedGiftCard | null>(null)
 
+  // Coupon code state
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null)
+
   useEffect(() => {
   console.log('EFFECT MOUNT - sessionId:', sessionId);
 
@@ -67,19 +70,54 @@ export default function CheckoutPage() {
     try {
       const response = await fetch(`/api/checkout/session?id=${sessionId}`)
       if (!response.ok) {
-        throw new Error('Session not found')
+        // Session doesn't exist or server error — redirect to store
+        window.location.href = 'https://rotmina.co.il'
+        return
       }
       const data = await response.json()
       console.log('Session data loaded:', data);
+      console.log('[DISCOUNT] session.cart.shopify_discount:', JSON.stringify(data.cart?.shopify_discount));
+
+      // If the session was previously failed, reset it so the user can retry
+      if (data.status === 'failed') {
+        try {
+          await fetch('/api/checkout/session/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+          })
+          data.status = 'pending'
+        } catch {
+          // Reset failed — still show the checkout, user can try again
+        }
+      }
+
+      // Fallback discount detection: Shopify applies cart-level discounts to the
+      // cart total/subtotal WITHOUT reducing individual item prices. So if
+      // sum(item.price × qty) > cart.subtotal, the difference is the discount.
+      // This catches sessions created before explicit shopify_discount detection was deployed.
+      if (data.cart && !data.cart.shopify_discount) {
+        const itemsTotal = (data.cart.items || []).reduce((sum: number, item: any) => {
+          return sum + (item.price || 0) * (item.quantity || 1)
+        }, 0)
+        const impliedDiscount = Math.round((itemsTotal - (data.cart.subtotal || 0)) * 100) / 100
+        console.log('[DISCOUNT] fallback check: itemsTotal=', itemsTotal, 'subtotal=', data.cart.subtotal, 'implied=', impliedDiscount)
+        if (impliedDiscount > 0.5) {
+          data.cart.shopify_discount = { amount: impliedDiscount, codes: [] }
+          console.log('[DISCOUNT] fallback shopify_discount set:', impliedDiscount)
+        }
+      }
+
       setSession(data)
       if (data.customer) {
         setCustomerInfo(data.customer)
       }
     } catch (err) {
       console.error('Fetch session error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load checkout')
+      // Network error — redirect to store rather than showing a confusing "payment failed" popup
+      window.location.href = 'https://rotmina.co.il'
     } finally {
-      setLoading(false) // ← toujours appelé, succès ou erreur
+      setLoading(false)
     }
   }
 
@@ -123,6 +161,14 @@ export default function CheckoutPage() {
 
   const handleGiftCardRemove = () => {
     setAppliedGiftCard(null)
+  }
+
+  const handleCouponApply = (coupon: AppliedCoupon) => {
+    setAppliedCoupon(coupon)
+  }
+
+  const handleCouponRemove = () => {
+    setAppliedCoupon(null)
   }
 
   console.log('Render state - Loading:', loading, 'Error:', error, 'Session:', !!session);
@@ -206,6 +252,7 @@ export default function CheckoutPage() {
   }
 
   const giftCardAmount = appliedGiftCard?.appliedAmount || 0
+  const couponAmount = appliedCoupon?.appliedAmount || 0
 
   const shippingFeeAmount = lang === 'en' && session && session.cart.shipping > 0
     ? Math.round(session.cart.total * 0.20 * 100) / 100
@@ -277,13 +324,13 @@ export default function CheckoutPage() {
                   onApply={handleGiftCardApply}
                   onRemove={handleGiftCardRemove}
                   appliedGiftCard={appliedGiftCard}
-                  orderTotal={session.cart.total}
+                  orderTotal={Math.max(adjustedCartData.total - couponAmount, 0)}
                 />
- 
+
                 {/* Divider */}
                 <div className="border-t border-border" />
 
-                {/* Payment Form */}
+                {/* Payment Form (coupon field is rendered inside) */}
                 <PaymentForm
                   sessionId={sessionId}
                   customerInfo={customerInfo}
@@ -297,6 +344,12 @@ export default function CheckoutPage() {
                   giftCardId={appliedGiftCard?.id}
                   giftCardCode={appliedGiftCard?.code}
                   giftCardAmount={giftCardAmount}
+                  couponCode={appliedCoupon?.code}
+                  couponAmount={couponAmount}
+                  shopifyDiscount={session.cart.shopify_discount}
+                  appliedCoupon={appliedCoupon}
+                  onCouponApply={handleCouponApply}
+                  onCouponRemove={handleCouponRemove}
                   shippingFeeAmount={shippingFeeAmount}
                 />
               </div>
@@ -318,6 +371,8 @@ export default function CheckoutPage() {
                 cartData={adjustedCartData}
                 giftCardAmount={giftCardAmount}
                 giftCardCode={appliedGiftCard?.code}
+                couponAmount={couponAmount}
+                couponCode={appliedCoupon?.code}
               />
             </div>
           </div>

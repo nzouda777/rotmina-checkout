@@ -105,11 +105,13 @@ async function getExchangeRate(from: string, to: string): Promise<number> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { 
-      shop: bodyShop, 
-      idempotency_key, 
-      idempotencyKey: bodyIdempotencyKey, 
-      cart 
+    const {
+      shop: bodyShop,
+      idempotency_key,
+      idempotencyKey: bodyIdempotencyKey,
+      cart,
+      customer: bodyCustomer,
+      shopify_discount: bodyShopifyDiscount,
     } = body
 
     const shop = bodyShop || process.env.SHOPIFY_STORE_DOMAIN
@@ -126,6 +128,62 @@ export async function POST(request: NextRequest) {
     let finalCart = cart
     if (cart && (cart.token || cart.items) && !cart.subtotal) {
       console.log(`[CURRENCY] Processing raw Shopify cart in cents. Total price in cents: ${cart.total_price}`);
+
+      // Log the FULL cart object keys so we can see every field Shopify sends
+      console.log(`[DISCOUNT] Full cart keys: ${Object.keys(cart).join(', ')}`)
+      console.log(`[DISCOUNT] Raw cart discount fields:`, JSON.stringify({
+        total_discount: cart.total_discount,
+        discount_codes: cart.discount_codes,
+        discounts: cart.discounts,
+        cart_level_discount_applications: cart.cart_level_discount_applications,
+        original_total_price: cart.original_total_price,
+        total_price: cart.total_price,
+        items_subtotal_price: cart.items_subtotal_price,
+      }))
+
+      // --- Discount detection (all known Shopify mechanisms) ---
+      // 1. Explicit discount_codes / discounts array (manual codes added to cart)
+      const rawDiscountCodes: { code: string; amount: string; type: string }[] =
+        cart.discount_codes || cart.discounts || []
+
+      // 2. cart_level_discount_applications (automatic discounts + script discounts)
+      const cartLevelApps: any[] = cart.cart_level_discount_applications || []
+
+      // 3. original_total_price vs total_price — most reliable: covers everything
+      const originalTotal = Number(cart.original_total_price || 0)
+      const currentTotal  = Number(cart.total_price || 0)
+      const priceDropDiscount = originalTotal > 0 && originalTotal > currentTotal
+        ? originalTotal - currentTotal
+        : 0
+
+      // 4. explicit total_discount field
+      const explicitDiscount = Number(cart.total_discount || 0)
+
+      // Combine: any signal means a discount is active
+      const shopifyDiscountAmountCents = explicitDiscount || priceDropDiscount
+      const hasShopifyDiscount = shopifyDiscountAmountCents > 0 || rawDiscountCodes.length > 0 || cartLevelApps.length > 0
+
+      // Build codes: prefer cart_level_discount_applications (has title + amount + value_type).
+      // Newer Shopify carts put only { code, applicable } in discount_codes with no amount/type.
+      let shopifyDiscountCodes: { code: string; amount: string; type: string }[]
+      if (cartLevelApps.length > 0) {
+        shopifyDiscountCodes = cartLevelApps.map((app: any) => ({
+          code: app.title || (rawDiscountCodes[0] as any)?.code || '',
+          amount: String((app.total_allocated_amount || shopifyDiscountAmountCents) / 100),
+          type: app.value_type || 'fixed_amount',
+        }))
+      } else {
+        shopifyDiscountCodes = (rawDiscountCodes as any[])
+          .filter((dc) => dc.code)
+          .map((dc) => ({
+            code: dc.code || '',
+            amount: String(shopifyDiscountAmountCents / 100),
+            type: dc.type || 'fixed_amount',
+          }))
+      }
+
+      console.log(`[DISCOUNT] hasShopifyDiscount=${hasShopifyDiscount} amountCents=${shopifyDiscountAmountCents} codes=${JSON.stringify(shopifyDiscountCodes)}`)
+
       finalCart = {
         items: (cart.items || []).map((item: any) => ({
           id: String(item.id),
@@ -148,7 +206,15 @@ export async function POST(request: NextRequest) {
         shipping: 0,
         tax: 0,
         total: Math.round((cart.total_price / 100) * rate * 100) / 100,
-        currency: 'ILS'
+        currency: 'ILS',
+        ...(hasShopifyDiscount
+          ? {
+              shopify_discount: {
+                amount: Math.round((shopifyDiscountAmountCents / 100) * rate * 100) / 100,
+                codes: shopifyDiscountCodes,
+              },
+            }
+          : {}),
       }
       console.log(`[CURRENCY] Converted raw total to ILS: ${finalCart.total}`);
     } else if (finalCart && rate !== 1) {
@@ -163,6 +229,58 @@ export async function POST(request: NextRequest) {
       if (finalCart.shipping) finalCart.shipping = Math.round(finalCart.shipping * rate * 100) / 100;
       if (finalCart.tax) finalCart.tax = Math.round(finalCart.tax * rate * 100) / 100;
       console.log(`[CURRENCY] Converted formatted total to ILS: ${finalCart.total}`);
+    }
+
+    // For pre-formatted carts, detect discount from any known field
+    if (finalCart && !finalCart.shopify_discount) {
+      const preDiscountCodes: { code: string; amount: string; type: string }[] =
+        finalCart.discount_codes || finalCart.discounts || []
+      const preDiscountAmount = Number(finalCart.total_discount || 0)
+      const preCartApps: any[] = finalCart.cart_level_discount_applications || []
+      const preOriginal = Number(finalCart.original_total_price || 0)
+      const preCurrent  = Number(finalCart.total || 0)
+      const prePriceDrop = preOriginal > 0 && preOriginal > preCurrent ? preOriginal - preCurrent : 0
+      const preTotalDiscount = preDiscountAmount || prePriceDrop
+
+      let allPreCodes: { code: string; amount: string; type: string }[]
+      if (preCartApps.length > 0) {
+        allPreCodes = preCartApps.map((app: any) => ({
+          code: app.title || (preDiscountCodes[0] as any)?.code || '',
+          amount: String((app.total_allocated_amount || preTotalDiscount) / 100),
+          type: app.value_type || 'fixed_amount',
+        }))
+      } else {
+        allPreCodes = (preDiscountCodes as any[])
+          .filter((dc) => dc.code)
+          .map((dc) => ({
+            code: dc.code || '',
+            amount: String(preTotalDiscount / 100),
+            type: dc.type || 'fixed_amount',
+          }))
+      }
+      if (preTotalDiscount > 0 || allPreCodes.length > 0) {
+        console.log(`[DISCOUNT] Pre-formatted cart discount detected: amount=${preTotalDiscount} codes=${JSON.stringify(allPreCodes)}`)
+        finalCart.shopify_discount = { amount: preTotalDiscount, codes: allPreCodes }
+      }
+    }
+
+    // If the client (Shopify script) passed discount info, merge it in.
+    // We always apply client codes when they have richer data (code + amount + type from
+    // cart_level_discount_applications). Amount falls back to server detection if zero.
+    if (bodyShopifyDiscount) {
+      const clientAmountILS = Math.round((bodyShopifyDiscount.amountCents / 100) * rate * 100) / 100
+      const clientCodes: { code: string; amount: string; type: string }[] = bodyShopifyDiscount.codes || []
+      const hasRicherCodes = clientCodes.length > 0 && clientCodes[0].amount && clientCodes[0].type
+      if (!finalCart.shopify_discount) {
+        if (clientAmountILS > 0 || clientCodes.length > 0) {
+          finalCart.shopify_discount = { amount: clientAmountILS, codes: clientCodes }
+          console.log(`[DISCOUNT] Set from client-provided discount: amount=${clientAmountILS}`)
+        }
+      } else if (hasRicherCodes) {
+        // Server set the discount but client has richer codes — replace just the codes
+        finalCart.shopify_discount = { ...finalCart.shopify_discount, codes: clientCodes }
+        console.log(`[DISCOUNT] Enriched server discount codes with client data`)
+      }
     }
 
     if (!shop || !finalCart) {
@@ -194,20 +312,26 @@ export async function POST(request: NextRequest) {
     }
     finalCart.total = Math.round((subtotalForShipping + finalCart.shipping + (finalCart.tax || 0)) * 100) / 100
 
+    console.log(`[SESSION] Final cart shopify_discount before INSERT:`, JSON.stringify(finalCart.shopify_discount ?? null))
+    console.log(`[SESSION] Final cart total: ${finalCart.total} | subtotal: ${finalCart.subtotal}`)
+
     const supabase = await createClient()
     const orderId = randomInt(0, 9999) 
 
+    const insertPayload: Record<string, any> = {
+      shop,
+      order_id: orderId,
+      idempotency_key: idempotencyKey,
+      cart: finalCart,
+      amount: finalCart.total,
+      currency: finalCart.currency || 'ILS',
+      status: 'pending',
+    }
+    if (bodyCustomer) insertPayload.customer = bodyCustomer
+
     const { data, error } = await supabase
       .from('payment_sessions')
-      .insert({
-        shop,
-        order_id: orderId,
-        idempotency_key: idempotencyKey,
-        cart: finalCart,
-        amount: finalCart.total,
-        currency: finalCart.currency || 'ILS',
-        status: 'pending',
-      })
+      .insert(insertPayload)
       .select()
       .single()
 

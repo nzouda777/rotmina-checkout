@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -44,6 +45,7 @@ async function handlePostPayment(params: {
   customerInfo: CustomerInfo
   giftCardCode?: string
   giftCardAmount?: number
+  couponCode?: string
   transactionId?: string
   shopifyOrderId?: string
 }): Promise<PostPaymentResult> {
@@ -60,6 +62,18 @@ async function handlePostPayment(params: {
     } catch (gcError) {
       console.error(`[CHARGE][${logId}] WARNING: Payment succeeded but gift card debit failed:`, gcError)
       results.debitSuccess = false
+    }
+  }
+
+  // 1b. Debit coupon code usage
+  const couponCode = (params as any).couponCode
+  if (couponCode) {
+    try {
+      console.log(`[CHARGE][${logId}] Debiting coupon ${couponCode}...`)
+      await debitCoupon(couponCode)
+      console.log(`[CHARGE][${logId}] Coupon debited successfully`)
+    } catch (cpError) {
+      console.error(`[CHARGE][${logId}] WARNING: Payment succeeded but coupon debit failed:`, cpError)
     }
   }
 
@@ -179,6 +193,8 @@ export async function POST(request: NextRequest) {
       giftCardId,
       giftCardCode,
       giftCardAmount = 0,
+      couponCode,
+      couponAmount = 0,
       shippingFeeAmount = 0,
       israeliId,
     } = body
@@ -242,11 +258,13 @@ export async function POST(request: NextRequest) {
     }
 
     const orderTotal = Number(session.cart.total) + (Number(shippingFeeAmount) || 0)
-    const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, orderTotal)
-    const rawChargeAmount = Math.max(orderTotal - validGiftCardAmount, 0)
+    const validCouponAmount = Math.min(Number(couponAmount) || 0, orderTotal)
+    const priceAfterCoupon = Math.max(orderTotal - validCouponAmount, 0)
+    const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, priceAfterCoupon)
+    const rawChargeAmount = Math.max(priceAfterCoupon - validGiftCardAmount, 0)
     const chargeAmount = Math.round(rawChargeAmount * 100) / 100
 
-    console.log(`[CHARGE][${logId}] Total: ${orderTotal} | GC: ${validGiftCardAmount} | CC charge: ${chargeAmount}`)
+    console.log(`[CHARGE][${logId}] Total: ${orderTotal} | Coupon: ${validCouponAmount} | GC: ${validGiftCardAmount} | CC charge: ${chargeAmount}`)
 
     let giftCardInfo: GiftCardInfo | undefined
     if (giftCardCode && validGiftCardAmount > 0) {
@@ -273,8 +291,9 @@ export async function POST(request: NextRequest) {
       const postPayment = await handlePostPayment({
         logId, session, sessionId, customerInfo,
         giftCardCode, giftCardAmount: validGiftCardAmount,
+        couponCode: couponCode || undefined,
         transactionId: txnId,
-      })
+      } as any)
 
       if (!postPayment.debitSuccess) {
         await supabase
@@ -400,6 +419,7 @@ export async function POST(request: NextRequest) {
               _gift_card: giftCardInfo
                 ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
                 : null,
+              _coupon: couponCode ? { code: couponCode, appliedAmount: validCouponAmount } : null,
             },
           })
           .eq('id', sessionId)
@@ -471,6 +491,7 @@ export async function POST(request: NextRequest) {
               _gift_card: giftCardInfo
                 ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
                 : null,
+              _coupon: couponCode ? { code: couponCode, appliedAmount: validCouponAmount } : null,
             },
           })
           .eq('id', sessionId)
@@ -532,6 +553,7 @@ export async function POST(request: NextRequest) {
             _gift_card: giftCardInfo
               ? { id: giftCardInfo.id, code: giftCardInfo.code, appliedAmount: giftCardInfo.appliedAmount }
               : null,
+            _coupon: couponCode ? { code: couponCode, appliedAmount: validCouponAmount } : null,
           },
         })
         .eq('id', sessionId)

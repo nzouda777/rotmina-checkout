@@ -14,7 +14,7 @@ const APP_URL = 'https://703e-129-0-99-85.ngrok-free.app'; // Replace with your 
 
 async function redirectToCustomCheckout() {
   try {
-    // 1. Get cart data from Shopify
+    // 1. Get cart data from Shopify (full raw cart including discount fields)
     const cartResponse = await fetch('/cart.js');
     const cart = await cartResponse.json();
 
@@ -23,30 +23,15 @@ async function redirectToCustomCheckout() {
       return;
     }
 
-    // 2. Format cart for our app
+    // 2. Send raw Shopify cart — the session API handles price conversion and
+    //    discount detection automatically (total_discount, discount_codes,
+    //    cart_level_discount_applications, original_total_price, etc.)
     const shopDomain = window.Shopify ? window.Shopify.shop : window.location.hostname;
-    
+
     const checkoutData = {
       shop: shopDomain,
       idempotencyKey: Math.random().toString(36).substring(2) + Date.now().toString(36),
-      cart: {
-        items: cart.items.map(item => ({
-          id: String(item.id),
-          variant_id: item.variant_id,
-          product_id: item.product_id,
-          title: item.title,
-          quantity: item.quantity,
-          price: item.price / 100, // Shopify gives price in cents
-          image: item.image,
-          variant: item.variant_title,
-          sku: item.sku
-        })),
-        subtotal: cart.total_price / 100,
-        shipping: 0,
-        tax: 0,
-        total: cart.total_price / 100,
-        currency: cart.currency || 'ILS'
-      }
+      cart: cart, // raw Shopify cart — prices in cents, includes all discount fields
     };
 
     // 3. Create session in our app

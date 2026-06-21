@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ShoppingBag, Gift, LogOut,
-  Menu, X, Eye, EyeOff, Loader2, ChevronRight,
+  Menu, X, Eye, EyeOff, Loader2, ChevronRight, Ticket,
 } from 'lucide-react'
 import { AdminProvider, useAdmin } from '@/lib/admin-context'
 
@@ -15,6 +15,7 @@ const NAV = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/admin/gift-cards', label: 'Gift Cards', icon: Gift },
+  { href: '/admin/coupons', label: 'Coupons', icon: Ticket },
 ]
 
 // ── Auth gate ─────────────────────────────────────────────────────────────────

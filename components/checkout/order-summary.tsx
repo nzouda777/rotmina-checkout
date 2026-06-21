@@ -11,12 +11,21 @@ interface OrderSummaryProps {
   cartData: CartData
   giftCardAmount?: number
   giftCardCode?: string
+  couponAmount?: number
+  couponCode?: string
 }
-export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: OrderSummaryProps) {
+export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode }: OrderSummaryProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const { t, lang } = useLanguage()
 
-  const finalTotal = Math.max(cartData.total - giftCardAmount, 0)
+  const finalTotal = Math.max(cartData.total - couponAmount - giftCardAmount, 0)
+
+  // When Shopify has already discounted the subtotal, show the original price
+  // crossed out so the discount line makes the math visually consistent.
+  const shopifyDiscountAmount = cartData.shopify_discount?.amount ?? 0
+  const displaySubtotal = shopifyDiscountAmount > 0
+    ? cartData.subtotal + shopifyDiscountAmount
+    : cartData.subtotal
 
   console.log(cartData)
   const formatPrice = (amount: number) => {
@@ -108,7 +117,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">{t('orderSummary.subtotal')}</span>
-            <span className="text-foreground">{formatPrice(cartData.subtotal)}</span>
+            <span className="text-foreground">{formatPrice(displaySubtotal)}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">{t('orderSummary.shipping')}</span>
@@ -120,6 +129,35 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">{t('orderSummary.tax')}</span>
               <span className="text-foreground">{formatPrice(cartData.tax)}</span>
+            </div>
+          )}
+
+          {/* Shopify Discount Line */}
+          {cartData.shopify_discount && cartData.shopify_discount.amount > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                <DiscountIcon className="h-3.5 w-3.5" />
+                {cartData.shopify_discount.codes.length > 0
+                  ? cartData.shopify_discount.codes.map((c) => c.code).join(', ')
+                  : t('orderSummary.discount')
+                }
+              </span>
+              <span className="text-green-600 dark:text-green-400 font-medium">
+                −{formatPrice(cartData.shopify_discount.amount)}
+              </span>
+            </div>
+          )}
+
+          {/* Coupon Discount Line */}
+          {couponAmount > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                <DiscountIcon className="h-3.5 w-3.5" />
+                {couponCode || 'Coupon'}
+              </span>
+              <span className="text-green-600 dark:text-green-400 font-medium">
+                −{formatPrice(couponAmount)}
+              </span>
             </div>
           )}
 
@@ -142,7 +180,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
           <div className="flex justify-between items-center">
             <span className="text-base font-medium text-foreground">{t('orderSummary.total')}</span>
             <div className="text-right">
-              {giftCardAmount > 0 && (
+              {(giftCardAmount > 0 || couponAmount > 0) && (
                 <span className="text-sm text-muted-foreground line-through ltr:mr-2 rtl:ml-2">
                   {formatPrice(cartData.total)}
                 </span>
@@ -188,6 +226,14 @@ function GiftIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M20 12v10H4V12M2 7h20v5H2V7zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z" />
+    </svg>
+  )
+}
+
+function DiscountIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M17 17h.01M7 17L17 7M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   )
 }

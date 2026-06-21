@@ -18,8 +18,8 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Only reset sessions that are in an intermediate state
-    const resettableStatuses = ['processing', 'pending_3ds', 'pending_bit']
+    // Reset sessions that are in an intermediate or failed state so users can retry
+    const resettableStatuses = ['processing', 'pending_3ds', 'pending_bit', 'failed']
 
     const { data: session, error: fetchError } = await supabase
       .from('payment_sessions')

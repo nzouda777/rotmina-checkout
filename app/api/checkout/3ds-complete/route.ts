@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -120,6 +121,16 @@ export async function POST(request: NextRequest) {
           remainingBalance = updatedCard.balance ?? undefined
         } catch (gcError) {
           console.error('[3DS-COMPLETE] Gift card debit failed:', gcError)
+        }
+      }
+
+      const storedCoupon = (session.raw_response as any)?._coupon
+      if (storedCoupon?.code) {
+        try {
+          console.log('[3DS-COMPLETE] Debiting coupon:', storedCoupon.code)
+          await debitCoupon(storedCoupon.code)
+        } catch (cpError) {
+          console.error('[3DS-COMPLETE] Coupon debit failed:', cpError)
         }
       }
 
