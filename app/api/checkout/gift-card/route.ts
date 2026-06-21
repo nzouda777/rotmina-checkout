@@ -61,14 +61,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (card.status === 'depleted' || card.balance <= 0) {
+    const isPercentage = card.discount_type === 'percentage'
+
+    if (!isPercentage && (card.status === 'depleted' || (card.balance ?? 0) <= 0)) {
       return NextResponse.json(
         { error: 'This gift card has no remaining balance.' },
         { status: 400, headers: getCorsHeaders(request) }
       )
     }
 
-    console.log(`[GIFT-CARD][${logId}] Valid card. ID: ${card.id}, Balance: ${card.balance} ${card.currency}`)
+    if (isPercentage) {
+      console.log(`[GIFT-CARD][${logId}] Valid percentage card. ID: ${card.id}, ${card.discount_value}% off`)
+    } else {
+      console.log(`[GIFT-CARD][${logId}] Valid amount card. ID: ${card.id}, Balance: ${card.balance} ${card.currency}`)
+    }
 
     return NextResponse.json(
       {
@@ -76,6 +82,8 @@ export async function POST(request: NextRequest) {
         code: card.code,
         balance: card.balance,
         currency: card.currency,
+        discount_type: card.discount_type || 'amount',
+        discount_value: card.discount_value,
       },
       { headers: getCorsHeaders(request) }
     )

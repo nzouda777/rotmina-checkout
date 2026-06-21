@@ -337,11 +337,11 @@ export const translations = {
   giftCardForm: {
     title: {
       en: 'Gift card',
-      he: 'כרטיס מתנה',
+      he: 'גיפט קארד',
     },
     placeholder: {
-      en: 'Enter gift card code',
-      he: 'הזן קוד כרטיס מתנה',
+      en: '',
+      he: "",
     },
     apply: {
       en: 'Apply',
@@ -368,8 +368,8 @@ export const translations = {
       he: '⚠️ סכום כרטיס המתנה מחויב במלואו באופן מיידי ואינו נכלל בתוכניות תשלומים.',
     },
     enterCode: {
-      en: 'Please enter a gift card code',
-      he: 'נא להזין קוד כרטיס מתנה',
+      en: ' ',
+      he: ' ',
     },
     failedValidation: {
       en: 'Failed to validate gift card. Please try again.',

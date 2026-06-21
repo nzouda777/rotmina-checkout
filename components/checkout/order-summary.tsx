@@ -55,7 +55,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode }: Ord
           {t('orderSummary.title')}
         </h2>
 
-        {lang === 'en' && (
+        {lang === 'en' && cartData.shipping > 0 && (
           <div className="mb-4 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-xs leading-snug dark:bg-amber-950/30 dark:border-amber-800/40 dark:text-amber-300">
             {t('orderSummary.shippingNotice')}
           </div>

@@ -36,10 +36,12 @@ function generateCode(): string {
 export interface GiftCardRecord {
   id: string
   code: string
-  original_amount: number
-  balance: number
+  original_amount: number | null
+  balance: number | null
   currency: string
   status: 'active' | 'depleted' | 'disabled'
+  discount_type: 'amount' | 'percentage'
+  discount_value: number | null
   purchased_session_id: string | null
   purchased_order_id: string | null
   buyer_email: string | null
@@ -50,6 +52,8 @@ export interface GiftCardRecord {
   personal_message?: string | null
   email_sent?: boolean
   created_at: string
+  updated_at?: string
+  last_used_at?: string | null
 }
 
 /**
@@ -57,7 +61,10 @@ export interface GiftCardRecord {
  * Generates a unique code and returns the gift card record.
  */
 export async function createGiftCard(params: {
-  amount: number
+  amount?: number
+  discountType?: 'amount' | 'percentage'
+  discountValue?: number
+  code?: string
   currency?: string
   sessionId?: string
   orderId?: string
@@ -69,31 +76,47 @@ export async function createGiftCard(params: {
   personalMessage?: string
 }): Promise<GiftCardRecord> {
   const supabase = await createClient()
-  
-  // Generate a unique code (retry if collision)
+  const discountType = params.discountType || 'amount'
+
   let code: string
-  let attempts = 0
-  while (true) {
-    code = generateCode()
+  if (params.code) {
+    // Use provided code (normalize to uppercase)
+    code = params.code.trim().toUpperCase()
     const { data: existing } = await supabase
       .from('gift_cards')
       .select('id')
       .eq('code', code)
       .single()
-    
-    if (!existing) break
-    attempts++
-    if (attempts > 10) throw new Error('Failed to generate unique gift card code')
+    if (existing) throw new Error(`Gift card code already exists: ${code}`)
+  } else {
+    // Auto-generate a unique code (retry if collision)
+    let attempts = 0
+    code = generateCode()
+    while (true) {
+      const { data: existing } = await supabase
+        .from('gift_cards')
+        .select('id')
+        .eq('code', code)
+        .single()
+      if (!existing) break
+      attempts++
+      if (attempts > 10) throw new Error('Failed to generate unique gift card code')
+      code = generateCode()
+    }
   }
+
+  const isPercentage = discountType === 'percentage'
 
   const { data, error } = await supabase
     .from('gift_cards')
     .insert({
       code,
-      original_amount: params.amount,
-      balance: params.amount,
+      original_amount: isPercentage ? null : (params.amount ?? null),
+      balance: isPercentage ? null : (params.amount ?? null),
       currency: params.currency || 'ILS',
       status: 'active',
+      discount_type: discountType,
+      discount_value: isPercentage ? (params.discountValue ?? null) : null,
       purchased_session_id: params.sessionId || null,
       purchased_order_id: params.orderId || null,
       buyer_email: params.buyerEmail || null,
@@ -112,7 +135,10 @@ export async function createGiftCard(params: {
     throw new Error('Failed to create gift card')
   }
 
-  console.log(`[GIFT-CARD] Created gift card: ${code} for ${params.amount} ${params.currency || 'ILS'}`)
+  const label = isPercentage
+    ? `${params.discountValue}%`
+    : `${params.amount} ${params.currency || 'ILS'}`
+  console.log(`[GIFT-CARD] Created ${discountType} gift card: ${code} — ${label}`)
   return data as GiftCardRecord
 }
 
@@ -162,6 +188,22 @@ export async function debitGiftCard(params: {
 
   if (fetchError || !card) {
     throw new Error(`Gift card not found or not active: ${normalizedCode}`)
+  }
+
+  // Percentage cards are single-use — just mark depleted, no balance tracking
+  if (card.discount_type === 'percentage') {
+    const { data: updated, error: updateError } = await supabase
+      .from('gift_cards')
+      .update({ status: 'depleted', last_used_at: new Date().toISOString() })
+      .eq('id', card.id)
+      .select()
+      .single()
+
+    if (updateError || !updated) {
+      throw new Error(`Failed to debit gift card: ${updateError?.message}`)
+    }
+    console.log(`[GIFT-CARD] Depleted percentage card ${normalizedCode}`)
+    return updated as GiftCardRecord
   }
 
   const currentBalance = Number(card.balance)

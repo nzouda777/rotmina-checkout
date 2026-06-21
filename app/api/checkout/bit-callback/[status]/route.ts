@@ -187,7 +187,7 @@ async function processSuccess(
         amount: storedGiftCard.appliedAmount,
         sessionId,
       })
-      remainingBalance = updatedCard.balance
+      remainingBalance = updatedCard.balance ?? undefined
       console.log(`[BIT-CALLBACK][${logId}] Gift card debited — remaining: ${remainingBalance}`)
     } catch (gcErr) {
       console.error(`[BIT-CALLBACK][${logId}] GC debit failed:`, gcErr)

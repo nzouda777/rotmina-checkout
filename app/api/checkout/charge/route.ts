@@ -55,7 +55,7 @@ async function handlePostPayment(params: {
     try {
       console.log(`[CHARGE][${logId}] Debiting gift card ${giftCardCode} for ${giftCardAmount}...`)
       const updatedCard = await debitGiftCard({ code: giftCardCode, amount: giftCardAmount, sessionId })
-      results.giftCardRemainingBalance = updatedCard.balance
+      results.giftCardRemainingBalance = updatedCard.balance ?? undefined
       console.log(`[CHARGE][${logId}] Gift card debited successfully`)
     } catch (gcError) {
       console.error(`[CHARGE][${logId}] WARNING: Payment succeeded but gift card debit failed:`, gcError)

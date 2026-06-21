@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
             amount: storedGiftCard.appliedAmount,
             sessionId,
           })
-          remainingBalance = updatedCard.balance
+          remainingBalance = updatedCard.balance ?? undefined
         } catch (gcError) {
           console.error('[3DS-COMPLETE] Gift card debit failed:', gcError)
         }

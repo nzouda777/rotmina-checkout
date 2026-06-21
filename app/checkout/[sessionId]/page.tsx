@@ -18,8 +18,10 @@ type CheckoutStep = 'information' | 'payment' | 'processing'
 interface AppliedGiftCard {
   id: string
   code: string
-  balance: number
+  balance: number | null
   appliedAmount: number
+  discountType: 'amount' | 'percentage'
+  discountValue: number | null
 }
 
 export default function CheckoutPage() {
@@ -205,7 +207,7 @@ export default function CheckoutPage() {
 
   const giftCardAmount = appliedGiftCard?.appliedAmount || 0
 
-  const shippingFeeAmount = lang === 'en' && session
+  const shippingFeeAmount = lang === 'en' && session && session.cart.shipping > 0
     ? Math.round(session.cart.total * 0.20 * 100) / 100
     : 0
 

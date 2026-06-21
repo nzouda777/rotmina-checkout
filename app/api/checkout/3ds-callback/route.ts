@@ -124,7 +124,7 @@ async function handleCallback(request: NextRequest) {
             amount: storedGiftCard.appliedAmount,
             sessionId: actualSessionId,
           })
-          remainingBalance = updatedCard.balance
+          remainingBalance = updatedCard.balance ?? undefined
           console.log(`[3DS-CALLBACK] Gift card debited successfully - remaining: ${remainingBalance}`)
         } catch (gcError) {
           console.error('[3DS-CALLBACK] Gift card debit failed:', gcError)

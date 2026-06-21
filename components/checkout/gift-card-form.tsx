@@ -1,14 +1,23 @@
 'use client'
 
 import { useState } from 'react'
-import { Gift, X, Loader2, CheckCircle2 } from 'lucide-react'
+import { Gift, X, Loader2, CheckCircle2, Percent } from 'lucide-react'
 import { useLanguage } from '@/lib/language-context'
+
+interface AppliedGiftCard {
+  id: string
+  code: string
+  balance: number | null
+  appliedAmount: number
+  discountType: 'amount' | 'percentage'
+  discountValue: number | null
+}
 
 interface GiftCardFormProps {
   currency: string
-  onApply: (giftCard: { id: string; code: string; balance: number; appliedAmount: number }) => void
+  onApply: (giftCard: AppliedGiftCard) => void
   onRemove: () => void
-  appliedGiftCard: { id: string; code: string; balance: number; appliedAmount: number } | null
+  appliedGiftCard: AppliedGiftCard | null
   orderTotal: number
 }
 
@@ -24,12 +33,8 @@ export function GiftCardForm({
   const [error, setError] = useState('')
   const { t } = useLanguage()
 
-  const formatPrice = (amount: number) => {
-    return new Intl.NumberFormat('he-IL', {
-      style: 'currency',
-      currency: currency,
-    }).format(amount)
-  }
+  const formatPrice = (amount: number) =>
+    new Intl.NumberFormat('he-IL', { style: 'currency', currency }).format(amount)
 
   const handleApply = async () => {
     if (!code.trim()) {
@@ -54,14 +59,18 @@ export function GiftCardForm({
         return
       }
 
-      // Apply the gift card — the applied amount is min(balance, orderTotal)
-      const appliedAmount = Math.min(data.balance, orderTotal)
+      const isPercentage = data.discount_type === 'percentage'
+      const appliedAmount = isPercentage
+        ? Math.round(orderTotal * (data.discount_value / 100) * 100) / 100
+        : Math.min(data.balance ?? 0, orderTotal)
 
       onApply({
         id: data.id,
         code: data.code,
         balance: data.balance,
         appliedAmount,
+        discountType: data.discount_type || 'amount',
+        discountValue: data.discount_value,
       })
 
       setCode('')
@@ -80,24 +89,36 @@ export function GiftCardForm({
     }
   }
 
-  // If a gift card is already applied, show the applied state
   if (appliedGiftCard) {
+    const isPercentage = appliedGiftCard.discountType === 'percentage'
+    const remainingBalance =
+      !isPercentage && appliedGiftCard.balance != null
+        ? appliedGiftCard.balance - appliedGiftCard.appliedAmount
+        : null
+
     return (
       <div className="rounded-lg border border-green-200 bg-green-50/50 dark:border-green-800/50 dark:bg-green-900/10 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center h-9 w-9 rounded-full bg-green-100 dark:bg-green-900/30">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              {isPercentage
+                ? <Percent className="h-5 w-5 text-green-600 dark:text-green-400" />
+                : <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+              }
             </div>
             <div>
               <p className="text-sm font-medium text-foreground font-mono">
                 {appliedGiftCard.code}
               </p>
               <p className="text-xs text-muted-foreground">
-                {formatPrice(appliedGiftCard.appliedAmount)} {t('giftCardForm.applied')}
-                {appliedGiftCard.balance > appliedGiftCard.appliedAmount && (
-                  <> · {formatPrice(appliedGiftCard.balance - appliedGiftCard.appliedAmount)} {t('giftCardForm.remainingOnCard')}</>
-                )}
+                {isPercentage
+                  ? <>{appliedGiftCard.discountValue}% {t('giftCardForm.applied')} · {formatPrice(appliedGiftCard.appliedAmount)} saved</>
+                  : <>{formatPrice(appliedGiftCard.appliedAmount)} {t('giftCardForm.applied')}
+                      {remainingBalance != null && remainingBalance > 0 && (
+                        <> · {formatPrice(remainingBalance)} {t('giftCardForm.remainingOnCard')}</>
+                      )}
+                    </>
+                }
               </p>
             </div>
           </div>
