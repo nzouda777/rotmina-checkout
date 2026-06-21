@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Gift, Plus, Search, Copy, Ban, CheckCircle2, ChevronLeft, ChevronRight,
-  Percent, Tag, RefreshCw, X, Loader2, Eye, EyeOff, CreditCard, TrendingUp, Activity,
+  Percent, Tag, RefreshCw, X, Loader2, CreditCard, TrendingUp, Activity,
 } from 'lucide-react'
+import { useAdmin } from '@/lib/admin-context'
 
 interface GiftCardRecord {
   id: string
@@ -35,32 +36,7 @@ interface Stats {
 const LIMIT = 20
 
 export default function GiftCardAdminPage() {
-  // ── Auth ─────────────────────────────────────────────────────────────────────
-  const [adminKey, setAdminKey] = useState('')
-  const [keyInput, setKeyInput] = useState('')
-  const [showKey, setShowKey] = useState(false)
-  const [authError, setAuthError] = useState('')
-  const [isAuthed, setIsAuthed] = useState(false)
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem('gc-admin-key')
-    if (saved) { setAdminKey(saved); setIsAuthed(true) }
-  }, [])
-
-  const handleLogin = () => {
-    if (!keyInput.trim()) { setAuthError('Please enter the admin key'); return }
-    setAdminKey(keyInput.trim())
-    sessionStorage.setItem('gc-admin-key', keyInput.trim())
-    setIsAuthed(true)
-    setAuthError('')
-  }
-
-  const handleLogout = () => {
-    sessionStorage.removeItem('gc-admin-key')
-    setAdminKey('')
-    setIsAuthed(false)
-    setKeyInput('')
-  }
+  const { apiFetch } = useAdmin()
 
   // ── Data ─────────────────────────────────────────────────────────────────────
   const [cards, setCards] = useState<GiftCardRecord[]>([])
@@ -102,7 +78,6 @@ export default function GiftCardAdminPage() {
 
   // ── Fetch cards ───────────────────────────────────────────────────────────────
   const fetchCards = useCallback(async () => {
-    if (!adminKey) return
     setIsLoading(true)
     setLoadError('')
 
@@ -114,17 +89,7 @@ export default function GiftCardAdminPage() {
     })
 
     try {
-      const res = await fetch(`/api/admin/gift-cards?${params}`, {
-        headers: { 'x-admin-key': adminKey },
-      })
-
-      if (res.status === 401) {
-        setAuthError('Invalid admin key')
-        setIsAuthed(false)
-        sessionStorage.removeItem('gc-admin-key')
-        return
-      }
-
+      const res = await apiFetch(`/api/admin/gift-cards?${params}`)
       const data = await res.json()
       if (!res.ok) { setLoadError(data.error || 'Failed to load'); return }
 
@@ -136,9 +101,9 @@ export default function GiftCardAdminPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [adminKey, page, statusFilter, typeFilter, debouncedSearch])
+  }, [apiFetch, page, statusFilter, typeFilter, debouncedSearch])
 
-  useEffect(() => { if (isAuthed) fetchCards() }, [fetchCards, isAuthed])
+  useEffect(() => { fetchCards() }, [fetchCards])
 
   // ── Create ────────────────────────────────────────────────────────────────────
   const handleCreate = async (e: React.FormEvent) => {
@@ -157,9 +122,9 @@ export default function GiftCardAdminPage() {
 
     setIsCreating(true)
     try {
-      const res = await fetch('/api/admin/gift-cards', {
+      const res = await apiFetch('/api/admin/gift-cards', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           discountType: createType,
           amount: createType === 'amount' ? Number(createAmount) : undefined,
@@ -193,9 +158,9 @@ export default function GiftCardAdminPage() {
     const newStatus = card.status === 'disabled' ? 'active' : 'disabled'
     setUpdatingId(card.id)
     try {
-      const res = await fetch(`/api/admin/gift-cards/${card.id}`, {
+      const res = await apiFetch(`/api/admin/gift-cards/${card.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
       if (res.ok) {
@@ -223,65 +188,15 @@ export default function GiftCardAdminPage() {
 
   const totalPages = Math.ceil(total / LIMIT)
 
-  // ── Auth gate ─────────────────────────────────────────────────────────────────
-  if (!isAuthed) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4" dir="ltr">
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 w-full max-w-sm">
-          <div className="flex items-center justify-center h-14 w-14 rounded-full bg-black mx-auto mb-5">
-            <Gift className="h-7 w-7 text-white" />
-          </div>
-          <h1 className="text-xl font-semibold text-center text-gray-900 mb-1">Gift Card Admin</h1>
-          <p className="text-sm text-center text-gray-500 mb-6">Enter your admin key to continue</p>
-
-          <div className="space-y-3">
-            <div className="relative">
-              <input
-                type={showKey ? 'text' : 'password'}
-                value={keyInput}
-                onChange={(e) => { setKeyInput(e.target.value); setAuthError('') }}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="Admin key"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-black/20 pr-10"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {authError && <p className="text-sm text-red-600">{authError}</p>}
-            <button
-              onClick={handleLogin}
-              className="w-full py-3 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-900 transition-colors"
-            >
-              Sign in
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50" dir="ltr">
+    <div className="px-6 py-8 max-w-7xl mx-auto space-y-6">
       {/* ── Header ── */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-black">
-              <Gift className="h-4 w-4 text-white" />
-            </div>
-            <span className="font-semibold text-gray-900">Gift Card Management</span>
-            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">Admin</span>
-          </div>
+      <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold text-gray-900">Gift Cards</h1>
           <div className="flex items-center gap-2">
             <button
               onClick={fetchCards}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors border border-gray-200"
               title="Refresh"
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -293,19 +208,10 @@ export default function GiftCardAdminPage() {
               <Plus className="h-4 w-4" />
               Create Gift Card
             </button>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-2 rounded-lg text-sm text-gray-500 hover:bg-gray-100 transition-colors"
-            >
-              Sign out
-            </button>
           </div>
-        </div>
-      </header>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-
-        {/* ── Stats ── */}
+      {/* ── Stats ── */}
         {stats && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <StatCard icon={<Gift className="h-5 w-5 text-gray-600" />} label="Total Cards" value={stats.total} />
@@ -674,7 +580,6 @@ export default function GiftCardAdminPage() {
             </div>
           )}
         </div>
-      </main>
     </div>
   )
 }
