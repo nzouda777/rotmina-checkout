@@ -32,6 +32,9 @@ const variantColors: Record<string, { en: string; he: string }> = {
   black:  { en: 'Black', he: 'שחור' },
   white:  { en: 'White', he: 'לבן' },
   blue:   { en: 'Blue',  he: 'כחול' },
+  'black with white stripes': { en: 'Black with white stripes', he: 'שחור עם פסים לבנים' },
+  'gray with white stripes':  { en: 'Gray with white stripes',  he: 'אפור עם פסים לבנים' },
+  'white with gray stripes':  { en: 'White with gray stripes',  he: 'לבן עם פסים אפורים' },
 }
 
 /**

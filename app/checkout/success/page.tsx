@@ -21,6 +21,16 @@ function SuccessModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" dir={dir}>
+      {/* mobile image */}
+      <Image
+
+        src="/checkout/success-bg.webp"
+        alt=""
+        fill
+        className="sm:hidden object-cover object-center"
+      />
+      <div className="sm:hidden absolute inset-0 bg-black/30" />
+
       <div
         className="relative flex w-full overflow-hidden bg-white shadow-2xl"
         style={{
@@ -28,6 +38,7 @@ function SuccessModal() {
           borderRadius: 2,
         }}
       >
+
         {/* ── Left: product image ── */}
         <div className="relative hidden sm:block" style={{ width: '44%', minHeight: hasGiftCards ? 480 : 380, flexShrink: 0 }}>
           <Image
