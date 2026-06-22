@@ -142,7 +142,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
                   : t('orderSummary.discount')
                 }
               </span>
-              <span className="text-green-600 dark:text-green-400 font-medium">
+              <span className="text-green-600 dark:text-green-400 font-medium" dir="ltr" >
                 −{formatPrice(cartData.shopify_discount.amount)}
               </span>
             </div>

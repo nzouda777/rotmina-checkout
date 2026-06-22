@@ -353,7 +353,7 @@ export const translations = {
     },
     checking: {
       en: 'Checking...',
-      he: '...בודק',
+      he: 'בודק...',
     },
     applied: {
       en: 'applied',
@@ -397,7 +397,7 @@ export const translations = {
     },
     checking: {
       en: 'Checking…',
-      he: '...בודק',
+      he: 'בודק...',
     },
     discountApplied: {
       en: 'discount applied',
