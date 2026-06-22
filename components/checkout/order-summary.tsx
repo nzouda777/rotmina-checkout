@@ -142,10 +142,17 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
                   : t('orderSummary.discount')
                 }
               </span>
-              <span className="text-green-600 dark:text-green-400 font-medium" dir="ltr" >
-                −{formatPrice(cartData.shopify_discount.amount)}
-              </span>
-            </div>
+              { lang === "en"  && (
+                <span className="text-green-600 dark:text-green-400 font-medium"  >
+                -{formatPrice(cartData.shopify_discount.amount)}
+              </span> 
+              )  }
+                { lang === "he"  && (
+                <span className="text-green-600 dark:text-green-400 font-medium"  >
+                {formatPrice(cartData.shopify_discount.amount)}-
+              </span> 
+              )  }
+              </div>
           )}
 
           {/* Coupon Discount Line */}
