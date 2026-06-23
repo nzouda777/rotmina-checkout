@@ -313,7 +313,15 @@ export async function POST(request: NextRequest) {
     } else {
       finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
     }
-    finalCart.total = Math.round((subtotalForShipping + finalCart.shipping + (finalCart.tax || 0)) * 100) / 100
+
+    // 20% tax applies to English (USD) orders only
+    if (targetCurrency === 'USD') {
+      finalCart.tax = Math.round(subtotalForShipping * 0.20 * 100) / 100
+    } else {
+      finalCart.tax = 0
+    }
+
+    finalCart.total = Math.round((subtotalForShipping + finalCart.shipping + finalCart.tax) * 100) / 100
 
     // ── Convert to target currency (ILS → USD for English locale) ────────────
     if (targetCurrency === 'USD') {
@@ -456,6 +464,14 @@ export async function PATCH(request: NextRequest) {
     console.log(`[SESSION PATCH] Converting ${currentCurrency} → ${normalized} | rate: ${rate}`)
 
     const cart = session.cart as any
+    const convertedSubtotal = Math.round((cart.subtotal || 0) * rate * 100) / 100
+    const convertedShipping = Math.round((cart.shipping || 0) * rate * 100) / 100
+    // Add 20% tax when converting to USD; remove it when converting back to ILS
+    const convertedTax = normalized === 'USD'
+      ? Math.round(convertedSubtotal * 0.20 * 100) / 100
+      : 0
+    const convertedTotal = Math.round((convertedSubtotal + convertedShipping + convertedTax) * 100) / 100
+
     const convertedCart = {
       ...cart,
       currency: normalized,
@@ -463,10 +479,10 @@ export async function PATCH(request: NextRequest) {
         ...item,
         price: Math.round(item.price * rate * 100) / 100,
       })),
-      subtotal: Math.round((cart.subtotal || 0) * rate * 100) / 100,
-      shipping: Math.round((cart.shipping || 0) * rate * 100) / 100,
-      tax: Math.round((cart.tax || 0) * rate * 100) / 100,
-      total: Math.round((cart.total || 0) * rate * 100) / 100,
+      subtotal: convertedSubtotal,
+      shipping: convertedShipping,
+      tax: convertedTax,
+      total: convertedTotal,
       ...(cart.shopify_discount
         ? { shopify_discount: { ...cart.shopify_discount, amount: Math.round(cart.shopify_discount.amount * rate * 100) / 100 } }
         : {}),

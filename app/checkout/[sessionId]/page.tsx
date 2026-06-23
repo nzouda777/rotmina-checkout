@@ -277,17 +277,9 @@ export default function CheckoutPage() {
   const giftCardAmount = appliedGiftCard?.appliedAmount || 0
   const couponAmount = appliedCoupon?.appliedAmount || 0
 
-  const shippingFeeAmount = lang === 'en' && session && session.cart.shipping > 0
-    ? Math.round(session.cart.total * 0.20 * 100) / 100
-    : 0
-
-  const adjustedCartData = shippingFeeAmount > 0
-    ? {
-        ...session.cart,
-        shipping: session.cart.shipping + shippingFeeAmount,
-        total: session.cart.total + shippingFeeAmount,
-      }
-    : session.cart
+  // Tax (20% for English/USD) is now stored server-side in the session.
+  // No client-side adjustment needed.
+  const adjustedCartData = session.cart
 
   return (
     <div className="min-h-screen bg-background">
@@ -373,7 +365,6 @@ export default function CheckoutPage() {
                   appliedCoupon={appliedCoupon}
                   onCouponApply={handleCouponApply}
                   onCouponRemove={handleCouponRemove}
-                  shippingFeeAmount={shippingFeeAmount}
                 />
               </div>
             )}

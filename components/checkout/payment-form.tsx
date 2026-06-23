@@ -36,7 +36,6 @@ interface PaymentFormProps {
   appliedCoupon: AppliedCoupon | null
   onCouponApply: (coupon: AppliedCoupon) => void
   onCouponRemove: () => void
-  shippingFeeAmount?: number
 }
 
 function getMaxInstallments(amount: number, currency: string): number {
@@ -87,8 +86,8 @@ export function PaymentForm({
   appliedCoupon,
   onCouponApply,
   onCouponRemove,
-  shippingFeeAmount = 0,
 }: PaymentFormProps) {
+  const shippingFeeAmount = 0
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [show3DS, setShow3DS] = useState(false)
