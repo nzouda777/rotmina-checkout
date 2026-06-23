@@ -124,10 +124,11 @@ export function GiftCardForm({
           </div>
           <button
             onClick={onRemove}
-            className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800/50 transition-colors flex-shrink-0"
             aria-label={t('giftCardForm.removeGiftCard')}
           >
-            <X className="h-4 w-4 text-muted-foreground hover:text-red-600" />
+            <X className="h-3.5 w-3.5" />
+            {/* {t('giftCardForm.remove') || 'Retirer'} */}
           </button>
         </div>
 

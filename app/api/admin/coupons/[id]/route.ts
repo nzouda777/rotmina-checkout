@@ -24,15 +24,32 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { status } = body as { status?: string }
-  if (!status || !['active', 'disabled'].includes(status)) {
-    return NextResponse.json({ error: 'status must be "active" or "disabled"' }, { status: 400 })
+  const { status, applies_to_all, allowed_variant_ids } = body as {
+    status?: string
+    applies_to_all?: boolean
+    allowed_variant_ids?: number[]
+  }
+
+  const updates: Record<string, unknown> = {}
+
+  if (status !== undefined) {
+    if (!['active', 'disabled'].includes(status)) {
+      return NextResponse.json({ error: 'status must be "active" or "disabled"' }, { status: 400 })
+    }
+    updates.status = status
+  }
+
+  if (applies_to_all !== undefined) updates.applies_to_all = applies_to_all
+  if (allowed_variant_ids !== undefined) updates.allowed_variant_ids = allowed_variant_ids
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
 
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('coupon_codes')
-    .update({ status })
+    .update(updates)
     .eq('id', id)
     .select()
     .single()

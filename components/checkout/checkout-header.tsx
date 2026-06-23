@@ -32,7 +32,7 @@ export function CheckoutHeader({ shopName }: CheckoutHeaderProps) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-muted/50 hover:bg-muted transition-colors text-sm font-medium text-foreground"
             aria-label={lang === 'he' ? 'Switch to English' : 'עבור לעברית'}
           >
-            <span className="text-base leading-none">{lang === 'he' ? '🇮🇱' : '🇬🇧'}</span>
+            <span className="text-base leading-none">{lang === 'he' ? '🇮🇱' : '🇺🇸'}</span>
             <span className="hidden sm:inline text-xs">
               {lang === 'he' ? 'עב' : 'EN'}
             </span>

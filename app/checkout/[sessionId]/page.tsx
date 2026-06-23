@@ -124,6 +124,29 @@ export default function CheckoutPage() {
   fetchSession()
 }, [sessionId])
 
+  // Sync session currency with the current language.
+  // If the Shopify script created the session without a locale (or with a different one),
+  // this effect patches it once so everything downstream (display + Tranzila charge) is correct.
+  useEffect(() => {
+    if (!session || !sessionId) return
+
+    const expectedCurrency = lang === 'en' ? 'USD' : 'ILS'
+    const currentCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
+    if (currentCurrency === expectedCurrency) return
+
+    let cancelled = false
+    fetch('/api/checkout/session', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, targetCurrency: expectedCurrency }),
+    })
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setSession(data) })
+      .catch(() => {})
+
+    return () => { cancelled = true }
+  }, [session?.cart?.currency, lang, sessionId])
+
   const handleCustomerSubmit = (info: CustomerInfo) => {
     setCustomerInfo(info)
     setStep('payment')

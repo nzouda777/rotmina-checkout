@@ -10,6 +10,8 @@ export interface CouponRecord {
   max_uses: number | null
   current_uses: number
   note: string | null
+  applies_to_all: boolean
+  allowed_variant_ids: number[]
   created_at: string
   updated_at: string
 }

@@ -75,7 +75,7 @@ export function CouponForm({
       <div className="rounded-lg border border-green-200 bg-green-50/50 dark:border-green-800/50 dark:bg-green-900/10 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center h-9 w-9 rounded-full bg-green-100 dark:bg-green-900/30">
+            <div className="flex items-center justify-center h-9 w-9 rounded-full bg-green-100 dark:bg-green-900/30 flex-shrink-0">
               {isPercentage
                 ? <Percent className="h-5 w-5 text-green-600 dark:text-green-400" />
                 : <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
@@ -93,10 +93,11 @@ export function CouponForm({
           </div>
           <button
             onClick={onRemove}
-            className="flex items-center justify-center h-8 w-8 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800/50 transition-colors flex-shrink-0"
             aria-label={t('couponForm.removeCoupon')}
           >
-            <X className="h-4 w-4 text-muted-foreground hover:text-red-600" />
+            <X className="h-3.5 w-3.5" />
+            {/* {t('couponForm.remove') || 'Retirer'} */}
           </button>
         </div>
       </div>

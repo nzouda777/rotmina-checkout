@@ -295,10 +295,13 @@ export async function POST(request: NextRequest) {
     // Fetch main product images from Shopify Admin API and enrich each item
     finalCart.items = await enrichItemsWithProductImages(finalCart.items || [])
 
-    // Force ILS locally so components don't display $ and Tranzila/Shopify act in ILS
-    finalCart.currency = 'ILS';
+    // Determine target currency from the locale passed by the Shopify storefront script.
+    // Locale examples: 'en', 'en-US', 'he', 'he-IL'. Default to ILS.
+    const localeParam: string = body.locale || body.language || ''
+    const localeLang = localeParam.split('-')[0].toLowerCase()
+    const targetCurrency = localeLang === 'en' ? 'USD' : 'ILS'
 
-    // ── Shipping threshold logic ──────────────────────────────────────────────
+    // ── Shipping threshold logic (always computed in ILS before any conversion) ─
     // Gift card-only orders are digital → always free shipping.
     // For regular orders: free shipping at ₪499+, otherwise a flat domestic fee.
     const { regularItems: regularCartItems } = separateGiftCardItems(finalCart.items || [])
@@ -311,6 +314,24 @@ export async function POST(request: NextRequest) {
       finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
     }
     finalCart.total = Math.round((subtotalForShipping + finalCart.shipping + (finalCart.tax || 0)) * 100) / 100
+
+    // ── Convert to target currency (ILS → USD for English locale) ────────────
+    if (targetCurrency === 'USD') {
+      const usdRate = await getExchangeRate('ILS', 'USD')
+      console.log(`[CURRENCY] Converting ILS → USD for English locale (rate: ${usdRate})`)
+      finalCart.items = (finalCart.items || []).map((item: any) => ({
+        ...item,
+        price: Math.round(item.price * usdRate * 100) / 100,
+      }))
+      finalCart.subtotal = Math.round(finalCart.subtotal * usdRate * 100) / 100
+      finalCart.shipping = Math.round(finalCart.shipping * usdRate * 100) / 100
+      finalCart.tax = Math.round((finalCart.tax || 0) * usdRate * 100) / 100
+      finalCart.total = Math.round(finalCart.total * usdRate * 100) / 100
+      if (finalCart.shopify_discount?.amount) {
+        finalCart.shopify_discount.amount = Math.round(finalCart.shopify_discount.amount * usdRate * 100) / 100
+      }
+    }
+    finalCart.currency = targetCurrency;
 
     console.log(`[SESSION] Final cart shopify_discount before INSERT:`, JSON.stringify(finalCart.shopify_discount ?? null))
     console.log(`[SESSION] Final cart total: ${finalCart.total} | subtotal: ${finalCart.subtotal}`)
@@ -398,6 +419,74 @@ export async function GET(request: NextRequest) {
       { error: 'Internal server error' },
       500
     )
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { sessionId, targetCurrency } = body
+
+    if (!sessionId || !targetCurrency) {
+      return corsResponse(request, { error: 'Missing sessionId or targetCurrency' }, 400)
+    }
+
+    const normalized = (targetCurrency as string).toUpperCase()
+    if (normalized !== 'USD' && normalized !== 'ILS') {
+      return corsResponse(request, { error: 'Currency must be USD or ILS' }, 400)
+    }
+
+    const supabase = await createClient()
+    const { data: session, error: fetchError } = await supabase
+      .from('payment_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single()
+
+    if (fetchError || !session) {
+      return corsResponse(request, { error: 'Session not found' }, 404)
+    }
+
+    const currentCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
+    if (currentCurrency === normalized) {
+      return corsResponse(request, { ...session })
+    }
+
+    const rate = await getExchangeRate(currentCurrency, normalized)
+    console.log(`[SESSION PATCH] Converting ${currentCurrency} → ${normalized} | rate: ${rate}`)
+
+    const cart = session.cart as any
+    const convertedCart = {
+      ...cart,
+      currency: normalized,
+      items: ((cart.items || []) as any[]).map((item: any) => ({
+        ...item,
+        price: Math.round(item.price * rate * 100) / 100,
+      })),
+      subtotal: Math.round((cart.subtotal || 0) * rate * 100) / 100,
+      shipping: Math.round((cart.shipping || 0) * rate * 100) / 100,
+      tax: Math.round((cart.tax || 0) * rate * 100) / 100,
+      total: Math.round((cart.total || 0) * rate * 100) / 100,
+      ...(cart.shopify_discount
+        ? { shopify_discount: { ...cart.shopify_discount, amount: Math.round(cart.shopify_discount.amount * rate * 100) / 100 } }
+        : {}),
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('payment_sessions')
+      .update({ cart: convertedCart, amount: convertedCart.total, currency: normalized })
+      .eq('id', sessionId)
+      .select()
+      .single()
+
+    if (updateError || !updated) {
+      return corsResponse(request, { error: 'Failed to update session currency' }, 500)
+    }
+
+    return corsResponse(request, { ...updated, cart: convertedCart })
+  } catch (error) {
+    console.error('Session currency PATCH error:', error)
+    return corsResponse(request, { error: 'Internal server error' }, 500)
   }
 }
 

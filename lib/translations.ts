@@ -367,6 +367,10 @@ export const translations = {
       en: 'Remove gift card',
       he: 'הסר כרטיס מתנה',
     },
+    remove: {
+      en: 'Remove',
+      he: 'הסר',
+    },
     giftCardWarning: {
       en: '⚠️ Gift card amount is charged in full immediately and is not included in installment plans.',
       he: '⚠️ סכום כרטיס המתנה מחויב במלואו באופן מיידי ואינו נכלל בתוכניות תשלומים.',
@@ -414,6 +418,10 @@ export const translations = {
     removeCoupon: {
       en: 'Remove coupon',
       he: 'הסר קוד קופון',
+    },
+    remove: {
+      en: 'Remove',
+      he: 'הסר',
     },
     enterCode: {
       en: 'Please enter a coupon code',

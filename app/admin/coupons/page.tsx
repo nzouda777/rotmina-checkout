@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Tag, Plus, Search, Copy, Ban, CheckCircle2, ChevronLeft, ChevronRight,
-  Percent, RefreshCw, X, Loader2, Activity, Ticket,
+  Percent, RefreshCw, X, Loader2, Activity, Ticket, ShoppingBag, Package,
 } from 'lucide-react'
 import { useAdmin } from '@/lib/admin-context'
 
@@ -17,8 +17,13 @@ interface CouponRecord {
   max_uses: number | null
   current_uses: number
   note: string | null
+  applies_to_all: boolean
+  allowed_variant_ids: number[]
   created_at: string
 }
+
+interface ShopifyVariant { id: number; title: string }
+interface ShopifyProduct { id: number; title: string; variants: ShopifyVariant[] }
 
 interface Stats {
   total: number
@@ -67,6 +72,7 @@ export default function CouponsAdminPage() {
 
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [productCoupon, setProductCoupon] = useState<CouponRecord | null>(null)
 
   const fetchCoupons = useCallback(async () => {
     setIsLoading(true)
@@ -151,6 +157,11 @@ export default function CouponsAdminPage() {
     } finally {
       setUpdatingId(null)
     }
+  }
+
+  const handleSaveProductRestriction = (updated: CouponRecord) => {
+    setCoupons((prev) => prev.map((c) => c.id === updated.id ? { ...c, ...updated } : c))
+    setProductCoupon(null)
   }
 
   const handleCopy = (code: string) => {
@@ -426,6 +437,7 @@ export default function CouponsAdminPage() {
                   <Th>Uses</Th>
                   <Th>Status</Th>
                   <Th>Note</Th>
+                  <Th>Produits</Th>
                   <Th>Created</Th>
                   <Th align="right">Actions</Th>
                 </tr>
@@ -433,13 +445,13 @@ export default function CouponsAdminPage() {
               <tbody>
                 {isLoading && coupons.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center">
+                    <td colSpan={9} className="py-16 text-center">
                       <Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" />
                     </td>
                   </tr>
                 ) : coupons.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-gray-400 text-sm">
+                    <td colSpan={9} className="py-16 text-center text-gray-400 text-sm">
                       No coupon codes found
                     </td>
                   </tr>
@@ -482,6 +494,22 @@ export default function CouponsAdminPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs max-w-32 truncate">
                         {coupon.note || '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => setProductCoupon(coupon)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors hover:opacity-80 ${
+                            coupon.applies_to_all === false && coupon.allowed_variant_ids?.length > 0
+                              ? 'bg-blue-50 text-blue-700 border-blue-100'
+                              : 'bg-gray-50 text-gray-600 border-gray-200'
+                          }`}
+                        >
+                          <Package className="h-3 w-3" />
+                          {coupon.applies_to_all === false && coupon.allowed_variant_ids?.length > 0
+                            ? `${coupon.allowed_variant_ids.length} variant${coupon.allowed_variant_ids.length > 1 ? 's' : ''}`
+                            : 'Tous'
+                          }
+                        </button>
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(coupon.created_at)}
@@ -540,6 +568,14 @@ export default function CouponsAdminPage() {
           </div>
         )}
       </div>
+      {productCoupon && (
+        <ProductPickerModal
+          coupon={productCoupon}
+          apiFetch={apiFetch}
+          onClose={() => setProductCoupon(null)}
+          onSave={handleSaveProductRestriction}
+        />
+      )}
     </div>
   )
 }
@@ -636,5 +672,197 @@ function PageBtn({ children, disabled, onClick }: {
     >
       {children}
     </button>
+  )
+}
+
+function ProductPickerModal({ coupon, apiFetch, onClose, onSave }: {
+  coupon: CouponRecord
+  apiFetch: (url: string, init?: RequestInit) => Promise<Response>
+  onClose: () => void
+  onSave: (updated: CouponRecord) => void
+}) {
+  const [products, setProducts] = useState<ShopifyProduct[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [appliesAll, setAppliesAll] = useState(coupon.applies_to_all !== false)
+  const [selectedVariants, setSelectedVariants] = useState<Set<number>>(
+    new Set(coupon.allowed_variant_ids ?? [])
+  )
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  useEffect(() => {
+    apiFetch('/api/admin/products')
+      .then((r) => r.json())
+      .then((data: ShopifyProduct[]) => setProducts(data))
+      .catch(() => setLoadError('Impossible de charger les produits Shopify'))
+      .finally(() => setLoadingProducts(false))
+  }, [apiFetch])
+
+  const toggleVariant = (variantId: number) => {
+    setSelectedVariants((prev) => {
+      const next = new Set(prev)
+      if (next.has(variantId)) next.delete(variantId)
+      else next.add(variantId)
+      return next
+    })
+  }
+
+  const toggleAllVariantsForProduct = (product: ShopifyProduct) => {
+    const ids = product.variants.map((v) => v.id)
+    const allSelected = ids.every((id) => selectedVariants.has(id))
+    setSelectedVariants((prev) => {
+      const next = new Set(prev)
+      if (allSelected) ids.forEach((id) => next.delete(id))
+      else ids.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveError('')
+    try {
+      const body: Record<string, unknown> = { applies_to_all: appliesAll }
+      if (!appliesAll) body.allowed_variant_ids = Array.from(selectedVariants)
+      else body.allowed_variant_ids = []
+
+      const res = await apiFetch(`/api/admin/coupons/${coupon.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (!res.ok) { setSaveError(data.error || 'Échec de la mise à jour'); return }
+      onSave(data.coupon)
+    } catch {
+      setSaveError('Erreur réseau')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-lg max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShoppingBag className="h-4 w-4 text-gray-500" />
+              <span className="font-medium text-gray-900">Produits éligibles</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">Coupon <span className="font-mono">{coupon.code}</span></p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Segmented control */}
+        <div className="px-6 pt-4 pb-3 shrink-0">
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden bg-gray-50 p-1 gap-1">
+            <button
+              onClick={() => setAppliesAll(true)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                appliesAll ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Tous les produits
+            </button>
+            <button
+              onClick={() => setAppliesAll(false)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !appliesAll ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Produits spécifiques
+            </button>
+          </div>
+        </div>
+
+        {/* Product list */}
+        {!appliesAll && (
+          <div className="flex-1 overflow-y-auto px-6 pb-2">
+            {loadingProducts ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+              </div>
+            ) : loadError ? (
+              <p className="text-sm text-red-600 py-6 text-center">{loadError}</p>
+            ) : (
+              <div className="space-y-3">
+                {products.map((product) => {
+                  const allSelected = product.variants.every((v) => selectedVariants.has(v.id))
+                  const someSelected = product.variants.some((v) => selectedVariants.has(v.id))
+                  return (
+                    <div key={product.id} className="rounded-xl border border-gray-200 overflow-hidden">
+                      <button
+                        onClick={() => toggleAllVariantsForProduct(product)}
+                        className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                      >
+                        <span className={`flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center ${
+                          allSelected ? 'bg-black border-black' : someSelected ? 'border-black bg-gray-200' : 'border-gray-300'
+                        }`}>
+                          {allSelected && <span className="block h-2 w-2 bg-white rounded-sm" />}
+                          {!allSelected && someSelected && <span className="block h-0.5 w-2 bg-black" />}
+                        </span>
+                        <span className="text-sm font-medium text-gray-900">{product.title}</span>
+                        <span className="ml-auto text-xs text-gray-400">{product.variants.length} variant{product.variants.length > 1 ? 's' : ''}</span>
+                      </button>
+                      {product.variants.length > 1 && (
+                        <div className="divide-y divide-gray-100">
+                          {product.variants.map((variant) => (
+                            <button
+                              key={variant.id}
+                              onClick={() => toggleVariant(variant.id)}
+                              className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition-colors text-left"
+                            >
+                              <span className={`flex-shrink-0 h-4 w-4 rounded border-2 flex items-center justify-center ${
+                                selectedVariants.has(variant.id) ? 'bg-black border-black' : 'border-gray-300'
+                              }`}>
+                                {selectedVariants.has(variant.id) && <span className="block h-2 w-2 bg-white rounded-sm" />}
+                              </span>
+                              <span className="text-xs text-gray-600">{variant.title}</span>
+                              <span className="ml-auto text-xs text-gray-400 font-mono">{variant.id}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 shrink-0 space-y-2">
+          {!appliesAll && (
+            <p className="text-xs text-gray-500">
+              {selectedVariants.size} variant{selectedVariants.size !== 1 ? 's' : ''} sélectionné{selectedVariants.size !== 1 ? 's' : ''}
+            </p>
+          )}
+          {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving || (!appliesAll && selectedVariants.size === 0)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-900 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Enregistrer
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
