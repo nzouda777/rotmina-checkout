@@ -7,6 +7,7 @@ import {
   RefreshCw, ChevronDown, ChevronUp, Copy, CheckCircle2, Gift,
 } from 'lucide-react'
 import { useAdmin } from '@/lib/admin-context'
+import { useAdminLanguage } from '@/lib/admin-language-context'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,26 +36,19 @@ interface SessionDetail extends SessionRow {
   raw_response: Record<string, unknown> | null
 }
 
-// ── Status config ──────────────────────────────────────────────────────────────
+// ── Status style config ────────────────────────────────────────────────────────
 
-const STATUS: Record<string, { label: string; cls: string; dot: string }> = {
-  paid:        { label: 'Paid',       cls: 'text-green-700 bg-green-50 border-green-200',   dot: 'bg-green-500' },
-  failed:      { label: 'Failed',     cls: 'text-red-700 bg-red-50 border-red-200',         dot: 'bg-red-500' },
-  pending:     { label: 'Pending',    cls: 'text-amber-700 bg-amber-50 border-amber-200',   dot: 'bg-amber-400' },
-  processing:  { label: 'Processing', cls: 'text-blue-700 bg-blue-50 border-blue-200',      dot: 'bg-blue-500' },
-  pending_3ds: { label: '3DS',        cls: 'text-purple-700 bg-purple-50 border-purple-200', dot: 'bg-purple-500' },
-  pending_bit: { label: 'Bit',        cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-400' },
-  expired:     { label: 'Expired',    cls: 'text-gray-500 bg-gray-50 border-gray-200',      dot: 'bg-gray-300' },
+const STATUS_STYLE: Record<string, { cls: string; dot: string }> = {
+  paid:        { cls: 'text-green-700 bg-green-50 border-green-200',    dot: 'bg-green-500' },
+  failed:      { cls: 'text-red-700 bg-red-50 border-red-200',          dot: 'bg-red-500' },
+  pending:     { cls: 'text-amber-700 bg-amber-50 border-amber-200',    dot: 'bg-amber-400' },
+  processing:  { cls: 'text-blue-700 bg-blue-50 border-blue-200',       dot: 'bg-blue-500' },
+  pending_3ds: { cls: 'text-purple-700 bg-purple-50 border-purple-200', dot: 'bg-purple-500' },
+  pending_bit: { cls: 'text-orange-700 bg-orange-50 border-orange-200', dot: 'bg-orange-400' },
+  expired:     { cls: 'text-gray-500 bg-gray-50 border-gray-200',       dot: 'bg-gray-300' },
 }
 
 const ALL_STATUSES = ['paid', 'failed', 'pending', 'processing', 'pending_3ds', 'pending_bit', 'expired']
-
-const DATE_PRESETS = [
-  { label: 'All time', from: '', to: '' },
-  { label: 'Today', from: () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString() }, to: '' },
-  { label: 'This week', from: () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d.toISOString() }, to: '' },
-  { label: 'This month', from: () => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d.toISOString() }, to: '' },
-]
 
 const LIMIT = 25
 
@@ -62,6 +56,7 @@ const LIMIT = 25
 
 export default function OrdersPage() {
   const { apiFetch } = useAdmin()
+  const { t } = useAdminLanguage()
 
   // List state
   const [sessions, setSessions] = useState<SessionRow[]>([])
@@ -90,6 +85,13 @@ export default function OrdersPage() {
   const [rawOpen, setRawOpen] = useState(false)
   const [copied, setCopied] = useState(false)
 
+  const DATE_PRESETS = [
+    { label: t('orders.allTime'),   from: '',  to: '' },
+    { label: t('orders.today'),     from: () => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString() }, to: '' },
+    { label: t('orders.thisWeek'),  from: () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); d.setHours(0,0,0,0); return d.toISOString() }, to: '' },
+    { label: t('orders.thisMonth'), from: () => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d.toISOString() }, to: '' },
+  ]
+
   // Fetch list
   const fetchList = useCallback(async () => {
     setIsLoading(true)
@@ -104,16 +106,16 @@ export default function OrdersPage() {
     })
     try {
       const res = await apiFetch(`/api/admin/sessions?${params}`)
-      if (!res.ok) { setLoadError('Failed to load'); return }
+      if (!res.ok) { setLoadError(t('orders.failedToLoad')); return }
       const data = await res.json()
       setSessions(data.sessions || [])
       setTotal(data.total || 0)
     } catch {
-      setLoadError('Network error')
+      setLoadError(t('orders.failedToLoad'))
     } finally {
       setIsLoading(false)
     }
-  }, [apiFetch, page, statusFilter, datePreset, debouncedSearch])
+  }, [apiFetch, page, statusFilter, datePreset, debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchList() }, [fetchList])
 
@@ -150,7 +152,7 @@ export default function OrdersPage() {
         <div className="px-6 py-6 space-y-4">
           {/* Header */}
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-900">Orders</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">{t('orders.title')}</h1>
             <button
               onClick={fetchList}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 border border-gray-200 transition-colors"
@@ -168,7 +170,7 @@ export default function OrdersPage() {
                 type="text"
                 value={search}
                 onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Search by email or session ID…"
+                placeholder={t('orders.searchPlaceholder')}
                 className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/20"
               />
             </div>
@@ -178,11 +180,11 @@ export default function OrdersPage() {
               {/* Status tabs */}
               <div className="flex bg-gray-100 rounded-xl p-1 gap-0.5 flex-wrap">
                 <FilterTab active={statusFilter === 'all'} onClick={() => { setStatusFilter('all'); setPage(1) }}>
-                  All
+                  {t('orders.all')}
                 </FilterTab>
                 {ALL_STATUSES.map((s) => (
                   <FilterTab key={s} active={statusFilter === s} onClick={() => { setStatusFilter(s); setPage(1) }}>
-                    {STATUS[s]?.label || s}
+                    {t(`status.${s}`)}
                   </FilterTab>
                 ))}
               </div>
@@ -199,7 +201,7 @@ export default function OrdersPage() {
           </div>
 
           {/* Count */}
-          <p className="text-xs text-gray-400">{total} orders found</p>
+          <p className="text-xs text-gray-400">{t('orders.found', { count: total })}</p>
         </div>
 
         {/* Table */}
@@ -210,11 +212,11 @@ export default function OrdersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-y border-gray-100 bg-gray-50/50">
-                  <Th>Date</Th>
-                  <Th>Customer</Th>
-                  <Th>Amount</Th>
-                  <Th>Status</Th>
-                  <Th>Order</Th>
+                  <Th>{t('orders.colDate')}</Th>
+                  <Th>{t('orders.colCustomer')}</Th>
+                  <Th>{t('orders.colAmount')}</Th>
+                  <Th>{t('orders.colStatus')}</Th>
+                  <Th>{t('orders.colOrder')}</Th>
                 </tr>
               </thead>
               <tbody>
@@ -224,11 +226,11 @@ export default function OrdersPage() {
                   </td></tr>
                 ) : sessions.length === 0 ? (
                   <tr><td colSpan={5} className="py-16 text-center text-gray-400 text-sm">
-                    No orders found
+                    {t('orders.noOrdersFound')}
                   </td></tr>
                 ) : (
                   sessions.map((s) => {
-                    const meta = STATUS[s.status] || STATUS.pending
+                    const style = STATUS_STYLE[s.status] || STATUS_STYLE.pending
                     const isSelected = s.id === selectedId
                     const name = s.customer?.firstName
                       ? `${s.customer.firstName} ${s.customer.lastName || ''}`.trim()
@@ -253,9 +255,9 @@ export default function OrdersPage() {
                           {fmt(s.amount, s.currency)}
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${meta.cls}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-                            {meta.label}
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${style.cls}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+                            {t(`status.${s.status}`)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-400 font-mono">
@@ -294,7 +296,7 @@ export default function OrdersPage() {
         <div className="lg:w-[40%] lg:min-w-96 border-l border-gray-200 bg-white overflow-y-auto flex flex-col lg:sticky lg:top-0 lg:max-h-screen">
           {/* Drawer header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-            <span className="text-sm font-semibold text-gray-900">Order Detail</span>
+            <span className="text-sm font-semibold text-gray-900">{t('orders.detailTitle')}</span>
             <button
               onClick={() => setSelectedId(null)}
               className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"
@@ -309,7 +311,7 @@ export default function OrdersPage() {
             </div>
           ) : !detail ? (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
-              Failed to load details
+              {t('orders.failedToLoadDetail')}
             </div>
           ) : (
             <DetailContent
@@ -320,6 +322,7 @@ export default function OrdersPage() {
               copyId={copyId}
               fmt={fmt}
               fmtDate={fmtDate}
+              t={t}
             />
           )}
         </div>
@@ -331,7 +334,7 @@ export default function OrdersPage() {
 // ── Detail content ────────────────────────────────────────────────────────────
 
 function DetailContent({
-  detail, rawOpen, setRawOpen, copied, copyId, fmt, fmtDate,
+  detail, rawOpen, setRawOpen, copied, copyId, fmt, fmtDate, t,
 }: {
   detail: { session: SessionDetail; giftCard: unknown }
   rawOpen: boolean
@@ -340,9 +343,10 @@ function DetailContent({
   copyId: (id: string) => void
   fmt: (n: number, currency?: string) => string
   fmtDate: (iso: string) => string
+  t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const { session, giftCard } = detail
-  const meta = STATUS[session.status] || STATUS.pending
+  const style = STATUS_STYLE[session.status] || STATUS_STYLE.pending
   const gc = giftCard as {
     code?: string; discount_type?: string; discount_value?: number
     original_amount?: number; balance?: number; currency?: string; status?: string
@@ -365,9 +369,9 @@ function DetailContent({
             <p className="text-xl font-bold text-gray-900">{fmt(session.amount, session.currency)}</p>
             <p className="text-xs text-gray-400 mt-0.5">{fmtDate(session.created_at)}</p>
           </div>
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${meta.cls}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-            {meta.label}
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${style.cls}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+            {t(`status.${session.status}`)}
           </span>
         </div>
 
@@ -377,7 +381,7 @@ function DetailContent({
           <button
             onClick={() => copyId(session.id)}
             className="p-1 rounded hover:bg-gray-100 text-gray-400"
-            title="Copy session ID"
+            title={t('orders.copySessionId')}
           >
             {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
           </button>
@@ -392,14 +396,14 @@ function DetailContent({
             className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            Order #{session.order_id} on Shopify
+            {t('orders.shopifyLink', { id: session.order_id || '' })}
           </a>
         )}
 
         {/* Transaction ID */}
         {session.tranzila_transaction_id && (
           <p className="text-xs text-gray-400">
-            Tranzila ref: <span className="font-mono">{session.tranzila_transaction_id}</span>
+            {t('orders.tranzilaRef')} <span className="font-mono">{session.tranzila_transaction_id}</span>
           </p>
         )}
 
@@ -413,20 +417,20 @@ function DetailContent({
 
       {/* Customer */}
       {session.customer && (
-        <Section icon={<User className="h-4 w-4" />} title="Customer">
+        <Section icon={<User className="h-4 w-4" />} title={t('orders.sectionCustomer')}>
           <dl className="space-y-1.5 text-sm">
             {(session.customer.firstName || session.customer.lastName) && (
-              <Row label="Name" value={`${session.customer.firstName || ''} ${session.customer.lastName || ''}`.trim()} />
+              <Row label={t('orders.colName')} value={`${session.customer.firstName || ''} ${session.customer.lastName || ''}`.trim()} />
             )}
-            {session.customer.email && <Row label="Email" value={session.customer.email} />}
-            {session.customer.phone && <Row label="Phone" value={session.customer.phone} />}
+            {session.customer.email && <Row label={t('orders.colEmail')} value={session.customer.email} />}
+            {session.customer.phone && <Row label={t('orders.colPhone')} value={session.customer.phone} />}
           </dl>
         </Section>
       )}
 
       {/* Shipping address */}
       {session.customer?.address && (
-        <Section icon={<MapPin className="h-4 w-4" />} title="Address">
+        <Section icon={<MapPin className="h-4 w-4" />} title={t('orders.sectionAddress')}>
           <p className="text-sm text-gray-700">
             {session.customer.address}
             {session.customer.city && `, ${session.customer.city}`}
@@ -437,7 +441,7 @@ function DetailContent({
 
       {/* Cart items */}
       {session.cart?.items && session.cart.items.length > 0 && (
-        <Section icon={<Package className="h-4 w-4" />} title="Items">
+        <Section icon={<Package className="h-4 w-4" />} title={t('orders.sectionItems')}>
           <div className="space-y-3">
             {session.cart.items.map((item, i) => (
               <div key={i} className="flex items-center gap-3">
@@ -464,29 +468,29 @@ function DetailContent({
 
       {/* Payment breakdown */}
       {session.cart && (
-        <Section icon={<CreditCard className="h-4 w-4" />} title="Payment">
+        <Section icon={<CreditCard className="h-4 w-4" />} title={t('orders.sectionPayment')}>
           <dl className="space-y-1.5">
             {session.cart.subtotal != null && (
-              <Row label="Subtotal" value={fmt(session.cart.subtotal, session.cart.currency)} />
+              <Row label={t('orders.subtotal')} value={fmt(session.cart.subtotal, session.cart.currency)} />
             )}
             {session.cart.shipping != null && (
               <Row
-                label="Shipping"
-                value={session.cart.shipping === 0 ? 'Free' : fmt(session.cart.shipping, session.cart.currency)}
+                label={t('orders.shipping')}
+                value={session.cart.shipping === 0 ? t('orders.free') : fmt(session.cart.shipping, session.cart.currency)}
               />
             )}
             {session.cart.tax != null && session.cart.tax > 0 && (
-              <Row label="Tax" value={fmt(session.cart.tax, session.cart.currency)} />
+              <Row label={t('orders.tax')} value={fmt(session.cart.tax, session.cart.currency)} />
             )}
             {storedGC?.appliedAmount != null && (
               <Row
-                label="Gift card"
+                label={t('orders.giftCardLabel')}
                 value={`−${fmt(storedGC.appliedAmount, session.cart.currency)}`}
                 valueClass="text-green-600"
               />
             )}
             <div className="pt-1.5 mt-1 border-t border-gray-100 flex justify-between">
-              <span className="text-sm font-semibold text-gray-900">Total</span>
+              <span className="text-sm font-semibold text-gray-900">{t('orders.total')}</span>
               <span className="text-sm font-bold text-gray-900">{fmt(session.amount, session.currency)}</span>
             </div>
           </dl>
@@ -495,14 +499,18 @@ function DetailContent({
 
       {/* Gift card used */}
       {gc && (
-        <Section icon={<Gift className="h-4 w-4" />} title="Gift Card Used">
+        <Section icon={<Gift className="h-4 w-4" />} title={t('orders.sectionGiftCard')}>
           <dl className="space-y-1.5">
-            <Row label="Code" value={gc.code || '—'} mono />
-            <Row label="Type" value={gc.discount_type === 'percentage' ? `${gc.discount_value}% off` : 'Amount'} />
+            <Row label={t('orders.code')} value={gc.code || '—'} mono />
+            <Row label={t('orders.type')} value={
+              gc.discount_type === 'percentage'
+                ? t('orders.percentOff', { val: gc.discount_value ?? 0 })
+                : t('orders.amountType')
+            } />
             {storedGC?.appliedAmount != null && (
-              <Row label="Applied" value={fmt(storedGC.appliedAmount, gc.currency)} />
+              <Row label={t('orders.applied')} value={fmt(storedGC.appliedAmount, gc.currency)} />
             )}
-            {gc.balance != null && <Row label="Remaining" value={fmt(gc.balance, gc.currency)} />}
+            {gc.balance != null && <Row label={t('orders.remaining')} value={fmt(gc.balance, gc.currency)} />}
           </dl>
         </Section>
       )}
@@ -515,7 +523,7 @@ function DetailContent({
             className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-800 transition-colors w-full text-left"
           >
             {rawOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            Raw payment response
+            {t('orders.rawResponse')}
           </button>
           {rawOpen && (
             <pre className="mt-3 text-xs bg-gray-50 border border-gray-100 rounded-xl p-3 overflow-auto max-h-64 text-gray-600">
