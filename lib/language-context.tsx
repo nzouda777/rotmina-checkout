@@ -3,11 +3,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { translations, type Language } from './translations'
 
+export type Currency = 'USD' | 'EUR' | 'CAD' | 'AUD' | 'GBP' | 'CHF' | 'ILS'
+export const CURRENCIES: Currency[] = ['USD', 'EUR', 'CAD', 'AUD', 'GBP', 'CHF', 'ILS']
+
 interface LanguageContextType {
   lang: Language
   setLang: (lang: Language) => void
   t: (key: string) => string
   dir: 'ltr' | 'rtl'
+  currency: Currency
+  setCurrency: (c: Currency) => void
 }
 
 const LanguageContext = createContext<LanguageContextType | null>(null)
@@ -52,8 +57,20 @@ function resolveInitialLang(): Language {
   return 'he'
 }
 
+function resolveInitialCurrency(): Currency {
+  if (typeof window === 'undefined') return 'ILS'
+  try {
+    const saved = localStorage.getItem('rotmina-currency')
+    if (saved && (CURRENCIES as string[]).includes(saved)) return saved as Currency
+    const savedLang = localStorage.getItem('rotmina-lang')
+    return savedLang === 'en' ? 'USD' : 'ILS'
+  } catch {}
+  return 'ILS'
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Language>(resolveInitialLang)
+  const [currency, setCurrencyState] = useState<Currency>(resolveInitialCurrency)
 
   const setLang = useCallback((newLang: Language) => {
     setLangState(newLang)
@@ -64,6 +81,11 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       url.searchParams.set('language', newLang)
       window.history.replaceState(null, '', url.toString())
     }
+  }, [])
+
+  const setCurrency = useCallback((c: Currency) => {
+    setCurrencyState(c)
+    try { localStorage.setItem('rotmina-currency', c) } catch {}
   }, [])
 
   // Re-read the URL param on mount (resolveInitialLang may have run server-side
@@ -90,7 +112,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const dir = lang === 'he' ? 'rtl' : 'ltr'
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t, dir }}>
+    <LanguageContext.Provider value={{ lang, setLang, t, dir, currency, setCurrency }}>
       {children}
     </LanguageContext.Provider>
   )

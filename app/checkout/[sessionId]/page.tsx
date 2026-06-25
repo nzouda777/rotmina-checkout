@@ -30,7 +30,7 @@ export default function CheckoutPage() {
   const params = useParams()
   const router = useRouter()
   const sessionId = params?.sessionId as string
-  const { t, lang, dir } = useLanguage()
+  const { t, lang, dir, currency, setCurrency } = useLanguage()
   
   console.log('Session ID from useParams:', sessionId);
 
@@ -124,28 +124,33 @@ export default function CheckoutPage() {
   fetchSession()
 }, [sessionId])
 
-  // Sync session currency with the current language.
-  // If the Shopify script created the session without a locale (or with a different one),
-  // this effect patches it once so everything downstream (display + Tranzila charge) is correct.
+  // When the session first loads, initialise the currency selector to match
+  // whatever currency the session already has (so there's no unnecessary PATCH on mount).
+  useEffect(() => {
+    if (!session) return
+    const sessionCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
+    setCurrency(sessionCurrency as any)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id])
+
+  // When the user picks a different currency, PATCH the session to convert prices.
   useEffect(() => {
     if (!session || !sessionId) return
-
-    const expectedCurrency = lang === 'en' ? 'USD' : 'ILS'
     const currentCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
-    if (currentCurrency === expectedCurrency) return
+    if (currentCurrency === currency) return
 
     let cancelled = false
     fetch('/api/checkout/session', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, targetCurrency: expectedCurrency }),
+      body: JSON.stringify({ sessionId, targetCurrency: currency }),
     })
       .then((r) => r.json())
       .then((data) => { if (!cancelled) setSession(data) })
       .catch(() => {})
 
     return () => { cancelled = true }
-  }, [session?.cart?.currency, lang, sessionId])
+  }, [currency, sessionId])
 
   const handleCustomerSubmit = (info: CustomerInfo) => {
     setCustomerInfo(info)

@@ -440,8 +440,9 @@ export async function PATCH(request: NextRequest) {
     }
 
     const normalized = (targetCurrency as string).toUpperCase()
-    if (normalized !== 'USD' && normalized !== 'ILS') {
-      return corsResponse(request, { error: 'Currency must be USD or ILS' }, 400)
+    const allowedCurrencies = ['USD', 'EUR', 'CAD', 'AUD', 'GBP', 'CHF', 'ILS']
+    if (!allowedCurrencies.includes(normalized)) {
+      return corsResponse(request, { error: `Currency must be one of: ${allowedCurrencies.join(', ')}` }, 400)
     }
 
     const supabase = await createClient()
@@ -466,8 +467,8 @@ export async function PATCH(request: NextRequest) {
     const cart = session.cart as any
     const convertedSubtotal = Math.round((cart.subtotal || 0) * rate * 100) / 100
     const convertedShipping = Math.round((cart.shipping || 0) * rate * 100) / 100
-    // Add 20% tax when converting to USD; remove it when converting back to ILS
-    const convertedTax = normalized === 'USD'
+    // 20% tax for all non-ILS (international) orders
+    const convertedTax = normalized !== 'ILS'
       ? Math.round(convertedSubtotal * 0.20 * 100) / 100
       : 0
     const convertedTotal = Math.round((convertedSubtotal + convertedShipping + convertedTax) * 100) / 100
