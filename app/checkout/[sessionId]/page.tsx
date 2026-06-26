@@ -143,7 +143,7 @@ export default function CheckoutPage() {
     fetch('/api/checkout/session', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, targetCurrency: currency }),
+      body: JSON.stringify({ sessionId, targetCurrency: currency, lang }),
     })
       .then((r) => r.json())
       .then((data) => { if (!cancelled) setSession(data) })

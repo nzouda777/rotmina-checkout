@@ -433,7 +433,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { sessionId, targetCurrency } = body
+    const { sessionId, targetCurrency, lang } = body
 
     if (!sessionId || !targetCurrency) {
       return corsResponse(request, { error: 'Missing sessionId or targetCurrency' }, 400)
@@ -467,8 +467,8 @@ export async function PATCH(request: NextRequest) {
     const cart = session.cart as any
     const convertedSubtotal = Math.round((cart.subtotal || 0) * rate * 100) / 100
     const convertedShipping = Math.round((cart.shipping || 0) * rate * 100) / 100
-    // 20% tax for all non-ILS (international) orders
-    const convertedTax = normalized !== 'ILS'
+    // 20% tax for English-language users only
+    const convertedTax = lang === 'en'
       ? Math.round(convertedSubtotal * 0.20 * 100) / 100
       : 0
     const convertedTotal = Math.round((convertedSubtotal + convertedShipping + convertedTax) * 100) / 100
