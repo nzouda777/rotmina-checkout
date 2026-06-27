@@ -4,7 +4,7 @@ import { randomInt } from 'crypto'
 import { separateGiftCardItems } from '@/lib/gift-card-utils'
 
 const FREE_SHIPPING_THRESHOLD_ILS = 499
-const DOMESTIC_SHIPPING_FEE_ILS = Number(process.env.DOMESTIC_SHIPPING_FEE_ILS || '25')
+const DOMESTIC_SHIPPING_FEE_ILS = Number(process.env.DOMESTIC_SHIPPING_FEE_ILS || '30')
 
 function sanitizeShopDomain(shop: string): string {
   return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
