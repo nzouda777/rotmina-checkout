@@ -2,7 +2,10 @@ import { Resend } from 'resend'
 import { GiftCardEmail } from '@/components/emails/gift-card-email'
 import { GiftCardBuyerEmail } from '@/components/emails/gift-card-buyer-email'
 import { OrderConfirmationEmail } from '@/components/emails/order-confirmation-email'
+import { AdminOrderNotificationEmail } from '@/components/emails/admin-order-notification-email'
 import * as React from 'react'
+
+const ADMIN_EMAIL = 'Brand@rotmina.com'
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 const fromEmail = process.env.RESEND_FROM_EMAIL || 'rotmina Store <orders@rotmina.com>'
@@ -85,6 +88,52 @@ export async function sendGiftCardEmailToBuyer(params: {
     return { success: true, data }
   } catch (err: any) {
     console.error('[EMAIL] Exception sending to buyer:', err)
+    return { success: false, error: err.message }
+  }
+}
+
+export async function sendAdminOrderNotification(params: {
+  orderName: string
+  customerName: string
+  customerEmail: string
+  customerPhone?: string
+  items: { title: string; quantity: number; price: number }[]
+  subtotal: number
+  shipping: number
+  tax: number
+  total: number
+  currency: string
+  shippingAddress: {
+    address: string
+    city: string
+    postalCode: string
+    country: string
+  }
+  paymentMethod?: string
+  orderStatusUrl?: string
+}) {
+  if (!resend) {
+    console.warn('[EMAIL] Missing RESEND_API_KEY. Skipping admin notification.')
+    return { success: false, error: 'Missing API Key' }
+  }
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: fromEmail,
+      to: [ADMIN_EMAIL],
+      subject: `[New Order] #${params.orderName} — ${params.customerName}`,
+      react: React.createElement(AdminOrderNotificationEmail, params),
+    })
+
+    if (error) {
+      console.error(`[EMAIL-ADMIN] Resend error:`, error)
+      return { success: false, error }
+    }
+
+    console.log(`[EMAIL-ADMIN] Admin notification sent. ID: ${data?.id}`)
+    return { success: true, data }
+  } catch (err: any) {
+    console.error('[EMAIL-ADMIN] Exception sending admin notification:', err)
     return { success: false, error: err.message }
   }
 }

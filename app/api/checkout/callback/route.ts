@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { generateGiftCardsForOrder } from '@/lib/gift-cards'
-import { sendOrderConfirmationEmail } from '@/lib/email'
+import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
@@ -166,6 +166,34 @@ export async function POST(request: NextRequest) {
             orderStatusUrl: shopifyOrderUrl ?? undefined,
           }).catch((emailErr: any) =>
             console.error(`[CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
+          )
+
+          // Send admin notification (non-blocking)
+          sendAdminOrderNotification({
+            orderName:     String(order.name || order.id),
+            customerName:  `${customer.firstName} ${customer.lastName}`,
+            customerEmail: customer.email,
+            customerPhone: (customer as any).phone,
+            items: (session.cart?.items || []).map((item: any) => ({
+              title:    item.title,
+              quantity: item.quantity,
+              price:    item.price,
+            })),
+            subtotal:  session.cart?.subtotal,
+            shipping:  session.cart?.shipping,
+            tax:       session.cart?.tax,
+            total:     session.cart?.total,
+            currency:  session.cart?.currency,
+            shippingAddress: {
+              address:    customer.address,
+              city:       customer.city,
+              postalCode: customer.postalCode,
+              country:    customer.country,
+            },
+            paymentMethod:  detectPaymentMethod(session.raw_response),
+            orderStatusUrl: shopifyOrderUrl ?? undefined,
+          }).catch((adminErr: any) =>
+            console.error(`[CALLBACK][${logId}] Admin notification failed (non-fatal):`, adminErr)
           )
 
           // Send Morning Receipt (non-blocking)
