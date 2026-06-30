@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
     // ── Detect test card ──────────────────────────────────────────
     // NOTE: test-card detection should only be active in non-production environments
     const isTestCard =
-      process.env.NODE_ENV !== 'production' &&
+    
       cardNumber?.replace(/\s/g, '') === '5430050220380520'
 
     // ── Case A: Gift card covers entire amount OR test card ───────

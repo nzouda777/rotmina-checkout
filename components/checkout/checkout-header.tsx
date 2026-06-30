@@ -15,7 +15,7 @@ export function CheckoutHeader({ shopName }: CheckoutHeaderProps) {
     <header className="border-b border-border bg-background" dir="ltr">
       <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-[1fr_auto_1fr] items-center">
         {/* Left: Language toggle */}
-        <div className="flex items-center">
+        <div className="fl ex invisible items-center">
           <button
             onClick={() => setLang(lang === 'he' ? 'en' : 'he')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-border bg-muted/50 hover:bg-muted transition-colors text-sm font-medium text-foreground"

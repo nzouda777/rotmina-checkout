@@ -301,23 +301,23 @@ export async function POST(request: NextRequest) {
     const localeLang = localeParam.split('-')[0].toLowerCase()
     const targetCurrency = localeLang === 'en' ? 'USD' : 'ILS'
 
-    // ── Shipping threshold logic (always computed in ILS before any conversion) ─
+    // ── Shipping logic (always computed in ILS before any conversion) ─────────
     // Gift card-only orders are digital → always free shipping.
-    // For regular orders: free shipping at ₪499+, otherwise a flat domestic fee.
+    // Hebrew (ILS): free shipping at ₪499+, otherwise flat ₪30 fee.
+    // English (USD): shipping = 20% of cart subtotal.
     const { regularItems: regularCartItems } = separateGiftCardItems(finalCart.items || [])
     const isGiftCardOnlyCart = regularCartItems.length === 0 && (finalCart.items || []).length > 0
     const subtotalForShipping = finalCart.subtotal || 0
 
-    if (isGiftCardOnlyCart || subtotalForShipping >= FREE_SHIPPING_THRESHOLD_ILS) {
-      finalCart.shipping = 0
-    } else {
-      finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
-    }
-
-    // 20% tax applies to English (USD) orders only
     if (targetCurrency === 'USD') {
-      finalCart.tax = Math.round(subtotalForShipping * 0.20 * 100) / 100
+      finalCart.shipping = isGiftCardOnlyCart ? 0 : Math.round(subtotalForShipping * 0.20 * 100) / 100
+      finalCart.tax = 0
     } else {
+      if (isGiftCardOnlyCart || subtotalForShipping >= FREE_SHIPPING_THRESHOLD_ILS) {
+        finalCart.shipping = 0
+      } else {
+        finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
+      }
       finalCart.tax = 0
     }
 
