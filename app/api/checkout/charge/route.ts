@@ -4,7 +4,7 @@ import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
-import { sendOrderConfirmationEmail } from '@/lib/email'
+import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -278,10 +278,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Detect test card ──────────────────────────────────────────
-    // NOTE: test-card detection should only be active in non-production environments
-    const isTestCard =
-    
-      cardNumber?.replace(/\s/g, '') === '5430050220380520'
+    const isTestCard = cardNumber?.replace(/\s/g, '') === '5430050220380520'
 
     // ── Case A: Gift card covers entire amount OR test card ───────
     if (chargeAmount <= 0 || isTestCard) {
@@ -309,14 +306,107 @@ export async function POST(request: NextRequest) {
       let shopifyOrderId = session.order_id
       let shopifyOrderUrl: string | undefined
 
+      // Re-read the session so session.customer is populated (saved by the lock update above)
+      const { data: freshSession } = await supabase
+        .from('payment_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single()
+
+      const sessionForOrder = freshSession || session
+      const customerForOrder = (sessionForOrder.customer as CustomerInfo) || customerInfo
+
       try {
-        const orderResult = await createOrderAndNotify({
-          logId, session, customerInfo, transactionId: txnId, giftCardInfo,
+        console.log(`[CHARGE][${logId}] Creating Shopify order (test card / GC-only)...`)
+        const order = await createShopifyOrder({
+          session: sessionForOrder as PaymentSession,
+          customer: customerForOrder,
+          transactionId: txnId,
+          giftCard: giftCardInfo,
         })
-        shopifyOrderId = orderResult.shopifyOrderId
-        shopifyOrderUrl = orderResult.shopifyOrderUrl
-      } catch (err) {
-        console.error(`[CHARGE][${logId}] Failed to create Shopify order:`, err)
+        shopifyOrderId = String(order.id)
+        const shopifyDomain = sessionForOrder.shop || 'rotmina.myshopify.com'
+        shopifyOrderUrl = order.order_status_url || `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`
+        console.log(`[CHARGE][${logId}] ✅ Shopify order created: ${shopifyOrderId}`)
+
+        // Save order_id immediately
+        await supabase
+          .from('payment_sessions')
+          .update({ order_id: shopifyOrderId })
+          .eq('id', sessionId)
+
+        // Confirmation email (non-blocking)
+        sendOrderConfirmationEmail({
+          toEmail: customerForOrder.email,
+          orderName: String(order.name || order.id),
+          customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
+          items: (sessionForOrder.cart?.items || []).map((item: any) => ({
+            title: item.title,
+            quantity: item.quantity,
+            price: item.price,
+            image: item.image,
+          })),
+          subtotal: sessionForOrder.cart?.subtotal,
+          shipping: sessionForOrder.cart?.shipping,
+          tax: sessionForOrder.cart?.tax,
+          total: sessionForOrder.cart?.total,
+          currency: sessionForOrder.cart?.currency,
+          shippingAddress: {
+            address: customerForOrder.address,
+            city: customerForOrder.city,
+            postalCode: customerForOrder.postalCode,
+            country: customerForOrder.country,
+          },
+          orderStatusUrl: shopifyOrderUrl,
+        }).catch((emailErr: any) =>
+          console.error(`[CHARGE][${logId}] Confirmation email failed (non-fatal):`, emailErr)
+        )
+
+        // Admin notification (non-blocking)
+        sendAdminOrderNotification({
+          orderName: String(order.name || order.id),
+          customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
+          customerEmail: customerForOrder.email,
+          customerPhone: (customerForOrder as any).phone,
+          items: (sessionForOrder.cart?.items || []).map((item: any) => ({
+            title: item.title,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          subtotal: sessionForOrder.cart?.subtotal,
+          shipping: sessionForOrder.cart?.shipping,
+          tax: sessionForOrder.cart?.tax,
+          total: sessionForOrder.cart?.total,
+          currency: sessionForOrder.cart?.currency,
+          shippingAddress: {
+            address: customerForOrder.address,
+            city: customerForOrder.city,
+            postalCode: customerForOrder.postalCode,
+            country: customerForOrder.country,
+          },
+          paymentMethod: isTestCard ? 'test_card' : 'gift_card',
+          orderStatusUrl: shopifyOrderUrl,
+        }).catch((adminErr: any) =>
+          console.error(`[CHARGE][${logId}] Admin notification failed (non-fatal):`, adminErr)
+        )
+
+        // Morning receipt (non-blocking)
+        sendMorningReceipt({
+          customerEmail: customerForOrder.email,
+          customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
+          amount: Number(sessionForOrder.cart?.total || 0),
+          currency: sessionForOrder.cart?.currency,
+          paymentMethod: isTestCard ? 'test_card' : 'gift_card',
+          items: (sessionForOrder.cart?.items || []).map((item: any) => ({
+            description: item.title,
+            quantity: item.quantity,
+            price: Number(item.price),
+          })),
+        }).catch((morningErr: any) =>
+          console.error(`[CHARGE][${logId}] Morning receipt failed (non-fatal):`, morningErr)
+        )
+      } catch (err: any) {
+        console.error(`[CHARGE][${logId}] ❌ Shopify order creation failed:`, err?.message || err)
       }
 
       await supabase
@@ -333,6 +423,7 @@ export async function POST(request: NextRequest) {
             generated_gift_cards: postPayment.generatedCards.map(c => ({
               code: c.code, amount: c.original_amount, currency: c.currency,
             })),
+            shopifyOrderUrl: shopifyOrderUrl || undefined,
           } as any,
         })
         .eq('id', sessionId)

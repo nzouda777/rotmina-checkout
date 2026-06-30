@@ -308,12 +308,16 @@ export async function POST(request: NextRequest) {
     const { regularItems: regularCartItems } = separateGiftCardItems(finalCart.items || [])
     const isGiftCardOnlyCart = regularCartItems.length === 0 && (finalCart.items || []).length > 0
     const subtotalForShipping = finalCart.subtotal || 0
+    // Use the displayed price (pre-Shopify-discount) for the free-shipping threshold.
+    // Shopify's total_price is already post-discount, so we add back any discount so the
+    // threshold reflects what the customer sees in their cart.
+    const displayedSubtotal = subtotalForShipping + (finalCart.shopify_discount?.amount || 0)
 
     if (targetCurrency === 'USD') {
       finalCart.shipping = isGiftCardOnlyCart ? 0 : Math.round(subtotalForShipping * 0.20 * 100) / 100
       finalCart.tax = 0
     } else {
-      if (isGiftCardOnlyCart || subtotalForShipping >= FREE_SHIPPING_THRESHOLD_ILS) {
+      if (isGiftCardOnlyCart || displayedSubtotal >= FREE_SHIPPING_THRESHOLD_ILS) {
         finalCart.shipping = 0
       } else {
         finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
@@ -467,10 +471,7 @@ export async function PATCH(request: NextRequest) {
     const cart = session.cart as any
     const convertedSubtotal = Math.round((cart.subtotal || 0) * rate * 100) / 100
     const convertedShipping = Math.round((cart.shipping || 0) * rate * 100) / 100
-    // 20% tax for English-language users only
-    const convertedTax = lang === 'en'
-      ? Math.round(convertedSubtotal * 0.20 * 100) / 100
-      : 0
+    const convertedTax = Math.round((cart.tax || 0) * rate * 100) / 100
     const convertedTotal = Math.round((convertedSubtotal + convertedShipping + convertedTax) * 100) / 100
 
     const convertedCart = {

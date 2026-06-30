@@ -101,7 +101,12 @@ export function PaymentForm({
   const [loadingStep, setLoadingStep] = useState<'connecting' | 'completing' | null>(null)
   const [isBitQrActive, setIsBitQrActive] = useState(false)
   const [israeliId, setIsraeliId] = useState('')
+  const [cardNumberOverride, setCardNumberOverride] = useState('')
+  const [showTestCardInput, setShowTestCardInput] = useState(false)
   const { t, lang, dir } = useLanguage()
+
+  const TEST_CARD = '5430050220380520'
+  const isTestCardActive = showTestCardInput && cardNumberOverride.replace(/\s/g, '') === TEST_CARD
 
   // ── Refs that survive re-renders without triggering them ──────────────────
   const isSubmittingRef = useRef(false)
@@ -294,8 +299,8 @@ export function PaymentForm({
         newErrors.israeliId = t('customerForm.idRequired')
       }
 
-      // Check if hosted fields are initialized
-      if (!hostedFieldsRef.current) {
+      // Check if hosted fields are initialized (skipped for test card bypass)
+      if (!isTestCardActive && !hostedFieldsRef.current) {
         newErrors.card = t('paymentForm.paymentSystemNotReady')
         setErrors(newErrors)
         return false
@@ -803,6 +808,7 @@ export function PaymentForm({
           couponAmount: couponAmount || undefined,
           shippingFeeAmount: shippingFeeAmount || undefined,
           israeliId: israeliId || undefined,
+          cardNumber: cardNumberOverride || undefined,
         }),
       })
 
@@ -1463,11 +1469,23 @@ export function PaymentForm({
                           <label className="block text-sm font-medium text-foreground mb-1">
                             {t('paymentForm.cardNumber') || 'Card Number'}
                           </label>
+                          {/* Tranzila iframe — real card mode */}
                           <div
                             id="credit_card_number"
                             className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
-                            style={{ minHeight: '44px' }}
+                            style={{ minHeight: '44px', display: showTestCardInput ? 'none' : 'block' }}
                           />
+                          {/* Plain text input — test card mode */}
+                          {showTestCardInput && (
+                            <input
+                              type="text"
+                              value={cardNumberOverride}
+                              onChange={(e) => setCardNumberOverride(e.target.value)}
+                              placeholder="5430050220380520"
+                              maxLength={19}
+                              className={`h-11 px-3 rounded-lg border font-mono tracking-widest focus:outline-none focus:ring-2 transition-shadow w-full bg-background text-foreground ${isTestCardActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20 focus:ring-green-500' : 'border-input focus:ring-ring'}`}
+                            />
+                          )}
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-foreground mb-1">
@@ -1488,18 +1506,29 @@ export function PaymentForm({
                           )}
                         </div>
                       </div>
-
                     )}
                     {lang === 'en' && (
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">
                           {t('paymentForm.cardNumber') || 'Card Number'}
                         </label>
+                        {/* Tranzila iframe — real card mode */}
                         <div
                           id="credit_card_number"
                           className="h-11 rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring transition-shadow w-full relative overflow-hidden"
-                          style={{ minHeight: '44px' }}
+                          style={{ minHeight: '44px', display: showTestCardInput ? 'none' : 'block' }}
                         />
+                        {/* Plain text input — test card mode */}
+                        {showTestCardInput && (
+                          <input
+                            type="text"
+                            value={cardNumberOverride}
+                            onChange={(e) => setCardNumberOverride(e.target.value)}
+                            placeholder="5430050220380520"
+                            maxLength={19}
+                            className={`h-11 px-3 rounded-lg border font-mono tracking-widest focus:outline-none focus:ring-2 transition-shadow w-full bg-background text-foreground ${isTestCardActive ? 'border-green-500 bg-green-50 dark:bg-green-900/20 focus:ring-green-500' : 'border-input focus:ring-ring'}`}
+                          />
+                        )}
                       </div>
                     )}
 
@@ -1558,6 +1587,22 @@ export function PaymentForm({
                 </div>
               </div>
             </div>
+
+            {/* ── Test card toggle (card mode only) ── */}
+            {/* {paymentMethod === 'card' && (
+              <div className="flex justify-end mt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTestCardInput(v => !v)
+                    setCardNumberOverride('')
+                  }}
+                  className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                >
+                  {showTestCardInput ? '← Real card' : 'Test card'}
+                </button>
+              </div>
+            )} */}
 
             {/* ── Bit section ── */}
             {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK

@@ -84,11 +84,12 @@
         // 4. Create checkout session
         var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
         var apiUrl = '{{ settings.EXTERNAL_PAYMENT_API_URL | default: "https://rotmina-checkout.vercel.app" }}';
+        var lang = document.documentElement.lang || 'he';
 
         var response = await fetch(apiUrl + '/api/checkout/session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shop: shop, cart: cart, customer: customer, shopify_discount: shopifyDiscount })
+          body: JSON.stringify({ shop: shop, cart: cart, customer: customer, shopify_discount: shopifyDiscount, locale: lang })
         });
 
         if (!response.ok) throw new Error('Session creation failed');
@@ -97,7 +98,6 @@
 
         // 5. Redirect — path is /checkout/[sessionId] (NOT /pay/)
         var frontendUrl = '{{ settings.EXTERNAL_PAYMENT_FRONTEND_URL | default: "https://rotmina-checkout.vercel.app" }}';
-        var lang = document.documentElement.lang || 'he';
         window.location.href = frontendUrl + '/checkout/' + sessionId + '?language=' + lang;
 
       } catch (err) {
