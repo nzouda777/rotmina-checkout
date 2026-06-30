@@ -6,29 +6,13 @@ export { isGiftCardProduct, separateGiftCardItems } from './gift-card-utils'
 
 // ── Gift Card Code Generation ────────────────────────────────────────────────
 
-/**
- * Generate a unique gift card code in format: ROTM-XXXX-XXXX-X (Total 16 chars)
- */
-function generateCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // No 0/O/1/I to avoid confusion
-  let code = 'ROTM-'
-  
-  // 4 chars
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  code += '-'
-  
-  // 4 chars
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  code += '-'
-  
-  // 1 char (to reach exactly 16)
-  code += chars.charAt(Math.floor(Math.random() * chars.length))
-  
-  return code
+// Format: ROTMINA[amount]-[XXX] e.g. ROTMINA100-ABK
+function generateCode(amount: number): string {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  const suffix = Array.from({ length: 3 }, () =>
+    letters.charAt(Math.floor(Math.random() * letters.length))
+  ).join('')
+  return `ROTMINA${Math.round(amount)}-${suffix}`
 }
 
 // ── Database Operations ──────────────────────────────────────────────────────
@@ -90,8 +74,9 @@ export async function createGiftCard(params: {
     if (existing) throw new Error(`Gift card code already exists: ${code}`)
   } else {
     // Auto-generate a unique code (retry if collision)
+    const amt = params.amount ?? 0
     let attempts = 0
-    code = generateCode()
+    code = generateCode(amt)
     while (true) {
       const { data: existing } = await supabase
         .from('gift_cards')
@@ -101,7 +86,7 @@ export async function createGiftCard(params: {
       if (!existing) break
       attempts++
       if (attempts > 10) throw new Error('Failed to generate unique gift card code')
-      code = generateCode()
+      code = generateCode(amt)
     }
   }
 
