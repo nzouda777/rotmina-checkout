@@ -442,19 +442,20 @@ export default function GiftCardAdminPage() {
                   <Th>{t('giftCards.colStatus')}</Th>
                   <Th>{t('giftCards.colRecipient')}</Th>
                   <Th>{t('giftCards.colCreated')}</Th>
+                  <Th>Used at</Th>
                   <Th align="right">{t('giftCards.colActions')}</Th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading && cards.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center">
+                    <td colSpan={9} className="py-16 text-center">
                       <Loader2 className="h-6 w-6 animate-spin text-gray-400 mx-auto" />
                     </td>
                   </tr>
                 ) : cards.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-gray-400 text-sm">
+                    <td colSpan={9} className="py-16 text-center text-gray-400 text-sm">
                       {t('giftCards.noCards')}
                     </td>
                   </tr>
@@ -504,6 +505,12 @@ export default function GiftCardAdminPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(card.created_at)}
+                      </td>
+                      <td className="px-4 py-3 text-xs whitespace-nowrap">
+                        {card.last_used_at
+                          ? <span className="text-amber-600 font-medium">{formatDate(card.last_used_at)}</span>
+                          : <span className="text-gray-300">—</span>
+                        }
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">

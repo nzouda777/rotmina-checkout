@@ -194,13 +194,13 @@ export async function debitGiftCard(params: {
   const currentBalance = Number(card.balance)
   const debitAmount = Math.min(params.amount, currentBalance)
   const newBalance = Math.max(currentBalance - debitAmount, 0)
-  const newStatus = newBalance <= 0 ? 'depleted' : 'active'
 
+  // Always deplete on first use — gift cards are single-use regardless of remaining balance
   const { data: updated, error: updateError } = await supabase
     .from('gift_cards')
     .update({
       balance: newBalance,
-      status: newStatus,
+      status: 'depleted',
       last_used_at: new Date().toISOString(),
     })
     .eq('id', card.id)
@@ -211,7 +211,7 @@ export async function debitGiftCard(params: {
     throw new Error(`Failed to debit gift card: ${updateError?.message}`)
   }
 
-  console.log(`[GIFT-CARD] Debited ${normalizedCode}: ${debitAmount} → balance: ${newBalance} (${newStatus})`)
+  console.log(`[GIFT-CARD] Debited ${normalizedCode}: ${debitAmount} → depleted (single-use)`)
   return updated as GiftCardRecord
 }
 
