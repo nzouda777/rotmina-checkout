@@ -109,7 +109,7 @@ const messageBox = {
   padding: '20px',
   borderRadius: '4px',
   margin: '20px 0',
-  borderLeft: '4px solid #10b981', // green
+  borderLeft: '4px solid #8B74E8', // green
 }
 
 const messageQuote = {
@@ -120,7 +120,7 @@ const messageQuote = {
 }
 
 const giftCardContainer = {
-  backgroundColor: '#10b981', // green background
+  backgroundColor: '#8B74E8', // green background
   color: '#ffffff',
   borderRadius: '8px',
   padding: '30px',

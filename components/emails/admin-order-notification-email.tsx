@@ -168,7 +168,7 @@ const summaryLabel = { fontSize: '13px', color: '#888', margin: '0' }
 const summaryValue = { fontSize: '13px', color: '#333', fontWeight: 'bold', margin: '0' }
 const finalTotalRow = { margin: '12px 0 0', paddingTop: '12px', borderTop: '2px solid #eee' }
 const totalLabel = { fontSize: '17px', fontWeight: 'bold', color: '#333', margin: '0' }
-const totalValue = { fontSize: '20px', fontWeight: 'bold', color: '#10b981', margin: '0' }
+const totalValue = { fontSize: '20px', fontWeight: 'bold', color: '#8B74E8', margin: '0' }
 const button = {
   backgroundColor: '#333',
   borderRadius: '6px',

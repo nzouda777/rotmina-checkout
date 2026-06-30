@@ -280,7 +280,7 @@ const totalLabel = {
 const totalValue = {
   fontSize: '22px',
   fontWeight: 'bold',
-  color: '#10b981', // green
+  color: '#8B74E8', // green
 }
 
 const addressText = {
@@ -295,7 +295,7 @@ const buttonContainer = {
 }
 
 const button = {
-  backgroundColor: '#10b981',
+  backgroundColor: '#8B74E8',
   borderRadius: '6px',
   color: '#fff',
   fontSize: '16px',
