@@ -110,6 +110,22 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     orderTags += ', Gift Card Used'
   }
 
+  // Carrier: HFD for Israel, Shipping2go for all other countries
+  const isIsrael =
+    customer.country === 'Israel' ||
+    customer.country === 'IL' ||
+    customer.country?.toLowerCase() === 'israel'
+
+  const shippingLines = isGiftCardOnly
+    ? []
+    : [
+        {
+          title: isIsrael ? 'HFD' : 'Shipping2go',
+          code: isIsrael ? 'HFD' : 'Shipping2go',
+          price: String(session.cart.shipping ?? 0),
+        },
+      ]
+
   const orderData = {
     order: {
       inventory_behaviour: 'bypass',
@@ -118,6 +134,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
       // Omit shipping_address for digital-only orders to prevent HFD from
       // creating a physical shipment for a gift card.
       ...(isGiftCardOnly ? {} : { shipping_address: shippingAddress }),
+      ...(shippingLines.length > 0 ? { shipping_lines: shippingLines } : {}),
       email: customer.email,
       phone: customer.phone,
       financial_status: 'paid',
