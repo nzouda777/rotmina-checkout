@@ -194,6 +194,23 @@ export async function sendMorningReceipt(
           },
         ]
 
+    // Morning error 2422: sum(income) must equal amount exactly.
+    // Cart items only cover the subtotal; shipping fee is included in `amount` but not in items.
+    // If there is a gap, append a balancing "Shipping" line so the totals match.
+    const incomeSum = Math.round(income.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100
+    const roundedAmount = Math.round(amount * 100) / 100
+    const shippingGap = Math.round((roundedAmount - incomeSum) * 100) / 100
+    if (shippingGap > 0) {
+      income.push({
+        catalogNum: '',
+        description: lang === 'he' ? 'משלוח' : 'Shipping',
+        quantity: 1,
+        price: shippingGap,
+        currency: getCurrencyCode(currency),
+        vatType: 0,
+      })
+    }
+
     const remarksText = lang === 'he' ? '!תתחדשי' : 'Wear it well!'
 
     // Build the document payload
