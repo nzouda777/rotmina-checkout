@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { randomInt } from 'crypto'
 import { separateGiftCardItems } from '@/lib/gift-card-utils'
-
-const FREE_SHIPPING_THRESHOLD_ILS = 499
-const DOMESTIC_SHIPPING_FEE_ILS = Number(process.env.DOMESTIC_SHIPPING_FEE_ILS || '30')
+import { getShippingSettings } from '@/lib/shipping-settings'
 
 function sanitizeShopDomain(shop: string): string {
   return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
@@ -303,8 +301,10 @@ export async function POST(request: NextRequest) {
 
     // ── Shipping logic (always computed in ILS before any conversion) ─────────
     // Gift card-only orders are digital → always free shipping.
-    // Hebrew (ILS): free shipping at ₪499+, otherwise flat ₪30 fee.
-    // English (USD): shipping = 20% of cart subtotal.
+    // Hebrew (ILS): free shipping at threshold+, otherwise flat fee.
+    // English (USD): shipping = configured % of cart subtotal.
+    // Values are editable in Admin → Shipping.
+    const shippingCfg = await getShippingSettings()
     const { regularItems: regularCartItems } = separateGiftCardItems(finalCart.items || [])
     const isGiftCardOnlyCart = regularCartItems.length === 0 && (finalCart.items || []).length > 0
     const subtotalForShipping = finalCart.subtotal || 0
@@ -314,13 +314,14 @@ export async function POST(request: NextRequest) {
     const displayedSubtotal = subtotalForShipping + (finalCart.shopify_discount?.amount || 0)
 
     if (targetCurrency === 'USD') {
-      finalCart.shipping = isGiftCardOnlyCart ? 0 : Math.round(subtotalForShipping * 0.20 * 100) / 100
+      const intlRate = shippingCfg.international_shipping_pct / 100
+      finalCart.shipping = isGiftCardOnlyCart ? 0 : Math.round(subtotalForShipping * intlRate * 100) / 100
       finalCart.tax = 0
     } else {
-      if (isGiftCardOnlyCart || displayedSubtotal >= FREE_SHIPPING_THRESHOLD_ILS) {
+      if (isGiftCardOnlyCart || displayedSubtotal >= shippingCfg.free_shipping_threshold_ils) {
         finalCart.shipping = 0
       } else {
-        finalCart.shipping = DOMESTIC_SHIPPING_FEE_ILS
+        finalCart.shipping = shippingCfg.domestic_shipping_fee_ils
       }
       finalCart.tax = 0
     }

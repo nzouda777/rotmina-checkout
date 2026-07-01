@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ShoppingBag, Gift, LogOut,
-  Menu, X, Eye, EyeOff, Loader2, ChevronRight, Ticket, Globe,
+  Menu, X, Eye, EyeOff, Loader2, ChevronRight, Ticket, Globe, Truck,
 } from 'lucide-react'
 import { AdminProvider, useAdmin } from '@/lib/admin-context'
 import { AdminLanguageProvider, useAdminLanguage } from '@/lib/admin-language-context'
@@ -94,6 +94,7 @@ function Sidebar({ onClose }: { onClose?: () => void }) {
     { href: '/admin/orders',    label: t('nav.orders'),    icon: ShoppingBag },
     { href: '/admin/gift-cards',label: t('nav.giftCards'), icon: Gift },
     { href: '/admin/coupons',   label: t('nav.coupons'),   icon: Ticket },
+    { href: '/admin/shipping',  label: t('nav.shipping'),  icon: Truck },
   ]
 
   return (
