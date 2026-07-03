@@ -4,12 +4,14 @@ export interface ShippingSettings {
   free_shipping_threshold_ils: number
   domestic_shipping_fee_ils: number
   international_shipping_pct: number
+  en_shipping_fee_usd: number
 }
 
 const DEFAULTS: ShippingSettings = {
   free_shipping_threshold_ils: 499,
   domestic_shipping_fee_ils: 30,
   international_shipping_pct: 20,
+  en_shipping_fee_usd: 50,
 }
 
 export async function getShippingSettings(): Promise<ShippingSettings> {
@@ -17,7 +19,7 @@ export async function getShippingSettings(): Promise<ShippingSettings> {
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('shipping_settings')
-      .select('free_shipping_threshold_ils, domestic_shipping_fee_ils, international_shipping_pct')
+      .select('free_shipping_threshold_ils, domestic_shipping_fee_ils, international_shipping_pct, en_shipping_fee_usd')
       .eq('id', 1)
       .single()
 
@@ -30,6 +32,7 @@ export async function getShippingSettings(): Promise<ShippingSettings> {
       free_shipping_threshold_ils: Number(data.free_shipping_threshold_ils),
       domestic_shipping_fee_ils: Number(data.domestic_shipping_fee_ils),
       international_shipping_pct: Number(data.international_shipping_pct),
+      en_shipping_fee_usd: data.en_shipping_fee_usd != null ? Number(data.en_shipping_fee_usd) : DEFAULTS.en_shipping_fee_usd,
     }
   } catch (err) {
     console.warn('[SHIPPING] Unexpected error loading shipping_settings — using defaults:', err)

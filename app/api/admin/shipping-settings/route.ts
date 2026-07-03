@@ -41,6 +41,7 @@ export async function PUT(request: NextRequest) {
   const threshold = Number(body.free_shipping_threshold_ils)
   const fee = Number(body.domestic_shipping_fee_ils)
   const pct = Number(body.international_shipping_pct)
+  const enFee = Number(body.en_shipping_fee_usd)
 
   if (isNaN(threshold) || threshold < 0) {
     return NextResponse.json({ error: 'free_shipping_threshold_ils must be a non-negative number' }, { status: 400 })
@@ -51,6 +52,9 @@ export async function PUT(request: NextRequest) {
   if (isNaN(pct) || pct < 0 || pct > 100) {
     return NextResponse.json({ error: 'international_shipping_pct must be between 0 and 100' }, { status: 400 })
   }
+  if (isNaN(enFee) || enFee < 0) {
+    return NextResponse.json({ error: 'en_shipping_fee_usd must be a non-negative number' }, { status: 400 })
+  }
 
   const supabase = await createClient()
   const { data, error } = await supabase
@@ -60,6 +64,7 @@ export async function PUT(request: NextRequest) {
       free_shipping_threshold_ils: threshold,
       domestic_shipping_fee_ils: fee,
       international_shipping_pct: pct,
+      en_shipping_fee_usd: enFee,
       updated_at: new Date().toISOString(),
     })
     .select()

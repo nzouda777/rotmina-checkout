@@ -56,6 +56,20 @@ export default function CheckoutPage() {
   // Coupon code state
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null)
 
+  // Tax state for English checkout
+  const [taxRules, setTaxRules] = useState<{ country: string; tax_rate: number }[]>([])
+  const [selectedCountry, setSelectedCountry] = useState<string>('United States')
+  const [applyingTax, setApplyingTax] = useState(false)
+
+  // Fetch tax rules for English checkout live preview
+  useEffect(() => {
+    if (lang !== 'en') return
+    fetch('/api/checkout/tax-rules')
+      .then((r) => r.json())
+      .then((d) => { if (d.rules) setTaxRules(d.rules) })
+      .catch(() => {})
+  }, [lang])
+
   useEffect(() => {
   console.log('EFFECT MOUNT - sessionId:', sessionId);
 
@@ -152,8 +166,29 @@ export default function CheckoutPage() {
     return () => { cancelled = true }
   }, [currency, sessionId])
 
-  const handleCustomerSubmit = (info: CustomerInfo) => {
+  const handleCustomerSubmit = async (info: CustomerInfo) => {
     setCustomerInfo(info)
+
+    // For English checkout, apply country-based tax to the session before payment
+    if (lang === 'en' && sessionId) {
+      setApplyingTax(true)
+      try {
+        const res = await fetch('/api/checkout/session', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'apply-tax', sessionId, country: info.country }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setSession(data)
+        }
+      } catch {
+        // Non-blocking: proceed to payment even if tax PATCH fails
+      } finally {
+        setApplyingTax(false)
+      }
+    }
+
     setStep('payment')
   }
 
@@ -282,9 +317,16 @@ export default function CheckoutPage() {
   const giftCardAmount = appliedGiftCard?.appliedAmount || 0
   const couponAmount = appliedCoupon?.appliedAmount || 0
 
-  // Tax (20% for English/USD) is now stored server-side in the session.
-  // No client-side adjustment needed.
   const adjustedCartData = session.cart
+
+  // Live tax preview for English checkout (before customer submits the form)
+  // Tax = rate% of the shipping fee (e.g. 20% of $50 = $10)
+  const liveTaxRule = lang === 'en'
+    ? taxRules.find((r) => r.country === selectedCountry)
+    : undefined
+  const liveTax = liveTaxRule ? Math.round(adjustedCartData.shipping * (liveTaxRule.tax_rate / 100) * 100) / 100 : undefined
+  // Once the session has been patched (step === 'payment'), tax is already in the cart
+  const taxOverride = step === 'information' && lang === 'en' ? liveTax : undefined
 
   return (
     <div className="min-h-screen bg-background">
@@ -333,6 +375,7 @@ export default function CheckoutPage() {
               <CustomerForm
                 initialData={customerInfo}
                 onSubmit={handleCustomerSubmit}
+                onCountryChange={lang === 'en' ? setSelectedCountry : undefined}
               />
             )}
 
@@ -392,6 +435,7 @@ export default function CheckoutPage() {
                 giftCardCode={appliedGiftCard?.code}
                 couponAmount={couponAmount}
                 couponCode={appliedCoupon?.code}
+                taxOverride={taxOverride}
               />
             </div>
           </div>

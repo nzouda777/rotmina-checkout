@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { randomInt } from 'crypto'
 import { separateGiftCardItems } from '@/lib/gift-card-utils'
 import { getShippingSettings } from '@/lib/shipping-settings'
+import { getTaxRules, getTaxRateForCountry } from '@/lib/tax-rules'
 
 function sanitizeShopDomain(shop: string): string {
   return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
@@ -314,8 +315,8 @@ export async function POST(request: NextRequest) {
     const displayedSubtotal = subtotalForShipping + (finalCart.shopify_discount?.amount || 0)
 
     if (targetCurrency === 'USD') {
-      const intlRate = shippingCfg.international_shipping_pct / 100
-      finalCart.shipping = isGiftCardOnlyCart ? 0 : Math.round(subtotalForShipping * intlRate * 100) / 100
+      // Shipping and tax set after USD conversion below so amounts stay exact in USD.
+      finalCart.shipping = 0
       finalCart.tax = 0
     } else {
       if (isGiftCardOnlyCart || displayedSubtotal >= shippingCfg.free_shipping_threshold_ils) {
@@ -337,12 +338,14 @@ export async function POST(request: NextRequest) {
         price: Math.round(item.price * usdRate * 100) / 100,
       }))
       finalCart.subtotal = Math.round(finalCart.subtotal * usdRate * 100) / 100
-      finalCart.shipping = Math.round(finalCart.shipping * usdRate * 100) / 100
-      finalCart.tax = Math.round((finalCart.tax || 0) * usdRate * 100) / 100
-      finalCart.total = Math.round(finalCart.total * usdRate * 100) / 100
       if (finalCart.shopify_discount?.amount) {
         finalCart.shopify_discount.amount = Math.round(finalCart.shopify_discount.amount * usdRate * 100) / 100
       }
+      // Apply exact flat USD shipping fee — bypasses ILS→USD conversion to stay precise.
+      // Tax (on the shipping fee) is applied later via PATCH when the customer selects their country.
+      finalCart.shipping = isGiftCardOnlyCart ? 0 : shippingCfg.en_shipping_fee_usd
+      finalCart.tax = 0
+      finalCart.total = Math.round((finalCart.subtotal + finalCart.shipping + finalCart.tax) * 100) / 100
     }
     finalCart.currency = targetCurrency;
 
@@ -438,7 +441,54 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { sessionId, targetCurrency, lang } = body
+
+    // ── Apply country-based tax ───────────────────────────────────────────────
+    if (body.type === 'apply-tax') {
+      const { sessionId, country } = body
+      if (!sessionId || !country) {
+        return corsResponse(request, { error: 'Missing sessionId or country' }, 400)
+      }
+
+      const supabase = await createClient()
+      const { data: session, error: fetchError } = await supabase
+        .from('payment_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single()
+
+      if (fetchError || !session) {
+        return corsResponse(request, { error: 'Session not found' }, 404)
+      }
+
+      const taxRules = await getTaxRules()
+      const taxRate = getTaxRateForCountry(taxRules, country)
+      const cart = session.cart as any
+      // Tax is calculated on the shipping fee only (e.g. 20% of $50 = $10)
+      const taxAmount = Math.round((cart.shipping || 0) * (taxRate / 100) * 100) / 100
+      const updatedCart = {
+        ...cart,
+        tax: taxAmount,
+        total: Math.round(((cart.subtotal || 0) + (cart.shipping || 0) + taxAmount) * 100) / 100,
+      }
+
+      console.log(`[SESSION PATCH] apply-tax: country=${country} rate=${taxRate}% shipping=${cart.shipping} tax=${taxAmount}`)
+
+      const { data: updated, error: updateError } = await supabase
+        .from('payment_sessions')
+        .update({ cart: updatedCart, amount: updatedCart.total })
+        .eq('id', sessionId)
+        .select()
+        .single()
+
+      if (updateError || !updated) {
+        return corsResponse(request, { error: 'Failed to apply tax to session' }, 500)
+      }
+
+      return corsResponse(request, { ...updated, cart: updatedCart })
+    }
+
+    // ── Currency conversion ───────────────────────────────────────────────────
+    const { sessionId, targetCurrency } = body
 
     if (!sessionId || !targetCurrency) {
       return corsResponse(request, { error: 'Missing sessionId or targetCurrency' }, 400)

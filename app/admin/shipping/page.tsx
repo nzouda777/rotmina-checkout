@@ -9,6 +9,7 @@ interface ShippingSettings {
   free_shipping_threshold_ils: number
   domestic_shipping_fee_ils: number
   international_shipping_pct: number
+  en_shipping_fee_usd: number
   updated_at?: string
 }
 
@@ -23,6 +24,7 @@ export default function ShippingSettingsPage() {
   const [threshold, setThreshold] = useState('')
   const [fee, setFee] = useState('')
   const [pct, setPct] = useState('')
+  const [enFee, setEnFee] = useState('')
 
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -40,6 +42,7 @@ export default function ShippingSettingsPage() {
       setThreshold(String(s.free_shipping_threshold_ils))
       setFee(String(s.domestic_shipping_fee_ils))
       setPct(String(s.international_shipping_pct))
+      setEnFee(String(s.en_shipping_fee_usd ?? 50))
     } catch {
       setLoadError(t('shipping.networkError'))
     } finally {
@@ -57,10 +60,12 @@ export default function ShippingSettingsPage() {
     const t_val = Number(threshold)
     const f_val = Number(fee)
     const p_val = Number(pct)
+    const e_val = Number(enFee)
 
     if (isNaN(t_val) || t_val < 0) { setSaveError(t('shipping.errorThreshold')); return }
     if (isNaN(f_val) || f_val < 0) { setSaveError(t('shipping.errorFee')); return }
     if (isNaN(p_val) || p_val < 0 || p_val > 100) { setSaveError(t('shipping.errorPct')); return }
+    if (isNaN(e_val) || e_val < 0) { setSaveError(t('shipping.errorEnFee')); return }
 
     setIsSaving(true)
     try {
@@ -71,6 +76,7 @@ export default function ShippingSettingsPage() {
           free_shipping_threshold_ils: t_val,
           domestic_shipping_fee_ils: f_val,
           international_shipping_pct: p_val,
+          en_shipping_fee_usd: e_val,
         }),
       })
       const data = await res.json()
@@ -124,7 +130,7 @@ export default function ShippingSettingsPage() {
       {/* Loading skeleton */}
       {isLoading && !settings && (
         <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5">
-          {[1, 2, 3].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <div key={i} className="space-y-2">
               <div className="h-4 w-40 bg-gray-100 rounded animate-pulse" />
               <div className="h-10 w-full bg-gray-100 rounded-xl animate-pulse" />
@@ -187,8 +193,27 @@ export default function ShippingSettingsPage() {
               <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">{t('shipping.sectionUsd')}</span>
             </div>
 
-            {/* International percentage */}
+            {/* English flat shipping fee */}
             <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-gray-700">
+                {t('shipping.enFeeLabel')}
+              </label>
+              <p className="text-xs text-gray-400">{t('shipping.enFeeDesc')}</p>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm select-none">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={enFee}
+                  onChange={(e) => setEnFee(e.target.value)}
+                  className="w-full pl-7 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-black/20"
+                />
+              </div>
+            </div>
+
+            {/* Legacy percentage (kept for reference) */}
+            <div className="space-y-1.5 opacity-50">
               <label className="block text-sm font-medium text-gray-700">
                 {t('shipping.pctLabel')}
               </label>

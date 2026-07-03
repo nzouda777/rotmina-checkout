@@ -7,6 +7,7 @@ import { useLanguage } from '@/lib/language-context'
 interface CustomerFormProps {
   initialData: CustomerInfo
   onSubmit: (data: CustomerInfo) => void
+  onCountryChange?: (country: string) => void
 }
 
 interface PhoneRule {
@@ -84,7 +85,7 @@ function validatePhone(phone: string, country: string): string | null {
 }
 
 
-export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
+export function CustomerForm({ initialData, onSubmit, onCountryChange }: CustomerFormProps) {
   const [formData, setFormData] = useState<CustomerInfo>(() => ({
     nationalId: '',
     ...initialData,
@@ -110,6 +111,9 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
     setFormData((prev) => ({ ...prev, [name]: value }))
     if (errors[name as keyof CustomerInfo]) {
       setErrors((prev) => ({ ...prev, [name]: undefined }))
+    }
+    if (name === 'country' && onCountryChange) {
+      onCountryChange(value)
     }
   }
 

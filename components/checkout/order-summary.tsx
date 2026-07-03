@@ -13,12 +13,17 @@ interface OrderSummaryProps {
   giftCardCode?: string
   couponAmount?: number
   couponCode?: string
+  taxOverride?: number
 }
-export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode }: OrderSummaryProps) {
+export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode, taxOverride }: OrderSummaryProps) {
+  const displayTax = taxOverride !== undefined ? taxOverride : cartData.tax
+  const displayTotal = taxOverride !== undefined
+    ? Math.round((cartData.subtotal + cartData.shipping + taxOverride) * 100) / 100
+    : cartData.total
   const [isExpanded, setIsExpanded] = useState(true)
   const { t, lang } = useLanguage()
 
-  const finalTotal = Math.max(cartData.total - couponAmount - giftCardAmount, 0)
+  const finalTotal = Math.max(displayTotal - couponAmount - giftCardAmount, 0)
 
   // When Shopify has already discounted the subtotal, show the original price
   // crossed out so the discount line makes the math visually consistent.
@@ -125,10 +130,10 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
               {cartData.shipping === 0 ? t('orderSummary.free') : formatPrice(cartData.shipping)}
             </span>
           </div>
-          {cartData.tax > 0 && (
+          {displayTax > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">{t('orderSummary.tax')}</span>
-              <span className="text-foreground">{formatPrice(cartData.tax)}</span>
+              <span className="text-foreground">{formatPrice(displayTax)}</span>
             </div>
           )}
 
@@ -189,7 +194,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
             <div className="text-right">
               {(giftCardAmount > 0 || couponAmount > 0) && (
                 <span className="text-sm text-muted-foreground line-through ltr:mr-2 rtl:ml-2">
-                  {formatPrice(cartData.total)}
+                  {formatPrice(displayTotal)}
                 </span>
               )}
               <span className="text-2xl font-semibold text-foreground">

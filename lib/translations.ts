@@ -316,7 +316,7 @@ export const translations = {
       he: 'חינם',
     },
     tax: {
-      en: 'Tax',
+      en: 'Tax on shipping (20%)',
       he: 'מע"מ',
     },
     giftCard: {
@@ -332,8 +332,8 @@ export const translations = {
       he: 'סה"כ',
     },
     shippingNotice: {
-      en: '🚚 Please note: a 20% shipping fee will be added to your order total.',
-      he: 'שים לב: 20% דמי משלוח יתווספו לסכום ההזמנה שלך.',
+      en: '🚚 A flat shipping fee applies. A 20% tax on the shipping fee is added for orders in the United States, United Kingdom, and Europe.',
+      he: 'שים לב: דמי משלוח קבועים יתווספו לסכום ההזמנה שלך.',
     },
   },
 
