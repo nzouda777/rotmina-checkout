@@ -38,7 +38,9 @@ interface PaymentFormProps {
   onCouponRemove: () => void
 }
 
-function getMaxInstallments(amount: number, currency: string): number {
+function getMaxInstallments(amount: number, currency: string, country: string): number {
+  if (country.toLowerCase() !== 'israel' && country.toUpperCase() !== 'IL') return 1
+
   let rate = 1.0
   const normalizedCurrency = currency.toUpperCase()
   if (normalizedCurrency === 'USD') rate = 3.7
@@ -179,7 +181,7 @@ export function PaymentForm({
   }, [isSubmitting])
 
   const chargeAmount = Math.max(total - couponAmount - giftCardAmount, 0)
-  const maxInstallments = getMaxInstallments(chargeAmount, currency)
+  const maxInstallments = getMaxInstallments(chargeAmount, currency, customerInfo.country)
 
   useEffect(() => {
     if (installments > maxInstallments) setInstallments(1)

@@ -218,8 +218,6 @@ export function CustomerForm({ initialData, onSubmit }: CustomerFormProps) {
                   className={`w-full px-4 py-3 pe-12 appearance-none rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer ${errors.country ? 'border-destructive' : 'border-input'
                     }`}
                 >
-                  <option value="Israel">{t('customerForm.israel')}</option>
-
                   <>
                     <option value="United States">{t('customerForm.unitedStates')}</option>
                     <option value="Canada">{t('customerForm.canada')}</option>
