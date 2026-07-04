@@ -322,7 +322,12 @@ export default function CheckoutPage() {
   const liveTaxRule = lang === 'en'
     ? taxRules.find((r) => r.country === selectedCountry)
     : undefined
-  const liveTax = liveTaxRule ? Math.round(adjustedCartData.subtotal * (liveTaxRule.tax_rate / 100) * 100) / 100 : undefined
+  const GIFT_CARD_KEYWORDS = ['gift card', 'carte cadeau', 'גיפט קארד', 'כרטיס מתנה']
+  const taxableItems = (adjustedCartData.items || []).filter(
+    (item: any) => !GIFT_CARD_KEYWORDS.some((kw) => (item.title || '').toLowerCase().includes(kw))
+  )
+  const taxableSubtotal = taxableItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0)
+  const liveTax = liveTaxRule ? Math.round(taxableSubtotal * (liveTaxRule.tax_rate / 100) * 100) / 100 : undefined
   // Once the session has been patched (step === 'payment'), tax is already in the cart
   const taxOverride = step === 'information' && lang === 'en' ? liveTax : undefined
 
