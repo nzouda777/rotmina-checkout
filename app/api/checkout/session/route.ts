@@ -463,15 +463,14 @@ export async function PATCH(request: NextRequest) {
       const taxRules = await getTaxRules()
       const taxRate = getTaxRateForCountry(taxRules, country)
       const cart = session.cart as any
-      // Tax is calculated on the shipping fee only (e.g. 20% of $50 = $10)
-      const taxAmount = Math.round((cart.shipping || 0) * (taxRate / 100) * 100) / 100
+      const taxAmount = Math.round((cart.subtotal || 0) * (taxRate / 100) * 100) / 100
       const updatedCart = {
         ...cart,
         tax: taxAmount,
         total: Math.round(((cart.subtotal || 0) + (cart.shipping || 0) + taxAmount) * 100) / 100,
       }
 
-      console.log(`[SESSION PATCH] apply-tax: country=${country} rate=${taxRate}% shipping=${cart.shipping} tax=${taxAmount}`)
+      console.log(`[SESSION PATCH] apply-tax: country=${country} rate=${taxRate}% subtotal=${cart.subtotal} tax=${taxAmount}`)
 
       const { data: updated, error: updateError } = await supabase
         .from('payment_sessions')

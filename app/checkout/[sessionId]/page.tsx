@@ -319,12 +319,10 @@ export default function CheckoutPage() {
 
   const adjustedCartData = session.cart
 
-  // Live tax preview for English checkout (before customer submits the form)
-  // Tax = rate% of the shipping fee (e.g. 20% of $50 = $10)
   const liveTaxRule = lang === 'en'
     ? taxRules.find((r) => r.country === selectedCountry)
     : undefined
-  const liveTax = liveTaxRule ? Math.round(adjustedCartData.shipping * (liveTaxRule.tax_rate / 100) * 100) / 100 : undefined
+  const liveTax = liveTaxRule ? Math.round(adjustedCartData.subtotal * (liveTaxRule.tax_rate / 100) * 100) / 100 : undefined
   // Once the session has been patched (step === 'payment'), tax is already in the cart
   const taxOverride = step === 'information' && lang === 'en' ? liveTax : undefined
 
