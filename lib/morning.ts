@@ -215,7 +215,7 @@ export async function sendMorningReceipt(
       })
     }
 
-    const remarksText = lang === 'he' ? '!תתחדשי' : 'Wear it well!'
+    const remarksText = lang === 'he' ? 'תתחדשי!' : 'Wear it well!'
 
     // Build the document payload
     const documentPayload = {
