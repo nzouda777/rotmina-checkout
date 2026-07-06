@@ -11,13 +11,13 @@
 
 // ─── Configuration ──────────────────────────────────────────────────────────────
 
-const MORNING_API_KEY = process.env.MORNING_API_KEY || ''
-const MORNING_API_SECRET = process.env.MORNING_API_SECRET || ''
-const MORNING_SANDBOX = process.env.MORNING_SANDBOX === 'true'
-
-const BASE_URL = MORNING_SANDBOX
-  ? 'https://sandbox.d.greeninvoice.co.il/api/v1'
-  : 'https://api.greeninvoice.co.il/api/v1'
+const getConfig = () => ({
+  apiKey: process.env.MORNING_API_KEY || '',
+  apiSecret: process.env.MORNING_API_SECRET || '',
+  baseUrl: process.env.MORNING_SANDBOX === 'true'
+    ? 'https://sandbox.d.greeninvoice.co.il/api/v1'
+    : 'https://api.greeninvoice.co.il/api/v1',
+})
 
 // ─── Document types ─────────────────────────────────────────────────────────────
 // 305 = Tax Invoice
@@ -96,18 +96,20 @@ async function getAccessToken(): Promise<string> {
     return cachedToken
   }
 
-  if (!MORNING_API_KEY || !MORNING_API_SECRET) {
+  const { apiKey, apiSecret, baseUrl } = getConfig()
+
+  if (!apiKey || !apiSecret) {
     throw new Error('[MORNING] Missing MORNING_API_KEY or MORNING_API_SECRET environment variables')
   }
 
-  console.log(`[MORNING] Requesting new access token from ${BASE_URL}/account/token`)
+  console.log(`[MORNING] Requesting new access token from ${baseUrl}/account/token`)
 
-  const response = await fetch(`${BASE_URL}/account/token`, {
+  const response = await fetch(`${baseUrl}/account/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      id: MORNING_API_KEY,
-      secret: MORNING_API_SECRET,
+      id: apiKey,
+      secret: apiSecret,
     }),
   })
 
@@ -157,7 +159,9 @@ export async function sendMorningReceipt(
     return { success: false, error: 'Missing required fields (email or amount)' }
   }
 
-  if (!MORNING_API_KEY || !MORNING_API_SECRET) {
+  const { apiKey, apiSecret, baseUrl } = getConfig()
+
+  if (!apiKey || !apiSecret) {
     console.warn('[MORNING] API credentials not configured — skipping receipt')
     return { success: false, error: 'Morning API credentials not configured' }
   }
@@ -222,6 +226,7 @@ export async function sendMorningReceipt(
       currency: getCurrencyCode(currency),
       vatType: 0, // VAT included in price
       amount,
+      emailContent: remarksText,
       // Client (recipient) info
       client: {
         name: customerName,
@@ -255,9 +260,10 @@ export async function sendMorningReceipt(
       footer: '',
     }
 
-    console.log(`[MORNING] Creating receipt for ${customerEmail} | amount: ${amount} ${currency} | type: ${morningPaymentType}`)
+    console.log(`[MORNING] Creating receipt for ${customerEmail} | amount: ${amount} ${currency} | type: ${morningPaymentType} | emailContent: "${remarksText}"`)
+    console.log('[MORNING] Full email object being sent:', JSON.stringify(documentPayload.email, null, 2))
 
-    const response = await fetch(`${BASE_URL}/documents`, {
+    const response = await fetch(`${baseUrl}/documents`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -287,7 +293,7 @@ export async function sendMorningReceipt(
     const result = await response.json()
     const documentId = result.id || result._id
     
-    let documentUrl = result.url || result.shareUrl || (documentId ? `${BASE_URL}/documents/${documentId}` : undefined)
+    let documentUrl = result.url || result.shareUrl || (documentId ? `${baseUrl}/documents/${documentId}` : undefined)
     if (documentUrl && typeof documentUrl === 'object') {
       documentUrl = documentUrl.he || documentUrl.en || JSON.stringify(documentUrl)
     }

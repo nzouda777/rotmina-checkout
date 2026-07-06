@@ -14,10 +14,9 @@ envContent.split('\n').forEach(line => {
   }
 })
 
-async function runTest() {
-  console.log('🚀 Starting Morning API test flow with test card...')
-  
-  // Dummy data representing a Tranzila transaction using the test card
+async function runTest(lang: 'he' | 'en') {
+  console.log(`\n🚀 Starting Morning API test flow — lang: ${lang}`)
+
   const mockCustomer = {
     email: 'rodriguenzouda35@gmail.com',
     firstName: 'Test',
@@ -29,32 +28,35 @@ async function runTest() {
     currency: 'ILS',
     items: [
       { title: 'Test Product 1', quantity: 1, price: 100.00 },
-      { title: 'Test Product 2', quantity: 2, price: 25.25 }
-    ]
+      { title: 'Test Product 2', quantity: 2, price: 25.25 },
+    ],
   }
 
-  // Simulate raw response from Tranzila when using test card
   const mockRawResponse = {
     payment_method: 'test_card',
     Response: '000',
     ConfirmationCode: 'MOCK-123456',
-    ccno: '5430050220380520'
+    ccno: '5430050220380520',
   }
 
   const paymentMethod = detectPaymentMethod(mockRawResponse)
   console.log(`💳 Detected payment method: ${paymentMethod}`)
+
+  const emailContent = lang === 'he' ? '!תתחדשי' : 'Wear it well!'
+  console.log(`✉️  Email content (remarks + content field): "${emailContent}"`)
 
   const params = {
     customerEmail: mockCustomer.email,
     customerName: `${mockCustomer.firstName} ${mockCustomer.lastName}`,
     amount: mockCart.total,
     currency: mockCart.currency,
-    paymentMethod: paymentMethod,
+    paymentMethod,
+    lang,
     items: mockCart.items.map(item => ({
       description: item.title,
       quantity: item.quantity,
-      price: item.price
-    }))
+      price: item.price,
+    })),
   }
 
   console.log('📝 Sending Morning receipt with params:', JSON.stringify(params, null, 2))
@@ -73,4 +75,9 @@ async function runTest() {
   }
 }
 
-runTest()
+async function main() {
+  await runTest('en') // email content: "Wear it well!"
+  await runTest('he') // email content: "!תתחדשי"
+}
+
+main()
