@@ -122,6 +122,7 @@ async function handleCallback(request: NextRequest) {
           const updatedCard = await debitGiftCard({
             code: storedGiftCard.code,
             amount: storedGiftCard.appliedAmount,
+            amountCurrency: session.cart?.currency,
             sessionId: actualSessionId,
           })
           remainingBalance = updatedCard.balance ?? undefined

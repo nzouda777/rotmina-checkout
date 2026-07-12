@@ -8,6 +8,7 @@ import { RealtimeChannel } from '@supabase/supabase-js'
 import Image from 'next/image'
 import Script from 'next/script'
 import { useLanguage } from '@/lib/language-context'
+import { storeUrl } from '@/lib/store-url'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
 import { CouponForm } from '@/components/checkout/coupon-form'
 
@@ -1955,7 +1956,7 @@ export function PaymentForm({
 
                 {/* Return to store */}
                 <a
-                  href={`https://${shopDomain || 'rotmina.co'}`}
+                  href={storeUrl(lang)}
                   className="text-[0.72rem] uppercase tracking-[0.15em] text-gray-400 hover:text-gray-700 transition-colors"
                 >
                   {t('paymentForm.returnToStore')}

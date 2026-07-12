@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
-import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
+import { debitGiftCard, generateGiftCardsForOrder, validateGiftCard } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
-import { isPayableCurrency, tranzilaCurrencyCode } from '@/lib/currency'
+import { isPayableCurrency, tranzilaCurrencyCode, getExchangeRate } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -56,8 +56,13 @@ async function handlePostPayment(params: {
   // 1. Debit gift card if used as payment
   if (giftCardCode && giftCardAmount && giftCardAmount > 0) {
     try {
-      console.log(`[CHARGE][${logId}] Debiting gift card ${giftCardCode} for ${giftCardAmount}...`)
-      const updatedCard = await debitGiftCard({ code: giftCardCode, amount: giftCardAmount, sessionId })
+      console.log(`[CHARGE][${logId}] Debiting gift card ${giftCardCode} for ${giftCardAmount} ${session.cart?.currency}...`)
+      const updatedCard = await debitGiftCard({
+        code: giftCardCode,
+        amount: giftCardAmount,
+        amountCurrency: session.cart?.currency,
+        sessionId,
+      })
       results.giftCardRemainingBalance = updatedCard.balance ?? undefined
       console.log(`[CHARGE][${logId}] Gift card debited successfully`)
     } catch (gcError) {
@@ -275,7 +280,43 @@ export async function POST(request: NextRequest) {
     const orderTotal = Number(session.cart.total) + (Number(shippingFeeAmount) || 0)
     const validCouponAmount = Math.min(Number(couponAmount) || 0, orderTotal)
     const priceAfterCoupon = Math.max(orderTotal - validCouponAmount, 0)
-    const validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, priceAfterCoupon)
+    let validGiftCardAmount = Math.min(Number(giftCardAmount) || 0, priceAfterCoupon)
+
+    // Server-side gift card verification: never trust the client-sent amount.
+    // The card balance lives in the card's own currency (usually ILS) — convert
+    // it to the cart currency before clamping, so a 300 ILS card can only ever
+    // reduce ~80 USD on a USD checkout, not 300 USD.
+    if (giftCardCode && validGiftCardAmount > 0) {
+      const card = await validateGiftCard(giftCardCode)
+      if (!card || card.status === 'disabled') {
+        await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+        return NextResponse.json({ error: 'Gift card is not valid' }, { status: 400 })
+      }
+      if (card.discount_type === 'percentage') {
+        if (card.status !== 'active') {
+          await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+          return NextResponse.json({ error: 'Gift card has already been used' }, { status: 400 })
+        }
+        const maxPercentAmount = Math.round(orderTotal * ((Number(card.discount_value) || 0) / 100) * 100) / 100
+        validGiftCardAmount = Math.min(validGiftCardAmount, maxPercentAmount)
+      } else {
+        if (card.status !== 'active' || (Number(card.balance) || 0) <= 0) {
+          await supabase.from('payment_sessions').update({ status: 'pending' }).eq('id', sessionId)
+          return NextResponse.json({ error: 'Gift card has no remaining balance' }, { status: 400 })
+        }
+        let balanceInCartCurrency = Number(card.balance) || 0
+        const cardCur = (card.currency || 'ILS').toUpperCase()
+        if (cardCur !== cartCurrency) {
+          const gcRate = await getExchangeRate(cardCur, cartCurrency)
+          balanceInCartCurrency = Math.round(balanceInCartCurrency * gcRate * 100) / 100
+          console.log(`[CHARGE][${logId}] GC balance converted: ${card.balance} ${cardCur} → ${balanceInCartCurrency} ${cartCurrency} (rate: ${gcRate})`)
+        }
+        validGiftCardAmount = Math.min(validGiftCardAmount, balanceInCartCurrency)
+      }
+      if (validGiftCardAmount < Number(giftCardAmount)) {
+        console.warn(`[CHARGE][${logId}] Client GC amount ${giftCardAmount} clamped to ${validGiftCardAmount} ${cartCurrency}`)
+      }
+    }
     const rawChargeAmount = Math.max(priceAfterCoupon - validGiftCardAmount, 0)
     const chargeAmount = Math.round(rawChargeAmount * 100) / 100
 

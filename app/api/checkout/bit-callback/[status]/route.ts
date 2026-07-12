@@ -186,6 +186,7 @@ async function processSuccess(
       const updatedCard = await debitGiftCard({
         code: storedGiftCard.code,
         amount: storedGiftCard.appliedAmount,
+        amountCurrency: session.cart?.currency,
         sessionId,
       })
       remainingBalance = updatedCard.balance ?? undefined

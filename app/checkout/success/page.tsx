@@ -5,6 +5,7 @@ import { Suspense, useState } from 'react'
 import Image from 'next/image'
 import { X, Gift, Copy, Check } from 'lucide-react'
 import { useLanguage } from '@/lib/language-context'
+import { storeUrl } from '@/lib/store-url'
 
 function SuccessModal() {
   const searchParams = useSearchParams()
@@ -15,7 +16,9 @@ function SuccessModal() {
   const giftCardCodes = giftCardsParam ? giftCardsParam.split(',').filter(Boolean) : []
   const hasGiftCards = giftCardCodes.length > 0
 
-  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL ?? '/'
+  // "Explore more" must return to the storefront in the checkout language:
+  // en → /en/collections/shop, he → /collections/shop
+  const exploreUrl = storeUrl(lang, '/collections/shop')
 
   const titleLines = t('successModal.title').split('\n')
 
@@ -120,7 +123,7 @@ function SuccessModal() {
 
           {/* CTA */}
           <a
-            href={storeUrl}
+            href={exploreUrl}
             className="text-[0.7rem] uppercase tracking-[0.18em] text-gray-900 border-b border-gray-900 pb-px hover:opacity-60 transition-opacity"
           >
             {t('successModal.cta')}

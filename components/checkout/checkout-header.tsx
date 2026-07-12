@@ -3,6 +3,7 @@
 import { Lock, ChevronDown } from 'lucide-react'
 import Image from 'next/image'
 import { useLanguage, CURRENCIES, type Currency } from '@/lib/language-context'
+import { storeUrl } from '@/lib/store-url'
 
 interface CheckoutHeaderProps {
   shopName: string
@@ -30,7 +31,7 @@ export function CheckoutHeader({ shopName }: CheckoutHeaderProps) {
 
         {/* Center: Logo — always truly centered via grid */}
         <div className="flex justify-center">
-          <a href="https://rotmina.co">
+          <a href={storeUrl(lang)}>
             <Image
               src="/rotmina-logo_1.webp"
               alt="Rotmina Logo"

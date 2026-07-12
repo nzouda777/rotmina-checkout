@@ -6,6 +6,7 @@ import type { CartData } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
 import { getProductTitle, translateVariant } from '@/lib/translations'
 import { isGiftCardProduct } from '@/lib/gift-card-utils'
+import { storeUrl } from '@/lib/store-url'
 
 interface OrderSummaryProps {
   cartData: CartData
@@ -207,7 +208,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
         {/* Return to site */}
         <div className="border-t border-border mt-4 pt-4 flex justify-center">
           <a
-            href={process.env.NEXT_PUBLIC_STORE_URL ? process.env.NEXT_PUBLIC_STORE_URL + '/collections/shop' : '#'}
+            href={storeUrl(lang, '/collections/shop')}
             className="text-xs text-black font-medium hover:text-black transition-colors bg-[#7c7a7a45] w-full text-center py-2 rounded-md"
           >
             {t('orderSummaryExtra.keepExploring')}

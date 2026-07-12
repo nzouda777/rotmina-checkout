@@ -46,10 +46,12 @@ export function GiftCardForm({
     setError('')
 
     try {
+      // Send the cart currency so the server converts the card balance when
+      // the card was purchased in another currency (e.g. ILS card on USD checkout).
       const response = await fetch('/api/checkout/gift-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim() }),
+        body: JSON.stringify({ code: code.trim(), currency }),
       })
 
       const data = await response.json()

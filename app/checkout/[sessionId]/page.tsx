@@ -10,6 +10,7 @@ import { GiftCardForm } from '@/components/checkout/gift-card-form'
 import { CheckoutFooter } from '@/components/checkout/checkout-footer'
 import type { PaymentSession, CustomerInfo, AppliedCoupon } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
+import { storeUrl } from '@/lib/store-url'
 
 // console.log('CheckoutPage module loaded');
 
@@ -84,8 +85,8 @@ export default function CheckoutPage() {
     try {
       const response = await fetch(`/api/checkout/session?id=${sessionId}`)
       if (!response.ok) {
-        // Session doesn't exist or server error — redirect to store
-        window.location.href = 'https://rotmina.co.il'
+        // Session doesn't exist or server error — redirect to store (same language)
+        window.location.href = storeUrl(lang)
         return
       }
       const data = await response.json()
@@ -128,8 +129,9 @@ export default function CheckoutPage() {
       }
     } catch (err) {
       console.error('Fetch session error:', err)
-      // Network error — redirect to store rather than showing a confusing "payment failed" popup
-      window.location.href = 'https://rotmina.co.il'
+      // Network error — redirect to store (same language) rather than showing
+      // a confusing "payment failed" popup
+      window.location.href = storeUrl(lang)
     } finally {
       setLoading(false)
     }
@@ -161,7 +163,14 @@ export default function CheckoutPage() {
       body: JSON.stringify({ sessionId, targetCurrency: currency, lang }),
     })
       .then((r) => r.json())
-      .then((data) => { if (!cancelled) setSession(data) })
+      .then((data) => {
+        if (cancelled) return
+        setSession(data)
+        // Applied amounts were computed against the previous currency —
+        // drop them so the customer re-applies and gets converted values.
+        setAppliedGiftCard(null)
+        setAppliedCoupon(null)
+      })
       .catch(() => {})
 
     return () => { cancelled = true }

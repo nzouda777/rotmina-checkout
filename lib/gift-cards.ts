@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { sendGiftCardEmailToRecipient, sendGiftCardEmailToBuyer } from '@/lib/email'
+import { getExchangeRate } from '@/lib/currency'
 import type { CartItem } from './types'
 import { isGiftCardProduct, separateGiftCardItems } from './gift-card-utils'
 export { isGiftCardProduct, separateGiftCardItems } from './gift-card-utils'
@@ -154,10 +155,14 @@ export async function validateGiftCard(code: string): Promise<GiftCardRecord | n
 /**
  * Debit a gift card balance after successful payment.
  * Sets status to 'depleted' if balance reaches 0.
+ * `amountCurrency` is the currency the amount is expressed in (usually the
+ * cart currency). When it differs from the card's own currency, the amount is
+ * converted so the card is always debited in its own currency.
  */
 export async function debitGiftCard(params: {
   code: string
   amount: number
+  amountCurrency?: string
   sessionId?: string
 }): Promise<GiftCardRecord> {
   const supabase = await createClient()
@@ -191,8 +196,18 @@ export async function debitGiftCard(params: {
     return updated as GiftCardRecord
   }
 
+  // Convert the debit amount into the card's own currency if needed
+  let amountInCardCurrency = params.amount
+  const cardCurrency = (card.currency || 'ILS').toUpperCase()
+  const amountCurrency = (params.amountCurrency || cardCurrency).toUpperCase()
+  if (amountCurrency !== cardCurrency) {
+    const rate = await getExchangeRate(amountCurrency, cardCurrency)
+    amountInCardCurrency = Math.round(params.amount * rate * 100) / 100
+    console.log(`[GIFT-CARD] Debit converted: ${params.amount} ${amountCurrency} → ${amountInCardCurrency} ${cardCurrency} (rate: ${rate})`)
+  }
+
   const currentBalance = Number(card.balance)
-  const debitAmount = Math.min(params.amount, currentBalance)
+  const debitAmount = Math.min(amountInCardCurrency, currentBalance)
   const newBalance = Math.max(currentBalance - debitAmount, 0)
 
   // Always deplete on first use — gift cards are single-use regardless of remaining balance
