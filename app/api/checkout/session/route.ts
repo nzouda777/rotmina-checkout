@@ -4,6 +4,7 @@ import { randomInt } from 'crypto'
 import { separateGiftCardItems } from '@/lib/gift-card-utils'
 import { getShippingSettings } from '@/lib/shipping-settings'
 import { getTaxRules, getTaxRateForCountry } from '@/lib/tax-rules'
+import { getExchangeRate, convertCart, toPayableCurrency } from '@/lib/currency'
 
 function sanitizeShopDomain(shop: string): string {
   return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
@@ -84,21 +85,6 @@ function corsResponse(request: NextRequest, data: any, status: number = 200) {
     status,
     headers: getCorsHeaders(request),
   })
-}
-
-async function getExchangeRate(from: string, to: string): Promise<number> {
-  if (from === to) return 1;
-  try {
-    const res = await fetch(`https://open.er-api.com/v6/latest/${from}`, { next: { revalidate: 3600 } });
-    const data = await res.json();
-    if (data?.rates?.[to]) return data.rates[to];
-  } catch (e) {
-    console.warn('[CURRENCY] Failed to fetch live exchange rate, using fallback');
-  }
-  if (from === 'USD' && to === 'ILS') return 3.75;
-  if (from === 'EUR' && to === 'ILS') return 4.05;
-  if (from === 'GBP' && to === 'ILS') return 4.75;
-  return 1;
 }
 
 export async function POST(request: NextRequest) {
@@ -495,10 +481,13 @@ export async function PATCH(request: NextRequest) {
       return corsResponse(request, { error: 'Missing sessionId or targetCurrency' }, 400)
     }
 
-    const normalized = (targetCurrency as string).toUpperCase()
-    const allowedCurrencies = ['USD', 'EUR', 'CAD', 'AUD', 'GBP', 'CHF', 'ILS']
-    if (!allowedCurrencies.includes(normalized)) {
-      return corsResponse(request, { error: `Currency must be one of: ${allowedCurrencies.join(', ')}` }, 400)
+    // Whatever display currency the client asks for, the session can only be
+    // charged in ILS or USD (Tranzila terminal limitation — see lib/currency.ts).
+    // Any other request (EUR, CHF, CAD…) is converted to USD.
+    const requested = (targetCurrency as string).toUpperCase()
+    const normalized = toPayableCurrency(requested)
+    if (requested !== normalized) {
+      console.log(`[SESSION PATCH] Requested currency ${requested} is not chargeable → using ${normalized}`)
     }
 
     const supabase = await createClient()
@@ -520,27 +509,7 @@ export async function PATCH(request: NextRequest) {
     const rate = await getExchangeRate(currentCurrency, normalized)
     console.log(`[SESSION PATCH] Converting ${currentCurrency} → ${normalized} | rate: ${rate}`)
 
-    const cart = session.cart as any
-    const convertedSubtotal = Math.round((cart.subtotal || 0) * rate * 100) / 100
-    const convertedShipping = Math.round((cart.shipping || 0) * rate * 100) / 100
-    const convertedTax = Math.round((cart.tax || 0) * rate * 100) / 100
-    const convertedTotal = Math.round((convertedSubtotal + convertedShipping + convertedTax) * 100) / 100
-
-    const convertedCart = {
-      ...cart,
-      currency: normalized,
-      items: ((cart.items || []) as any[]).map((item: any) => ({
-        ...item,
-        price: Math.round(item.price * rate * 100) / 100,
-      })),
-      subtotal: convertedSubtotal,
-      shipping: convertedShipping,
-      tax: convertedTax,
-      total: convertedTotal,
-      ...(cart.shopify_discount
-        ? { shopify_discount: { ...cart.shopify_discount, amount: Math.round(cart.shopify_discount.amount * rate * 100) / 100 } }
-        : {}),
-    }
+    const convertedCart = convertCart(session.cart, normalized, rate)
 
     const { data: updated, error: updateError } = await supabase
       .from('payment_sessions')

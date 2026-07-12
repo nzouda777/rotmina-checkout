@@ -1,5 +1,6 @@
 import { ShopifyOrderCreateData } from './types'
 import { separateGiftCardItems } from './gift-card-utils'
+import { toE164, COUNTRY_DEFAULT_DIAL } from './phone'
 
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
@@ -91,6 +92,14 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     }
   })
 
+  // Normalize the phone to E.164. If it cannot be normalized safely, omit it
+  // from the address — the raw value stays in the note. A missing phone must
+  // never block order creation (the customer has already been charged).
+  const normalizedPhone = toE164(customer.phone, COUNTRY_DEFAULT_DIAL[customer.country])
+  if (customer.phone && !normalizedPhone) {
+    console.warn(`[SHOPIFY] Phone "${customer.phone}" could not be normalized to E.164 — omitting from address (kept in note)`)
+  }
+
   const shippingAddress = {
     first_name: customer.firstName,
     last_name: customer.lastName,
@@ -98,7 +107,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     city: customer.city,
     zip: customer.postalCode,
     country: customer.country,
-    phone: customer.phone,
+    ...(normalizedPhone ? { phone: normalizedPhone } : {}),
   }
 
   // Build order tags — gift card-only orders get a "No Shipping" tag so HFD
@@ -136,7 +145,10 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
       ...(isGiftCardOnly ? {} : { shipping_address: shippingAddress }),
       ...(shippingLines.length > 0 ? { shipping_lines: shippingLines } : {}),
       email: customer.email,
-      phone: customer.phone,
+      // Deliberately no top-level `phone`: Shopify validates it far more
+      // strictly than address phones (E.164 + uniqueness across customers)
+      // and rejects the whole order on mismatch. The phone lives on the
+      // shipping/billing address and in the note instead.
       financial_status: 'paid',
       currency: session.cart.currency,
       transactions: transactions.map(t => ({
@@ -163,15 +175,42 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     throw new Error(`SHOPIFY_STORE_DOMAIN must be a .myshopify.com domain (got: ${SHOPIFY_STORE_DOMAIN}). Custom domains cause POST→GET redirect and will return an orders list instead of creating an order.`)
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    redirect: 'error',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-    },
-    body: JSON.stringify(orderData),
-  })
+  const postOrder = async (payload: any) =>
+    fetch(endpoint, {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      },
+      body: JSON.stringify(payload),
+    })
+
+  let response = await postOrder(orderData)
+
+  // Last line of defense: if Shopify still rejects the phone, retry once with
+  // all phone fields stripped. Losing the phone on the address is acceptable;
+  // losing the order after a successful charge is not.
+  if (!response.ok && response.status === 422) {
+    const firstErrorText = await response.text()
+    if (/phone/i.test(firstErrorText)) {
+      console.warn(`[SHOPIFY] Order rejected because of phone (${firstErrorText}) — retrying without phone fields`)
+      const strippedAddress: any = { ...shippingAddress }
+      delete strippedAddress.phone
+      const retryData = {
+        order: {
+          ...orderData.order,
+          billing_address: strippedAddress,
+          ...(isGiftCardOnly ? {} : { shipping_address: strippedAddress }),
+        },
+      }
+      response = await postOrder(retryData)
+    } else {
+      // Not a phone problem — rebuild the response so the error handling
+      // below can consume the body normally.
+      response = new Response(firstErrorText, { status: 422, statusText: 'Unprocessable Entity' }) as any
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text()

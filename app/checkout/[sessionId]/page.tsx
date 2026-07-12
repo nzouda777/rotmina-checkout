@@ -138,14 +138,15 @@ export default function CheckoutPage() {
   fetchSession()
 }, [sessionId])
 
-  // When the session first loads, initialise the currency selector to match
-  // whatever currency the session already has (so there's no unnecessary PATCH on mount).
+  // When the session loads (or the language changes), the currency defaults to
+  // the checkout language: USD for English, ILS for Hebrew. If the session was
+  // created in another currency (including legacy EUR carts), the mismatch
+  // triggers the conversion PATCH below before any payment can start.
   useEffect(() => {
     if (!session) return
-    const sessionCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
-    setCurrency(sessionCurrency as any)
+    setCurrency(lang === 'he' ? 'ILS' : 'USD')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id])
+  }, [session?.id, lang])
 
   // When the user picks a different currency, PATCH the session to convert prices.
   useEffect(() => {

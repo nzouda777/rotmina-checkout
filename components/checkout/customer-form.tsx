@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import type { CustomerInfo } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
+import { DIAL_CODES, COUNTRY_DEFAULT_DIAL, toE164, splitE164, E164_MAX_DIGITS } from '@/lib/phone'
 
 interface CustomerFormProps {
   initialData: CustomerInfo
@@ -10,98 +11,59 @@ interface CustomerFormProps {
   onCountryChange?: (country: string) => void
 }
 
-interface PhoneRule {
-  regex: RegExp
-  placeholder: string
-  example: string
-  minDigits: number
-  maxDigits: number
-}
+// Generic validation only: the dial code comes from the selector, so any
+// nationality of number is accepted regardless of the shipping country.
+// A '+' or '00' prefix in the input overrides the selector entirely.
+function validatePhoneInput(national: string, dialCode: string): 'tooShort' | 'tooLong' | null {
+  const clean = national.trim().replace(/[\s\-().]/g, '')
+  const isInternational = clean.startsWith('+') || clean.startsWith('00')
+  const digits = clean.replace(/\D/g, '')
 
-const PHONE_RULES: Record<string, PhoneRule> = {
-  'Israel': {
-    // 05X-XXXXXXX (mobile) or 0X-XXXXXXX (landline), optionally +972 prefix
-    regex: /^(\+?972|0)(5[0-9]|[2-4679])\d{7}$/,
-    placeholder: '050-0000000',
-    example: '050-0000000 or +972-50-0000000',
-    minDigits: 9,
-    maxDigits: 12,
-  },
-  'United States': {
-    // +1XXXXXXXXXX or 10-digit local
-    regex: /^(\+?1)?[2-9]\d{2}[2-9]\d{6}$/,
-    placeholder: '(555) 000-0000',
-    example: '(555) 000-0000 or +1 555 000-0000',
-    minDigits: 10,
-    maxDigits: 11,
-  },
-  'United Kingdom': {
-    // 07XXXXXXXXX (mobile) or +44XXXXXXXXXX
-    regex: /^(\+?44|0)[1-9]\d{9,10}$/,
-    placeholder: '07700 900000',
-    example: '07700 900000 or +44 7700 900000',
-    minDigits: 10,
-    maxDigits: 13,
-  },
-  'France': {
-    // 0X XX XX XX XX or +33XXXXXXXXX
-    regex: /^(\+?33|0)[1-9]\d{8}$/,
-    placeholder: '06 00 00 00 00',
-    example: '06 00 00 00 00 or +33 6 00 00 00 00',
-    minDigits: 9,
-    maxDigits: 12,
-  },
-  'Germany': {
-    // 0XXX XXXXXXXX or +49XXX XXXXXXXX, variable length
-    regex: /^(\+?49|0)[1-9]\d{8,11}$/,
-    placeholder: '0151 00000000',
-    example: '0151 00000000 or +49 151 00000000',
-    minDigits: 9,
-    maxDigits: 13,
-  },
-}
-
-function validatePhone(phone: string, country: string): string | null {
-  const cleanPhone = phone.replace(/[\s\-().]/g, '')
-  const rule = PHONE_RULES[country]
-
-  if (!rule) {
-    // Generic validation for unknown countries
-    const digits = cleanPhone.replace(/\D/g, '')
-    if (digits.length < 7) return 'Phone number is too short'
-    if (digits.length > 15) return 'Phone number is too long'
+  if (isInternational) {
+    if (digits.length < 8) return 'tooShort'
+    if (digits.length > E164_MAX_DIGITS) return 'tooLong'
     return null
   }
 
-  const digits = cleanPhone.replace(/\D/g, '')
-  if (digits.length < rule.minDigits) return null // let regex give the specific error
-  if (digits.length > rule.maxDigits) return `Phone number is too long (max ${rule.maxDigits} digits for ${country})`
-
-  if (!rule.regex.test(cleanPhone)) {
-    return `Invalid phone number for ${country}. Expected format: ${rule.example}`
-  }
-
+  const nationalDigits = digits.replace(/^0+/, '')
+  if (nationalDigits.length < 6) return 'tooShort'
+  if (dialCode.length + nationalDigits.length > E164_MAX_DIGITS) return 'tooLong'
   return null
 }
 
-
 export function CustomerForm({ initialData, onSubmit, onCountryChange }: CustomerFormProps) {
-  const [formData, setFormData] = useState<CustomerInfo>(() => ({
-    nationalId: '',
-    ...initialData,
-  }))
-  const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
+  const [formData, setFormData] = useState<CustomerInfo>(() => {
+    // If a previous session stored an E.164 phone, show only the national part
+    // (the dial code is restored into the selector below).
+    const parsed = splitE164(initialData.phone)
+    return {
+      nationalId: '',
+      ...initialData,
+      phone: parsed.dial ? parsed.national : initialData.phone,
+    }
+  })
   const { t, lang } = useLanguage()
+  // Phone dial code is independent from the shipping country: an Israeli
+  // customer shipping to Europe keeps a +972 number.
+  const [dialCode, setDialCode] = useState<string>(() => {
+    const parsed = splitE164(initialData.phone)
+    if (parsed.dial) return parsed.dial
+    return COUNTRY_DEFAULT_DIAL[initialData.country] || (lang === 'he' ? '972' : '1')
+  })
+  const [dialTouched, setDialTouched] = useState(false)
+  const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
 
   useEffect(() => {
     if (lang === 'he') {
       if (formData.country !== 'Israel') {
         setFormData((prev) => ({ ...prev, country: 'Israel' }))
+        if (!dialTouched) setDialCode('972')
       }
     } else {
       const englishCountries = ['United States', 'Canada', 'Europe', 'United Kingdom', 'Australia', 'Switzerland']
       if (!englishCountries.includes(formData.country)) {
         setFormData((prev) => ({ ...prev, country: 'United States' }))
+        if (!dialTouched) setDialCode('1')
       }
     }
   }, [lang])
@@ -112,9 +74,20 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
     if (errors[name as keyof CustomerInfo]) {
       setErrors((prev) => ({ ...prev, [name]: undefined }))
     }
-    if (name === 'country' && onCountryChange) {
-      onCountryChange(value)
+    if (name === 'country') {
+      // Suggest the dial code matching the new shipping country, but never
+      // override a dial code the user picked explicitly.
+      if (!dialTouched && COUNTRY_DEFAULT_DIAL[value]) {
+        setDialCode(COUNTRY_DEFAULT_DIAL[value])
+      }
+      if (onCountryChange) onCountryChange(value)
     }
+  }
+
+  const handleDialChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setDialCode(e.target.value)
+    setDialTouched(true)
+    if (errors.phone) setErrors((prev) => ({ ...prev, phone: undefined }))
   }
 
   const validate = (): boolean => {
@@ -147,12 +120,14 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
     //   newErrors.postalCode = 'Invalid UK postal code format (e.g., SW1A 1AA)'
     // }
 
-    // Phone validation (required for Shopify)
+    // Phone validation (required for Shopify) — length checks only, any
+    // country's number is accepted via the dial code selector.
     if (!formData.phone) {
       newErrors.phone = t('customerForm.phoneRequired')
     } else {
-      const phoneError = validatePhone(formData.phone, formData.country)
-      if (phoneError) newErrors.phone = phoneError
+      const phoneError = validatePhoneInput(formData.phone, dialCode)
+      if (phoneError === 'tooShort') newErrors.phone = t('customerForm.phoneTooShort')
+      if (phoneError === 'tooLong') newErrors.phone = t('customerForm.phoneTooLong')
     }
 
     setErrors(newErrors)
@@ -162,7 +137,10 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (validate()) {
-      onSubmit(formData)
+      // Normalize to E.164 (+9725…) so Shopify and Tranzila always receive a
+      // valid international number, whatever the shipping country.
+      const e164 = toE164(formData.phone, dialCode)
+      onSubmit({ ...formData, phone: e164 || formData.phone })
     }
   }
 
@@ -333,16 +311,40 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
 
           <div>
             <label htmlFor="phone" className="sr-only">{t('customerForm.phone')}</label>
-            <input
-              type="tel"
-              id="phone"
-              name="phone"
-              value={formData.phone}
-              onChange={handleChange}
-              placeholder={PHONE_RULES[formData.country]?.placeholder ?? t('customerForm.phone')}
-              className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.phone ? 'border-destructive' : 'border-input'
-                }`}
-            />
+            <div className="flex gap-2" dir="ltr">
+              <div className="relative shrink-0">
+                <label htmlFor="phoneDialCode" className="sr-only">{t('customerForm.phone')} +</label>
+                <select
+                  id="phoneDialCode"
+                  name="phoneDialCode"
+                  value={dialCode}
+                  onChange={handleDialChange}
+                  className={`h-full appearance-none rounded-lg border bg-background text-foreground ps-3 pe-8 py-3 focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer ${errors.phone ? 'border-destructive' : 'border-input'
+                    }`}
+                >
+                  {DIAL_CODES.map((entry) => (
+                    <option key={entry.iso} value={entry.dial}>
+                      {entry.flag} +{entry.dial}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 end-2 flex items-center text-muted-foreground">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+              <input
+                type="tel"
+                id="phone"
+                name="phone"
+                value={formData.phone}
+                onChange={handleChange}
+                placeholder="50 123 4567"
+                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.phone ? 'border-destructive' : 'border-input'
+                  }`}
+              />
+            </div>
             {errors.phone && (
               <p className="mt-1 text-sm text-destructive">{errors.phone}</p>
             )}

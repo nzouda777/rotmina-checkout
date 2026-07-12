@@ -6,6 +6,7 @@ import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { isPayableCurrency, tranzilaCurrencyCode } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -227,6 +228,20 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[CHARGE][${logId}] Session status: ${session.status}`)
+
+    // Hard guard (bug #2): the Tranzila terminal only charges ILS and USD.
+    // A session in any other currency must never reach the charge — it used to
+    // fall through to the ILS code and debit the wrong currency (300 EUR → 300 ILS).
+    // The checkout page converts non-payable sessions to USD on load, so this
+    // only triggers for stale tabs opened before that conversion.
+    const cartCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
+    if (!isPayableCurrency(cartCurrency)) {
+      console.error(`[CHARGE][${logId}] Session currency ${cartCurrency} is not chargeable — blocking`)
+      return NextResponse.json(
+        { error: 'This currency is not supported for payment. Please refresh the page — prices will be shown in USD.' },
+        { status: 400 }
+      )
+    }
 
     if (session.status === 'paid' || session.status === 'processing') {
       return NextResponse.json(
@@ -490,8 +505,17 @@ export async function POST(request: NextRequest) {
 
     // ── Case B1: Bit payment — Hosted Fields first, REST API fallback ──────────
     if (paymentMethod === 'bit') {
+      // Bit only supports ILS. A USD cart paid via Bit would debit the USD
+      // amount in ILS — same class of bug as #2, so block it server-side.
+      if (cartCurrency !== 'ILS') {
+        console.error(`[CHARGE][${logId}] Bit requested for ${cartCurrency} cart — Bit only supports ILS`)
+        return NextResponse.json(
+          { error: 'Bit payments are only available for orders in ILS. Please pay by credit card.' },
+          { status: 400 }
+        )
+      }
       const bitCallbackBase = `${baseUrl}/api/checkout/bit-callback`
-      const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
+      const currencyCode = tranzilaCurrencyCode(cartCurrency)
       const terminal = process.env.TRANZILA_TERMINAL || ''
 
       // Generate thtk. If available, use Hosted Fields (chargeBit via SDK).
@@ -515,8 +539,9 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', sessionId)
 
-        // chargeBit() SDK requires ISO currency code ("ILS"), not Tranzila's numeric code ("1")
-        const currencyIso = session.cart.currency.toUpperCase() === 'USD' ? 'USD' : 'ILS'
+        // chargeBit() SDK requires ISO currency code ("ILS"), not Tranzila's
+        // numeric code ("1") — and the guard above already enforced ILS.
+        const currencyIso = 'ILS'
 
         return NextResponse.json({
           success: false,
@@ -609,8 +634,8 @@ export async function POST(request: NextRequest) {
       console.log(`[CHARGE][${logId}] Initiating Hosted Fields for card payment`)
       const callbackUrl = `${baseUrl}/api/checkout/callback`
 
-      const currencyCode = session.cart.currency.toUpperCase() === 'USD' ? '2' : '1'
-      console.log(`[CHARGE][${logId}] Currency: ${session.cart.currency} → Tranzila code: ${currencyCode}`)
+      const currencyCode = tranzilaCurrencyCode(cartCurrency)
+      console.log(`[CHARGE][${logId}] Currency: ${cartCurrency} → Tranzila code: ${currencyCode}`)
 
       // Always generate a FRESH thtk server-side for each charge attempt.
       // Tranzila confirmed this is the correct approach — the SDK create() is

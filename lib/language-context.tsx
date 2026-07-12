@@ -3,8 +3,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { translations, type Language } from './translations'
 
-export type Currency = 'USD' | 'EUR' | 'CAD' | 'AUD' | 'GBP' | 'CHF' | 'ILS'
-export const CURRENCIES: Currency[] = ['USD', 'EUR', 'CAD', 'AUD', 'GBP', 'CHF', 'ILS']
+// Only the two currencies the Tranzila terminal can actually charge (see
+// lib/currency.ts). Foreign customers pay in USD; EUR/CHF/CAD/… were removed
+// because displaying them led to charges in the wrong currency (bug #2).
+export type Currency = 'USD' | 'ILS'
+export const CURRENCIES: Currency[] = ['USD', 'ILS']
 
 interface LanguageContextType {
   lang: Language
@@ -57,11 +60,16 @@ function resolveInitialLang(): Language {
   return 'he'
 }
 
+// Default currency follows the checkout language: USD for English, ILS for
+// Hebrew. A previously saved currency choice is deliberately NOT restored —
+// the default at open must always match the language (the user can still
+// switch manually via the header selector during the session).
 function resolveInitialCurrency(): Currency {
   if (typeof window === 'undefined') return 'ILS'
+  const urlParam = new URLSearchParams(window.location.search).get('language')
+  if (urlParam === 'en') return 'USD'
+  if (urlParam === 'he') return 'ILS'
   try {
-    const saved = localStorage.getItem('rotmina-currency')
-    if (saved && (CURRENCIES as string[]).includes(saved)) return saved as Currency
     const savedLang = localStorage.getItem('rotmina-lang')
     return savedLang === 'en' ? 'USD' : 'ILS'
   } catch {}
@@ -75,6 +83,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLang = useCallback((newLang: Language) => {
     setLangState(newLang)
     try { localStorage.setItem('rotmina-lang', newLang) } catch {}
+    // Currency follows the language: English → USD, Hebrew → ILS.
+    setCurrencyState(newLang === 'en' ? 'USD' : 'ILS')
     // Keep URL query param in sync so the language survives refresh/sharing
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href)

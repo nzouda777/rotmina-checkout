@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createTranzilaClient } from '@/lib/tranzila'
+import { isPayableCurrency, tranzilaCurrencyCode } from '@/lib/currency'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -10,7 +11,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
   }
 
-  const currencyCode = currency === 'USD' ? '2' : '1'
+  if (!isPayableCurrency(currency)) {
+    return NextResponse.json({ error: `Currency ${currency} is not supported — only ILS and USD` }, { status: 400 })
+  }
+
+  const currencyCode = tranzilaCurrencyCode(currency)
   console.log(`[HANDSHAKE-API] amount=${amount} | currency_param=${currency} | currencyCode=${currencyCode}`)
 
   const tranzila = createTranzilaClient()

@@ -867,7 +867,16 @@ export function PaymentForm({
         // ── STEP 6: Build params ────────────────────────────────────────────
         const isBitPayment = !!result.isBit
 
-        // Map numeric Tranzila currency code to ISO for the new hosted fields API
+        // Map numeric Tranzila currency code to ISO for the new hosted fields API.
+        // The server only ever returns '1' (ILS) or '2' (USD) — any other cart
+        // currency is blocked or converted server-side before reaching here.
+        if (result.currency !== '1' && result.currency !== '2') {
+          console.error(`[PAY][${submitId}] Unexpected currency code from server: ${result.currency}`)
+          setPaymentError(t('paymentForm.paymentSystemNotReady'))
+          setIsSubmitting(false)
+          isSubmittingRef.current = false
+          return
+        }
         const currencyIso = result.currency === '2' ? 'USD' : 'ILS'
 
         // Common base (same for card and Bit)
