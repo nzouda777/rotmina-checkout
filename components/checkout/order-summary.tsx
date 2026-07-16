@@ -88,7 +88,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
                 <div className="h-16 w-16 rounded-lg border border-border bg-background overflow-hidden">
                   {item.image ? (
                     <img
-                      src={item.product?.featured_image || item.image}
+                      src={item.image || item.product?.featured_image}
                       alt={item.title}
                       className="h-full w-full object-cover"
                     />
