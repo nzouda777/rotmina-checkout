@@ -332,7 +332,7 @@ export const translations = {
       he: 'סה"כ',
     },
     shippingNotice: {
-      en: '🚚 A flat shipping fee applies. A 20% tax on the shipping fee is added for orders in the United States, United Kingdom, and Europe.',
+      en: '🚚 A flat shipping fee applies. A 20% tax on the shipping fee is added for orders in the United States, United Kingdom, Australia and Europe.',
       he: 'שים לב: דמי משלוח קבועים יתווספו לסכום ההזמנה שלך.',
     },
   },
