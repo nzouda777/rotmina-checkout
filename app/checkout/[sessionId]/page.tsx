@@ -62,6 +62,12 @@ export default function CheckoutPage() {
   const [selectedCountry, setSelectedCountry] = useState<string>('United States')
   const [applyingTax, setApplyingTax] = useState(false)
 
+  // Cosmetic display rate for currencies Tranzila can't charge (EUR/CAD/GBP/CHF).
+  // The actual cart/charge always stays in ILS or USD — this only scales what's
+  // shown on screen. 1 = no conversion (real currency selected).
+  const [displayRate, setDisplayRate] = useState(1)
+  const PAYABLE_CURRENCIES = ['ILS', 'USD']
+
   // Fetch tax rules for English checkout live preview
   useEffect(() => {
     if (lang !== 'en') return
@@ -150,26 +156,53 @@ export default function CheckoutPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, lang])
 
-  // When the user picks a different currency, PATCH the session to convert prices.
+  // When the user picks a different currency:
+  // - ILS/USD (the only ones Tranzila can charge) → PATCH the session so the
+  //   real cart/charge amount converts.
+  // - EUR/CAD/GBP/CHF → the charge stays in ILS/USD; only fetch a display
+  //   rate so prices LOOK converted on screen.
   useEffect(() => {
     if (!session || !sessionId) return
-    const currentCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
-    if (currentCurrency === currency) return
+    const realCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
 
+    if (PAYABLE_CURRENCIES.includes(currency)) {
+      if (realCurrency === currency) {
+        setDisplayRate(1)
+        return
+      }
+
+      let cancelled = false
+      fetch('/api/checkout/session', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, targetCurrency: currency, lang }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return
+          setSession(data)
+          setDisplayRate(1)
+          // Applied amounts were computed against the previous currency —
+          // drop them so the customer re-applies and gets converted values.
+          setAppliedGiftCard(null)
+          setAppliedCoupon(null)
+        })
+        .catch(() => {})
+
+      return () => { cancelled = true }
+    }
+
+    // Cosmetic currency: leave the session/cart untouched, just look up a rate.
     let cancelled = false
     fetch('/api/checkout/session', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, targetCurrency: currency, lang }),
+      body: JSON.stringify({ type: 'display-rate', from: realCurrency, to: currency }),
     })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return
-        setSession(data)
-        // Applied amounts were computed against the previous currency —
-        // drop them so the customer re-applies and gets converted values.
-        setAppliedGiftCard(null)
-        setAppliedCoupon(null)
+        if (cancelled || typeof data.rate !== 'number') return
+        setDisplayRate(data.rate)
       })
       .catch(() => {})
 
@@ -397,6 +430,8 @@ export default function CheckoutPage() {
                 {/* Gift Card Section */}
                 <GiftCardForm
                   currency={session.cart.currency}
+                  displayCurrency={currency}
+                  displayRate={displayRate}
                   onApply={handleGiftCardApply}
                   onRemove={handleGiftCardRemove}
                   appliedGiftCard={appliedGiftCard}
@@ -412,6 +447,8 @@ export default function CheckoutPage() {
                   customerInfo={customerInfo}
                   total={adjustedCartData.total}
                   currency={session.cart.currency}
+                  displayCurrency={currency}
+                  displayRate={displayRate}
                   shopDomain={session.shop}
                   onBack={() => setStep('information')}
                   onSuccess={handlePaymentSuccess}
@@ -449,6 +486,8 @@ export default function CheckoutPage() {
                 couponAmount={couponAmount}
                 couponCode={appliedCoupon?.code}
                 taxOverride={taxOverride}
+                displayCurrency={currency}
+                displayRate={displayRate}
               />
             </div>
           </div>

@@ -16,7 +16,13 @@ interface PaymentFormProps {
   sessionId: string
   customerInfo: CustomerInfo
   total: number
+  // Real charge currency (ILS/USD) — drives installment eligibility and the
+  // actual Tranzila charge. Must NOT be swapped for a cosmetic currency.
   currency: string
+  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx),
+  // for formatting only — the real charge always stays in `currency`/`total`.
+  displayCurrency?: string
+  displayRate?: number
   shopDomain?: string
   onBack: () => void
   onSuccess: (
@@ -75,6 +81,8 @@ export function PaymentForm({
   customerInfo,
   total,
   currency,
+  displayCurrency,
+  displayRate = 1,
   shopDomain,
   onBack,
   onSuccess,
@@ -1305,7 +1313,7 @@ export function PaymentForm({
   // ── Formatters ────────────────────────────────────────────────────────────
 
   const formatPrice = (amount: number) =>
-    new Intl.NumberFormat('he-IL', { style: 'currency', currency }).format(amount)
+    new Intl.NumberFormat('he-IL', { style: 'currency', currency: displayCurrency || currency }).format(amount * displayRate)
 
   const perInstallment = installments > 1 ? chargeAmount / installments : chargeAmount
 
@@ -1370,6 +1378,8 @@ export function PaymentForm({
       {/* Coupon Code Section */}
       <CouponForm
         currency={currency}
+        displayCurrency={displayCurrency}
+        displayRate={displayRate}
         orderTotal={total}
         shopifyDiscount={shopifyDiscount}
         appliedCoupon={appliedCoupon}

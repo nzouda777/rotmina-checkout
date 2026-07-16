@@ -14,7 +14,13 @@ interface AppliedGiftCard {
 }
 
 interface GiftCardFormProps {
+  // Real charge currency (ILS/USD) — sent to the server so it converts the
+  // card's own balance correctly. Must NOT be swapped for a cosmetic currency.
   currency: string
+  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx),
+  // for formatting only — never sent to the server.
+  displayCurrency?: string
+  displayRate?: number
   onApply: (giftCard: AppliedGiftCard) => void
   onRemove: () => void
   appliedGiftCard: AppliedGiftCard | null
@@ -23,6 +29,8 @@ interface GiftCardFormProps {
 
 export function GiftCardForm({
   currency,
+  displayCurrency,
+  displayRate = 1,
   onApply,
   onRemove,
   appliedGiftCard,
@@ -34,7 +42,7 @@ export function GiftCardForm({
   const { t } = useLanguage()
 
   const formatPrice = (amount: number) =>
-    new Intl.NumberFormat('he-IL', { style: 'currency', currency }).format(amount)
+    new Intl.NumberFormat('he-IL', { style: 'currency', currency: displayCurrency || currency }).format(amount * displayRate)
 
   const handleApply = async () => {
     if (!code.trim()) {

@@ -428,6 +428,20 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
 
+    // ── Display-only exchange rate ────────────────────────────────────────────
+    // Used by the header currency selector for cosmetic currencies (EUR/CAD/GBP/CHF)
+    // that Tranzila cannot charge: the cart itself stays in ILS/USD (see
+    // lib/currency.ts), this just returns a rate so the client can show an
+    // approximate converted price. Never writes to the session.
+    if (body.type === 'display-rate') {
+      const { from, to } = body
+      if (!from || !to) {
+        return corsResponse(request, { error: 'Missing from or to' }, 400)
+      }
+      const rate = await getExchangeRate(String(from).toUpperCase(), String(to).toUpperCase())
+      return corsResponse(request, { rate })
+    }
+
     // ── Apply country-based tax ───────────────────────────────────────────────
     if (body.type === 'apply-tax') {
       const { sessionId, country } = body

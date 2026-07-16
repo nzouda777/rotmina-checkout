@@ -7,6 +7,10 @@ import { useLanguage } from '@/lib/language-context'
 
 interface CouponFormProps {
   currency: string
+  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx),
+  // for formatting only — discount math still runs on the real amounts.
+  displayCurrency?: string
+  displayRate?: number
   orderTotal: number
   shopifyDiscount?: ShopifyDiscount
   appliedCoupon: AppliedCoupon | null
@@ -16,6 +20,8 @@ interface CouponFormProps {
 
 export function CouponForm({
   currency,
+  displayCurrency,
+  displayRate = 1,
   orderTotal,
   shopifyDiscount,
   appliedCoupon,
@@ -28,7 +34,7 @@ export function CouponForm({
   const { t } = useLanguage()
 
   const formatPrice = (amount: number) =>
-    new Intl.NumberFormat('he-IL', { style: 'currency', currency }).format(amount)
+    new Intl.NumberFormat('he-IL', { style: 'currency', currency: displayCurrency || currency }).format(amount * displayRate)
 
   // Shopify discount already applied — show as locked/read-only
   // This covers manual discount codes, automatic discounts, and the fallback

@@ -3,11 +3,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { translations, type Language } from './translations'
 
-// Only the two currencies the Tranzila terminal can actually charge (see
-// lib/currency.ts). Foreign customers pay in USD; EUR/CHF/CAD/… were removed
-// because displaying them led to charges in the wrong currency (bug #2).
-export type Currency = 'USD' | 'ILS'
-export const CURRENCIES: Currency[] = ['USD', 'ILS']
+// Display currencies offered in the header selector. The Tranzila terminal
+// can only charge ILS or USD (see lib/currency.ts) — any other selection here
+// is converted to USD server-side (toPayableCurrency/convertCart in the
+// session PATCH route) before the customer is charged, so it's safe to offer
+// more display currencies without risking a wrong-currency charge (bug #2).
+export type Currency = 'USD' | 'EUR' | 'CAD' | 'GBP' | 'CHF' | 'ILS'
+export const CURRENCIES: Currency[] = ['USD', 'EUR', 'CAD', 'GBP', 'CHF', 'ILS']
 
 interface LanguageContextType {
   lang: Language

@@ -10,6 +10,10 @@ export interface DialCodeEntry {
   flag: string
 }
 
+// Scoped to the countries offered in the shipping-country selector
+// (customer-form.tsx): Israel, United States/Canada, United Kingdom,
+// Australia, Switzerland, and "Europe" (expanded here into its member
+// countries since a single dial code can't represent "Europe").
 export const DIAL_CODES: DialCodeEntry[] = [
   { dial: '972', iso: 'IL', label: 'Israel', flag: '🇮🇱' },
   { dial: '1', iso: 'US', label: 'United States / Canada', flag: '🇺🇸' },
@@ -35,17 +39,6 @@ export const DIAL_CODES: DialCodeEntry[] = [
   { dial: '40', iso: 'RO', label: 'Romania', flag: '🇷🇴' },
   { dial: '352', iso: 'LU', label: 'Luxembourg', flag: '🇱🇺' },
   { dial: '61', iso: 'AU', label: 'Australia', flag: '🇦🇺' },
-  { dial: '64', iso: 'NZ', label: 'New Zealand', flag: '🇳🇿' },
-  { dial: '27', iso: 'ZA', label: 'South Africa', flag: '🇿🇦' },
-  { dial: '971', iso: 'AE', label: 'United Arab Emirates', flag: '🇦🇪' },
-  { dial: '7', iso: 'RU', label: 'Russia / Kazakhstan', flag: '🇷🇺' },
-  { dial: '81', iso: 'JP', label: 'Japan', flag: '🇯🇵' },
-  { dial: '82', iso: 'KR', label: 'South Korea', flag: '🇰🇷' },
-  { dial: '86', iso: 'CN', label: 'China', flag: '🇨🇳' },
-  { dial: '91', iso: 'IN', label: 'India', flag: '🇮🇳' },
-  { dial: '52', iso: 'MX', label: 'Mexico', flag: '🇲🇽' },
-  { dial: '55', iso: 'BR', label: 'Brazil', flag: '🇧🇷' },
-  { dial: '54', iso: 'AR', label: 'Argentina', flag: '🇦🇷' },
 ]
 
 // Longest dial codes first so '+972…' matches 972 before 9, '+351…' matches 351 before 35.

@@ -15,8 +15,13 @@ interface OrderSummaryProps {
   couponAmount?: number
   couponCode?: string
   taxOverride?: number
+  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx). The
+  // actual charge always stays in cartData.currency (ILS/USD) — these only
+  // affect what's shown on screen.
+  displayCurrency?: string
+  displayRate?: number
 }
-export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode, taxOverride }: OrderSummaryProps) {
+export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode, taxOverride, displayCurrency, displayRate = 1 }: OrderSummaryProps) {
   const displayTax = taxOverride !== undefined ? taxOverride : cartData.tax
   const displayTotal = taxOverride !== undefined
     ? Math.round((cartData.subtotal + cartData.shipping + taxOverride) * 100) / 100
@@ -37,8 +42,8 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
   const formatPrice = (amount: number) => {
     return new Intl.NumberFormat('he-IL', {
       style: 'currency',
-      currency: cartData.currency,
-    }).format(amount)
+      currency: displayCurrency || cartData.currency,
+    }).format(amount * displayRate)
   }
 
   return (
