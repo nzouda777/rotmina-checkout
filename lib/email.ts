@@ -155,6 +155,8 @@ export async function sendOrderConfirmationEmail(params: {
     country: string
   }
   orderStatusUrl?: string
+  /** Checkout language — drives the email's text and currency formatting locale. Defaults to 'he'. */
+  lang?: 'he' | 'en'
 }) {
   if (!resend) {
     console.warn('[EMAIL] Missing RESEND_API_KEY or uninitialized Resend instance. Skipping order confirmation.')
@@ -177,6 +179,7 @@ export async function sendOrderConfirmationEmail(params: {
         currency: params.currency,
         shippingAddress: params.shippingAddress,
         orderStatusUrl: params.orderStatusUrl,
+        lang: params.lang,
       }),
     })
 

@@ -5,6 +5,7 @@ import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 export async function GET(
@@ -211,6 +212,7 @@ async function processSuccess(
   // 2. Create Shopify order (only if not already done)
   let shopifyOrderId = session.order_id
   let shopifyOrderUrl: string | null = null
+  const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
 
   if (!shopifyOrderId) {
     if (!customer) {
@@ -236,7 +238,10 @@ async function processSuccess(
           giftCard: giftCardInfo,
         })
         shopifyOrderId = String(order.id)
-        shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+        shopifyOrderUrl = withCurrencyParam(
+          order.order_status_url || `https://${session.shop}/orders/${order.id}`,
+          session.cart?.currency
+        )
         console.log(`[BIT-CALLBACK][${logId}] ✅ Shopify order created: ${shopifyOrderId}`)
 
         // 3. Send confirmation email (non-blocking — failure should not abort session update)
@@ -262,6 +267,7 @@ async function processSuccess(
             country: customer.country,
           },
           orderStatusUrl: shopifyOrderUrl || undefined,
+          lang: receiptLang,
         }).catch((emailErr: any) =>
           console.error(`[BIT-CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
         )
@@ -306,6 +312,7 @@ async function processSuccess(
             quantity: item.quantity,
             price: Number(item.price),
           })),
+          lang: receiptLang,
         }).catch((morningErr: any) =>
           console.error(`[BIT-CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
         )

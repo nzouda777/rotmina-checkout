@@ -7,8 +7,7 @@ import { useLanguage } from '@/lib/language-context'
 
 interface CouponFormProps {
   currency: string
-  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx),
-  // for formatting only — discount math still runs on the real amounts.
+  // Currently always equal to `currency`/1 — kept for prop-shape compatibility.
   displayCurrency?: string
   displayRate?: number
   orderTotal: number

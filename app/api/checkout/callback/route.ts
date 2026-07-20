@@ -4,6 +4,7 @@ import { createShopifyOrder } from '@/lib/shopify'
 import { generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
 const TRANZILA_RESPONSE_CODES: Record<string, string> = {
@@ -110,6 +111,7 @@ export async function POST(request: NextRequest) {
 
     let shopifyOrderId = session.order_id
     let shopifyOrderUrl: string | null = null
+    const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
 
     // Use the ConfirmationCode from this callback or fall back to the one already stored
     const txnId = ConfirmationCode || session.tranzila_transaction_id || `TZ-${Date.now()}`
@@ -126,7 +128,10 @@ export async function POST(request: NextRequest) {
             transactionId: txnId,
           })
           shopifyOrderId = String(order.id)
-          shopifyOrderUrl = order.order_status_url || `https://${session.shop}/orders/${order.id}`
+          shopifyOrderUrl = withCurrencyParam(
+            order.order_status_url || `https://${session.shop}/orders/${order.id}`,
+            session.cart?.currency
+          )
           console.log(`[CALLBACK][${logId}] ✅ Shopify order created: ${shopifyOrderId} | url: ${shopifyOrderUrl}`)
 
           // Persist order_id immediately so it is never lost if the full update below fails
@@ -164,6 +169,7 @@ export async function POST(request: NextRequest) {
               country:    customer.country,
             },
             orderStatusUrl: shopifyOrderUrl ?? undefined,
+            lang: receiptLang,
           }).catch((emailErr: any) =>
             console.error(`[CALLBACK][${logId}] Email send failed (non-fatal):`, emailErr)
           )
@@ -208,6 +214,7 @@ export async function POST(request: NextRequest) {
               quantity: item.quantity,
               price: Number(item.price),
             })),
+            lang: receiptLang,
           }).catch((morningErr: any) =>
             console.error(`[CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
           )
@@ -277,7 +284,7 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     const redirectUrl = isSuccess
-      ? (shopifyOrderUrl || `https://${session.shop}/pages/success?session=${actualSessionId}`)
+      ? (shopifyOrderUrl || withCurrencyParam(`https://${session.shop}/pages/success?session=${actualSessionId}`, session.cart?.currency))
       : `${baseUrl}/checkout/error?session=${actualSessionId}`
 
     return breakoutRedirect(redirectUrl, actualSessionId, errorMsg)

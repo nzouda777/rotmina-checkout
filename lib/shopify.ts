@@ -1,6 +1,21 @@
 import { ShopifyOrderCreateData } from './types'
 import { separateGiftCardItems } from './gift-card-utils'
 import { toE164, COUNTRY_DEFAULT_DIAL } from './phone'
+import { getStateName } from './states'
+
+// ISO 3166-1 alpha-2 codes for the checkout's shipping-country dropdown.
+// Sending country_code (not just the free-text country name) is what lets
+// Shopify's shipping-carrier address check reliably match the country.
+// "Europe" has no real ISO code — it's a catch-all zone in this checkout's
+// country selector, not an actual shippable country.
+const COUNTRY_ISO_CODES: Record<string, string> = {
+  Israel: 'IL',
+  'United States': 'US',
+  Canada: 'CA',
+  'United Kingdom': 'GB',
+  Australia: 'AU',
+  Switzerland: 'CH',
+}
 
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
@@ -107,6 +122,13 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     city: customer.city,
     zip: customer.postalCode,
     country: customer.country,
+    ...(COUNTRY_ISO_CODES[customer.country] ? { country_code: COUNTRY_ISO_CODES[customer.country] } : {}),
+    // Required by Shopify's shipping-carrier address check for countries that
+    // have states/provinces (US, CA, AU, CH) — a missing one is exactly what
+    // gets an otherwise-correct address flagged "Review address issues".
+    ...(customer.province
+      ? { province: getStateName(customer.country, customer.province), province_code: customer.province }
+      : {}),
     ...(normalizedPhone ? { phone: normalizedPhone } : {}),
   }
 

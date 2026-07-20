@@ -14,11 +14,11 @@ interface AppliedGiftCard {
 }
 
 interface GiftCardFormProps {
-  // Real charge currency (ILS/USD) — sent to the server so it converts the
-  // card's own balance correctly. Must NOT be swapped for a cosmetic currency.
+  // Real charge currency — whatever the customer selected (see
+  // lib/currency.ts) — sent to the server so it converts the card's own
+  // balance correctly.
   currency: string
-  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx),
-  // for formatting only — never sent to the server.
+  // Currently always equal to `currency`/1 — kept for prop-shape compatibility.
   displayCurrency?: string
   displayRate?: number
   onApply: (giftCard: AppliedGiftCard) => void

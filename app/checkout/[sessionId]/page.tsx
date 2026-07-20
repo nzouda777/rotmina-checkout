@@ -62,11 +62,11 @@ export default function CheckoutPage() {
   const [selectedCountry, setSelectedCountry] = useState<string>('United States')
   const [applyingTax, setApplyingTax] = useState(false)
 
-  // Cosmetic display rate for currencies Tranzila can't charge (EUR/CAD/GBP/CHF).
-  // The actual cart/charge always stays in ILS or USD — this only scales what's
-  // shown on screen. 1 = no conversion (real currency selected).
+  // Tranzila charges directly in whatever currency the customer selects
+  // (ILS/USD/EUR/GBP/CAD/CHF — see lib/currency.ts), so there is no cosmetic
+  // display-only conversion anymore; displayRate always stays 1 and every
+  // currency switch below triggers a real session conversion.
   const [displayRate, setDisplayRate] = useState(1)
-  const PAYABLE_CURRENCIES = ['ILS', 'USD']
 
   // Fetch tax rules for English checkout live preview
   useEffect(() => {
@@ -92,7 +92,7 @@ export default function CheckoutPage() {
       const response = await fetch(`/api/checkout/session?id=${sessionId}`)
       if (!response.ok) {
         // Session doesn't exist or server error — redirect to store (same language)
-        window.location.href = storeUrl(lang)
+        window.location.href = storeUrl(lang, '', currency)
         return
       }
       const data = await response.json()
@@ -137,7 +137,7 @@ export default function CheckoutPage() {
       console.error('Fetch session error:', err)
       // Network error — redirect to store (same language) rather than showing
       // a confusing "payment failed" popup
-      window.location.href = storeUrl(lang)
+      window.location.href = storeUrl(lang, '', currency)
     } finally {
       setLoading(false)
     }
@@ -156,53 +156,45 @@ export default function CheckoutPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, lang])
 
-  // When the user picks a different currency:
-  // - ILS/USD (the only ones Tranzila can charge) → PATCH the session so the
-  //   real cart/charge amount converts.
-  // - EUR/CAD/GBP/CHF → the charge stays in ILS/USD; only fetch a display
-  //   rate so prices LOOK converted on screen.
+  // Keep the session's stored language in sync with whatever language the
+  // customer is actually checking out in, so the post-payment receipt and
+  // confirmation email (sent server-side, possibly from an async callback)
+  // are sent in the right language rather than defaulting to Hebrew.
+  useEffect(() => {
+    if (!sessionId) return
+    fetch('/api/checkout/session', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'set-language', sessionId, lang }),
+    }).catch(() => {})
+  }, [lang, sessionId])
+
+  // When the user picks a different currency, PATCH the session so the real
+  // cart/charge amount actually converts — Tranzila charges directly in
+  // whatever currency the customer selects (see lib/currency.ts).
   useEffect(() => {
     if (!session || !sessionId) return
     const realCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
-
-    if (PAYABLE_CURRENCIES.includes(currency)) {
-      if (realCurrency === currency) {
-        setDisplayRate(1)
-        return
-      }
-
-      let cancelled = false
-      fetch('/api/checkout/session', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, targetCurrency: currency, lang }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (cancelled) return
-          setSession(data)
-          setDisplayRate(1)
-          // Applied amounts were computed against the previous currency —
-          // drop them so the customer re-applies and gets converted values.
-          setAppliedGiftCard(null)
-          setAppliedCoupon(null)
-        })
-        .catch(() => {})
-
-      return () => { cancelled = true }
+    if (realCurrency === currency) {
+      setDisplayRate(1)
+      return
     }
 
-    // Cosmetic currency: leave the session/cart untouched, just look up a rate.
     let cancelled = false
     fetch('/api/checkout/session', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'display-rate', from: realCurrency, to: currency }),
+      body: JSON.stringify({ sessionId, targetCurrency: currency, lang }),
     })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled || typeof data.rate !== 'number') return
-        setDisplayRate(data.rate)
+        if (cancelled) return
+        setSession(data)
+        setDisplayRate(1)
+        // Applied amounts were computed against the previous currency —
+        // drop them so the customer re-applies and gets converted values.
+        setAppliedGiftCard(null)
+        setAppliedCoupon(null)
       })
       .catch(() => {})
 
@@ -275,6 +267,32 @@ export default function CheckoutPage() {
 
   const handleCouponRemove = () => {
     setAppliedCoupon(null)
+  }
+
+  const [removingItemId, setRemovingItemId] = useState<string | null>(null)
+
+  const handleRemoveItem = async (itemId: string) => {
+    if (!sessionId || removingItemId) return
+    setRemovingItemId(itemId)
+    try {
+      const res = await fetch('/api/checkout/session', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'remove-item', sessionId, itemId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setSession(data)
+        // Applied amounts were computed against the previous cart total —
+        // drop them so the customer re-applies and gets recalculated values.
+        setAppliedGiftCard(null)
+        setAppliedCoupon(null)
+      }
+    } catch {
+      // Non-blocking: leave the cart as-is if the request fails
+    } finally {
+      setRemovingItemId(null)
+    }
   }
 
   console.log('Render state - Loading:', loading, 'Error:', error, 'Session:', !!session);
@@ -488,6 +506,8 @@ export default function CheckoutPage() {
                 taxOverride={taxOverride}
                 displayCurrency={currency}
                 displayRate={displayRate}
+                onRemoveItem={step !== 'processing' ? handleRemoveItem : undefined}
+                removingItemId={removingItemId}
               />
             </div>
           </div>

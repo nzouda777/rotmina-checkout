@@ -334,6 +334,7 @@ export async function POST(request: NextRequest) {
       finalCart.total = Math.round((finalCart.subtotal + finalCart.shipping + finalCart.tax) * 100) / 100
     }
     finalCart.currency = targetCurrency;
+    finalCart.language = localeLang === 'en' ? 'en' : 'he';
 
     console.log(`[SESSION] Final cart shopify_discount before INSERT:`, JSON.stringify(finalCart.shopify_discount ?? null))
     console.log(`[SESSION] Final cart total: ${finalCart.total} | subtotal: ${finalCart.subtotal}`)
@@ -428,18 +429,144 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
 
-    // ── Display-only exchange rate ────────────────────────────────────────────
-    // Used by the header currency selector for cosmetic currencies (EUR/CAD/GBP/CHF)
-    // that Tranzila cannot charge: the cart itself stays in ILS/USD (see
-    // lib/currency.ts), this just returns a rate so the client can show an
-    // approximate converted price. Never writes to the session.
-    if (body.type === 'display-rate') {
-      const { from, to } = body
-      if (!from || !to) {
-        return corsResponse(request, { error: 'Missing from or to' }, 400)
+    // ── Sync checkout UI language ─────────────────────────────────────────────
+    // The customer can switch the checkout language after the session was
+    // created (or created it via a Shopify locale that doesn't match). This
+    // keeps cart.language up to date so the post-payment receipt/confirmation
+    // email are sent in whatever language the customer actually checked out in.
+    if (body.type === 'set-language') {
+      const { sessionId, lang } = body
+      if (!sessionId || !lang) {
+        return corsResponse(request, { error: 'Missing sessionId or lang' }, 400)
       }
-      const rate = await getExchangeRate(String(from).toUpperCase(), String(to).toUpperCase())
-      return corsResponse(request, { rate })
+      const normalizedLang = lang === 'en' ? 'en' : 'he'
+
+      const supabase = await createClient()
+      const { data: session, error: fetchError } = await supabase
+        .from('payment_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single()
+
+      if (fetchError || !session) {
+        return corsResponse(request, { error: 'Session not found' }, 404)
+      }
+
+      if ((session.cart?.language || null) === normalizedLang) {
+        return corsResponse(request, { ...session })
+      }
+
+      const updatedCart = { ...session.cart, language: normalizedLang }
+      const { data: updated, error: updateError } = await supabase
+        .from('payment_sessions')
+        .update({ cart: updatedCart })
+        .eq('id', sessionId)
+        .select()
+        .single()
+
+      if (updateError || !updated) {
+        return corsResponse(request, { error: 'Failed to update session language' }, 500)
+      }
+
+      return corsResponse(request, { ...updated, cart: updatedCart })
+    }
+
+    // ── Remove a line item from the cart ──────────────────────────────────────
+    if (body.type === 'remove-item') {
+      const { sessionId, itemId } = body
+      if (!sessionId || !itemId) {
+        return corsResponse(request, { error: 'Missing sessionId or itemId' }, 400)
+      }
+
+      const supabase = await createClient()
+      const { data: session, error: fetchError } = await supabase
+        .from('payment_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single()
+
+      if (fetchError || !session) {
+        return corsResponse(request, { error: 'Session not found' }, 404)
+      }
+
+      if (session.status === 'paid' || session.status === 'processing') {
+        return corsResponse(request, { error: 'Cannot modify a cart that is already being processed' }, 400)
+      }
+
+      const cart = session.cart as any
+      const items = (cart.items || []) as any[]
+
+      if (items.length <= 1) {
+        return corsResponse(request, { error: 'Cannot remove the last item from the cart' }, 400)
+      }
+
+      const remainingItems = items.filter((item) => String(item.id) !== String(itemId))
+      if (remainingItems.length === items.length) {
+        return corsResponse(request, { error: 'Item not found in cart' }, 404)
+      }
+
+      const subtotal = Math.round(remainingItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100) / 100
+      const cartCurrencyUpper = ((cart.currency as string) || 'ILS').toUpperCase()
+
+      const shippingCfg = await getShippingSettings()
+      const { regularItems } = separateGiftCardItems(remainingItems)
+      const isGiftCardOnlyCart = regularItems.length === 0 && remainingItems.length > 0
+
+      let shipping = 0
+      if (isGiftCardOnlyCart) {
+        shipping = 0
+      } else if (cartCurrencyUpper === 'ILS') {
+        shipping = subtotal >= shippingCfg.free_shipping_threshold_ils ? 0 : shippingCfg.domestic_shipping_fee_ils
+      } else if (cartCurrencyUpper === 'USD') {
+        shipping = shippingCfg.en_shipping_fee_usd
+      } else {
+        // EUR/GBP/CAD/CHF — the free-shipping threshold and domestic fee are
+        // configured in ILS, so convert them into the cart's currency first
+        // (otherwise e.g. a 499 ILS threshold would wrongly read as 499 EUR).
+        const ilsToCartRate = await getExchangeRate('ILS', cartCurrencyUpper)
+        const thresholdInCartCurrency = shippingCfg.free_shipping_threshold_ils * ilsToCartRate
+        const feeInCartCurrency = Math.round(shippingCfg.domestic_shipping_fee_ils * ilsToCartRate * 100) / 100
+        shipping = subtotal >= thresholdInCartCurrency ? 0 : feeInCartCurrency
+      }
+
+      // Tax was applied earlier (apply-tax PATCH) as taxableSubtotal * countryRate.
+      // The customer's country isn't persisted onto the session until charge time,
+      // so instead of re-deriving the rate, scale the existing tax amount by how
+      // much the taxable subtotal shrank — equivalent result, no extra dependency.
+      // Only relevant once the cart has left ILS (tax is always 0 for ILS carts).
+      let tax = 0
+      if (cartCurrencyUpper !== 'ILS' && Number(cart.tax) > 0) {
+        const { regularItems: previousRegularItems } = separateGiftCardItems(items)
+        const previousTaxableSubtotal = previousRegularItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+        const newTaxableSubtotal = regularItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+        if (previousTaxableSubtotal > 0) {
+          tax = Math.round((Number(cart.tax) * (newTaxableSubtotal / previousTaxableSubtotal)) * 100) / 100
+        }
+      }
+
+      const total = Math.round((subtotal + shipping + tax) * 100) / 100
+
+      const updatedCart = {
+        ...cart,
+        items: remainingItems,
+        subtotal,
+        shipping,
+        tax,
+        total,
+      }
+
+      const { data: updated, error: updateError } = await supabase
+        .from('payment_sessions')
+        .update({ cart: updatedCart, amount: total })
+        .eq('id', sessionId)
+        .select()
+        .single()
+
+      if (updateError || !updated) {
+        return corsResponse(request, { error: 'Failed to remove item from cart' }, 500)
+      }
+
+      return corsResponse(request, { ...updated, cart: updatedCart })
     }
 
     // ── Apply country-based tax ───────────────────────────────────────────────
@@ -495,13 +622,13 @@ export async function PATCH(request: NextRequest) {
       return corsResponse(request, { error: 'Missing sessionId or targetCurrency' }, 400)
     }
 
-    // Whatever display currency the client asks for, the session can only be
-    // charged in ILS or USD (Tranzila terminal limitation — see lib/currency.ts).
-    // Any other request (EUR, CHF, CAD…) is converted to USD.
+    // The session actually converts to whatever currency the client asks for
+    // (ILS/USD/EUR/GBP/CAD/CHF are all real, chargeable currencies — see
+    // lib/currency.ts). Anything outside that list falls back to USD.
     const requested = (targetCurrency as string).toUpperCase()
     const normalized = toPayableCurrency(requested)
     if (requested !== normalized) {
-      console.log(`[SESSION PATCH] Requested currency ${requested} is not chargeable → using ${normalized}`)
+      console.log(`[SESSION PATCH] Requested currency ${requested} is not supported → using ${normalized}`)
     }
 
     const supabase = await createClient()

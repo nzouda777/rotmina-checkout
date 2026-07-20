@@ -6,7 +6,7 @@ import { debitGiftCard, generateGiftCardsForOrder, validateGiftCard } from '@/li
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
-import { isPayableCurrency, tranzilaCurrencyCode, getExchangeRate } from '@/lib/currency'
+import { isPayableCurrency, tranzilaCurrencyCode, tranzilaChargeCurrency, getExchangeRate, withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -123,7 +123,10 @@ async function createOrderAndNotify(params: {
   })
   const shopifyOrderId = String(order.id)
   const shopifyDomain = session.shop || 'rotmina.myshopify.com'
-  const shopifyOrderUrl = order.order_status_url || `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`
+  const shopifyOrderUrl = withCurrencyParam(
+    order.order_status_url || `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`,
+    session.cart?.currency
+  )
   console.log(`[CHARGE][${logId}] Shopify order created: ${shopifyOrderId}`)
 
   // Send confirmation email (non-blocking — failure is logged, not thrown)
@@ -203,6 +206,7 @@ export async function POST(request: NextRequest) {
       couponAmount = 0,
       shippingFeeAmount = 0,
       israeliId,
+      lang: bodyLang,
     } = body
 
     console.log(`[CHARGE][${logId}] Session: ${sessionId} | Method: ${paymentMethod}`)
@@ -234,11 +238,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`[CHARGE][${logId}] Session status: ${session.status}`)
 
-    // Hard guard (bug #2): the Tranzila terminal only charges ILS and USD.
-    // A session in any other currency must never reach the charge — it used to
-    // fall through to the ILS code and debit the wrong currency (300 EUR → 300 ILS).
-    // The checkout page converts non-payable sessions to USD on load, so this
-    // only triggers for stale tabs opened before that conversion.
+    // Language the receipt/confirmation email should be sent in: the client
+    // (current checkout UI language) is the freshest source; fall back to
+    // whatever was last synced onto the session, then to Hebrew.
+    const receiptLang: 'he' | 'en' =
+      bodyLang === 'en' || bodyLang === 'he'
+        ? bodyLang
+        : (session.cart?.language === 'en' ? 'en' : 'he')
+
+    // Hard guard: only currencies Tranzila can actually charge (see
+    // lib/currency.ts PAYABLE_CURRENCIES) may reach the charge step — this used
+    // to fall through to the ILS code and debit the wrong currency (bug #2:
+    // 300 EUR → 300 ILS). Legitimate currency switches go through the session
+    // PATCH before payment, so this only triggers for stale/tampered sessions.
     const cartCurrency = ((session.cart?.currency as string) || 'ILS').toUpperCase()
     if (!isPayableCurrency(cartCurrency)) {
       console.error(`[CHARGE][${logId}] Session currency ${cartCurrency} is not chargeable — blocking`)
@@ -382,7 +394,10 @@ export async function POST(request: NextRequest) {
         })
         shopifyOrderId = String(order.id)
         const shopifyDomain = sessionForOrder.shop || 'rotmina.myshopify.com'
-        shopifyOrderUrl = order.order_status_url || `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`
+        shopifyOrderUrl = withCurrencyParam(
+          order.order_status_url || `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`,
+          sessionForOrder.cart?.currency
+        )
         console.log(`[CHARGE][${logId}] ✅ Shopify order created: ${shopifyOrderId}`)
 
         // Save order_id immediately
@@ -414,6 +429,7 @@ export async function POST(request: NextRequest) {
             country: customerForOrder.country,
           },
           orderStatusUrl: shopifyOrderUrl,
+          lang: receiptLang,
         }).catch((emailErr: any) =>
           console.error(`[CHARGE][${logId}] Confirmation email failed (non-fatal):`, emailErr)
         )
@@ -458,6 +474,7 @@ export async function POST(request: NextRequest) {
             quantity: item.quantity,
             price: Number(item.price),
           })),
+          lang: receiptLang,
         }).catch((morningErr: any) =>
           console.error(`[CHARGE][${logId}] Morning receipt failed (non-fatal):`, morningErr)
         )
@@ -675,8 +692,10 @@ export async function POST(request: NextRequest) {
       console.log(`[CHARGE][${logId}] Initiating Hosted Fields for card payment`)
       const callbackUrl = `${baseUrl}/api/checkout/callback`
 
-      const currencyCode = tranzilaCurrencyCode(cartCurrency)
-      console.log(`[CHARGE][${logId}] Currency: ${cartCurrency} → Tranzila code: ${currencyCode}`)
+      // Real ISO currency code — Tranzila's v1 API charges directly in the
+      // customer's selected currency (ILS/USD/EUR/GBP/CAD/CHF), not just ILS/USD.
+      const currencyCode = tranzilaChargeCurrency(cartCurrency)
+      console.log(`[CHARGE][${logId}] Currency: ${cartCurrency} → Tranzila charge currency: ${currencyCode}`)
 
       // Always generate a FRESH thtk server-side for each charge attempt.
       // Tranzila confirmed this is the correct approach — the SDK create() is

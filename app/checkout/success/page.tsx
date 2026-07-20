@@ -9,7 +9,7 @@ import { storeUrl } from '@/lib/store-url'
 
 function SuccessModal() {
   const searchParams = useSearchParams()
-  const { t, lang, dir } = useLanguage()
+  const { t, lang, dir, currency } = useLanguage()
   const giftCardsParam = searchParams.get('gift_cards')
   const usedGcCode = searchParams.get('used_gc')
   const gcRemaining = searchParams.get('gc_remaining')
@@ -18,7 +18,7 @@ function SuccessModal() {
 
   // "Explore more" must return to the storefront in the checkout language:
   // en → /en/collections/shop, he → /collections/shop
-  const exploreUrl = storeUrl(lang, '/collections/shop')
+  const exploreUrl = storeUrl(lang, '/collections/shop', currency)
 
   const titleLines = t('successModal.title').split('\n')
 

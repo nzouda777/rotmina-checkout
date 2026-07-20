@@ -25,6 +25,9 @@ export interface CustomerInfo {
   city: string
   postalCode: string
   country: string
+  /** State/province code (e.g. "NY", "ON"). Required by Shopify's shipping
+   *  carrier address check for countries that have them — see lib/states.ts. */
+  province?: string
   phone: string
   nationalId?: string
 }
@@ -42,6 +45,8 @@ export interface CartData {
   total: number
   currency: string
   shopify_discount?: ShopifyDiscount
+  /** Checkout UI language at the time the customer paid — drives receipt/email language. */
+  language?: 'he' | 'en'
 }
 
 export interface AppliedCoupon {

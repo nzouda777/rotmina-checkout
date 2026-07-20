@@ -31,7 +31,7 @@ export function CheckoutHeader({ shopName }: CheckoutHeaderProps) {
 
         {/* Center: Logo — always truly centered via grid */}
         <div className="flex justify-center">
-          <a href={storeUrl(lang)}>
+          <a href={storeUrl(lang, '', currency)}>
             <Image
               src="/rotmina-logo_1.webp"
               alt="Rotmina Logo"

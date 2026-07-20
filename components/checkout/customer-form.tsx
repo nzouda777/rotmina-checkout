@@ -1,9 +1,27 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { CustomerInfo } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
 import { DIAL_CODES, COUNTRY_DEFAULT_DIAL, toE164, splitE164, E164_MAX_DIGITS } from '@/lib/phone'
+import { fetchAddressSuggestions, type AddressSuggestion } from '@/lib/address-autocomplete'
+import { COUNTRY_STATES } from '@/lib/states'
+
+// Postal code formats Shopify/carriers actually check (see
+// help.shopify.com .../reviewing-address-formats). Countries not listed here
+// (the "Europe" catch-all zone) only get a loose non-empty/length check —
+// there's no single format across the EU.
+const POSTAL_CODE_PATTERNS: Record<string, RegExp> = {
+  // Israel Post moved to 7-digit codes in Feb 2013; the old 5-digit format
+  // is no longer precise enough to match Shopify's carrier database ("Postal
+  // code doesn't match Israel"), so only the modern 7-digit format is accepted.
+  Israel: /^\d{7}$/,
+  'United States': /^\d{5}(-\d{4})?$/,
+  Canada: /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/,
+  'United Kingdom': /^[A-Za-z]{1,2}\d[A-Za-z\d]?\s?\d[A-Za-z]{2}$/,
+  Australia: /^\d{4}$/,
+  Switzerland: /^\d{4}$/,
+}
 
 interface CustomerFormProps {
   initialData: CustomerInfo
@@ -38,6 +56,7 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
     const parsed = splitE164(initialData.phone)
     return {
       nationalId: '',
+      province: '',
       ...initialData,
       phone: parsed.dial ? parsed.national : initialData.phone,
     }
@@ -52,6 +71,136 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
   })
   const [dialTouched, setDialTouched] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<keyof CustomerInfo, string>>>({})
+
+  // ── Returning-customer autofill (admin-toggleable) ──────────────────────────
+  const [autofillStatus, setAutofillStatus] = useState<'idle' | 'loading' | 'found'>('idle')
+  const lastLookedUpEmail = useRef<string>('')
+
+  const handleEmailBlur = async () => {
+    const email = formData.email.trim().toLowerCase()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email === lastLookedUpEmail.current) return
+    lastLookedUpEmail.current = email
+
+    setAutofillStatus('loading')
+    try {
+      const res = await fetch(`/api/checkout/customer-lookup?email=${encodeURIComponent(email)}`)
+      const data = await res.json()
+      if (!data.found || !data.customer) {
+        setAutofillStatus('idle')
+        return
+      }
+
+      const saved = data.customer as CustomerInfo
+      const englishCountries = ['United States', 'Canada', 'Europe', 'United Kingdom', 'Australia', 'Switzerland']
+      // Only reuse the saved country if it's still valid for the current
+      // checkout language — otherwise leave the current default in place.
+      const countryApplies =
+        (lang === 'he' && saved.country === 'Israel') ||
+        (lang === 'en' && englishCountries.includes(saved.country))
+
+      setFormData((prev) => ({
+        ...prev,
+        firstName: prev.firstName || saved.firstName || prev.firstName,
+        lastName: prev.lastName || saved.lastName || prev.lastName,
+        address: prev.address || saved.address || prev.address,
+        city: prev.city || saved.city || prev.city,
+        postalCode: prev.postalCode || saved.postalCode || prev.postalCode,
+        ...(countryApplies && !prev.address
+          ? { country: saved.country, province: saved.province || prev.province }
+          : {}),
+      }))
+
+      if (!dialTouched && saved.phone) {
+        const parsed = splitE164(saved.phone)
+        if (parsed.dial) {
+          setDialCode(parsed.dial)
+          setFormData((prev) => ({ ...prev, phone: prev.phone || parsed.national }))
+        }
+      }
+
+      setErrors((prev) => ({
+        ...prev, firstName: undefined, lastName: undefined, address: undefined,
+        city: undefined, postalCode: undefined, province: undefined,
+      }))
+      setAutofillStatus('found')
+    } catch {
+      setAutofillStatus('idle')
+    }
+  }
+
+  // ── Address autocomplete (Geoapify) on the address field ────────────────────
+  const addressInputRef = useRef<HTMLInputElement>(null)
+  const addressWrapperRef = useRef<HTMLDivElement>(null)
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
+  const suggestionsRequestRef = useRef(0)
+
+  // Debounced fetch as the customer types in the address field.
+  useEffect(() => {
+    const query = formData.address
+    if (query.trim().length < 3) {
+      setSuggestions([])
+      return
+    }
+
+    const requestId = ++suggestionsRequestRef.current
+    const controller = new AbortController()
+    const timeout = setTimeout(() => {
+      fetchAddressSuggestions(query, formData.country, lang, controller.signal).then((results) => {
+        // Ignore stale responses from an earlier keystroke.
+        if (requestId !== suggestionsRequestRef.current) return
+        setSuggestions(results)
+        setActiveSuggestion(-1)
+      })
+    }, 300)
+
+    return () => {
+      clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [formData.address, formData.country, lang])
+
+  // Close the suggestions dropdown on outside click.
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (addressWrapperRef.current && !addressWrapperRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const applySuggestion = (suggestion: AddressSuggestion) => {
+    const validStateCode = COUNTRY_STATES[formData.country]?.some((s) => s.code === suggestion.stateCode)
+    setFormData((prev) => ({
+      ...prev,
+      address: suggestion.address || prev.address,
+      city: suggestion.city || prev.city,
+      postalCode: suggestion.postalCode || prev.postalCode,
+      province: validStateCode ? suggestion.stateCode : prev.province,
+    }))
+    setErrors((prev) => ({ ...prev, address: undefined, city: undefined, postalCode: undefined, province: undefined }))
+    setSuggestions([])
+    setShowSuggestions(false)
+  }
+
+  const handleAddressKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions || suggestions.length === 0) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveSuggestion((i) => (i + 1) % suggestions.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveSuggestion((i) => (i <= 0 ? suggestions.length - 1 : i - 1))
+    } else if (e.key === 'Enter' && activeSuggestion >= 0) {
+      e.preventDefault()
+      applySuggestion(suggestions[activeSuggestion])
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false)
+    }
+  }
 
   useEffect(() => {
     if (lang === 'he') {
@@ -80,7 +229,15 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
       if (!dialTouched && COUNTRY_DEFAULT_DIAL[value]) {
         setDialCode(COUNTRY_DEFAULT_DIAL[value])
       }
+      // A state/province from the previous country is never valid for the new one.
+      setFormData((prev) => ({ ...prev, province: '' }))
       if (onCountryChange) onCountryChange(value)
+    }
+    if (name === 'address') {
+      setShowSuggestions(true)
+    }
+    if (name === 'email') {
+      setAutofillStatus('idle')
     }
   }
 
@@ -111,14 +268,26 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
       newErrors.country = 'Country is required for order processing'
     }
 
-    // Postal code validation (required for Shopify)
-    //  if (formData.country === 'Israel' && !/^\d{5,7}$/.test(formData.postalCode.replace(/\D/g, ''))) {
-    //   newErrors.postalCode = 'Invalid Israeli postal code (5-7 digits)'
-    // } else if (formData.country === 'United States' && !/^\d{5}(-\d{4})?$/.test(formData.postalCode)) {
-    //   newErrors.postalCode = 'Invalid US postal code format (12345 or 12345-6789)'
-    // } else if (formData.country === 'United Kingdom' && !/^[A-Z]{1,2}\d[A-Z\d]? \d[A-Z]{2}$/.test(formData.postalCode.toUpperCase())) {
-    //   newErrors.postalCode = 'Invalid UK postal code format (e.g., SW1A 1AA)'
-    // }
+    // State/province — required by Shopify's shipping-carrier address check
+    // for countries that have them (US, CA, AU, CH). A missing one is what
+    // gets an otherwise-correct address flagged "Review address issues".
+    if (COUNTRY_STATES[formData.country] && !formData.province) {
+      newErrors.province = t('customerForm.provinceRequired')
+    }
+
+    // Postal code validation — matches the formats Shopify/carriers actually
+    // check (see help.shopify.com .../reviewing-address-formats), so a bad
+    // format is caught here instead of showing up as a red banner in Shopify.
+    const postal = formData.postalCode.trim()
+    const pattern = POSTAL_CODE_PATTERNS[formData.country]
+    if (!postal) {
+      newErrors.postalCode = t('customerForm.postalCodeRequired')
+    } else if (pattern && !pattern.test(postal)) {
+      newErrors.postalCode = t('customerForm.postalCodeInvalid')
+    } else if (!pattern && postal.length < 3) {
+      // "Europe" catch-all zone — no single format, just a sanity length check.
+      newErrors.postalCode = t('customerForm.postalCodeInvalid')
+    }
 
     // Phone validation (required for Shopify) — length checks only, any
     // country's number is accepted via the dial code selector.
@@ -157,12 +326,19 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
             name="email"
             value={formData.email}
             onChange={handleChange}
+            onBlur={handleEmailBlur}
             placeholder={t('customerForm.email')}
             className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.email ? 'border-destructive' : 'border-input'
               }`}
           />
           {errors.email && (
             <p className="mt-1 text-sm text-destructive">{errors.email}</p>
+          )}
+          {autofillStatus === 'loading' && (
+            <p className="mt-1 text-xs text-muted-foreground">{t('customerForm.autofillLoading')}</p>
+          )}
+          {autofillStatus === 'found' && (
+            <p className="mt-1 text-xs text-green-600 dark:text-green-400">{t('customerForm.autofillFound')}</p>
           )}
         </div>
       </div>
@@ -257,40 +433,105 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
             </div>
           </div>
 
-          <div>
+          <div className="relative" ref={addressWrapperRef}>
             <label htmlFor="address" className="sr-only">{t('customerForm.address')}</label>
             <input
+              ref={addressInputRef}
               type="text"
               id="address"
               name="address"
+              autoComplete="off"
               value={formData.address}
               onChange={handleChange}
+              onFocus={() => setShowSuggestions(true)}
+              onKeyDown={handleAddressKeyDown}
               placeholder={t('customerForm.address')}
+              role="combobox"
+              aria-expanded={showSuggestions && suggestions.length > 0}
+              aria-autocomplete="list"
               className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.address ? 'border-destructive' : 'border-input'
                 }`}
             />
             {errors.address && (
               <p className="mt-1 text-sm text-destructive">{errors.address}</p>
             )}
+            {!errors.address && formData.address.trim() && !/\d/.test(formData.address) && (
+              // Non-blocking — Shopify's carrier check flags addresses with no
+              // house/building number, but some valid addresses genuinely have
+              // none, so this is a hint rather than a hard validation error.
+              <p className="mt-1 text-xs text-muted-foreground">{t('customerForm.addressNumberHint')}</p>
+            )}
+            {showSuggestions && suggestions.length > 0 && (
+              <ul
+                role="listbox"
+                className="absolute z-50 mt-1 w-full max-h-64 overflow-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+              >
+                {suggestions.map((suggestion, index) => (
+                  <li
+                    key={`${suggestion.label}-${index}`}
+                    role="option"
+                    aria-selected={index === activeSuggestion}
+                    onMouseDown={(e) => {
+                      // mousedown (not click) fires before the input's blur handler,
+                      // so the selection registers before onBlur/outside-click closes it.
+                      e.preventDefault()
+                      applySuggestion(suggestion)
+                    }}
+                    onMouseEnter={() => setActiveSuggestion(index)}
+                    className={`px-4 py-2.5 text-sm cursor-pointer border-t border-border first:border-t-0 ${index === activeSuggestion ? 'bg-muted' : ''
+                      }`}
+                  >
+                    {suggestion.label}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="city" className="sr-only">{t('customerForm.city')}</label>
-              <input
-                type="text"
-                id="city"
-                name="city"
-                value={formData.city}
-                onChange={handleChange}
-                placeholder={t('customerForm.city')}
-                className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.city ? 'border-destructive' : 'border-input'
-                  }`}
-              />
-              {errors.city && (
-                <p className="mt-1 text-sm text-destructive">{errors.city}</p>
-              )}
-            </div>
+          <div>
+            <label htmlFor="city" className="sr-only">{t('customerForm.city')}</label>
+            <input
+              type="text"
+              id="city"
+              name="city"
+              value={formData.city}
+              onChange={handleChange}
+              placeholder={t('customerForm.city')}
+              className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.city ? 'border-destructive' : 'border-input'
+                }`}
+            />
+            {errors.city && (
+              <p className="mt-1 text-sm text-destructive">{errors.city}</p>
+            )}
+          </div>
+
+          <div className={`grid gap-3 ${COUNTRY_STATES[formData.country] ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {COUNTRY_STATES[formData.country] && (
+              <div className="relative">
+                <label htmlFor="province" className="sr-only">{t('customerForm.province')}</label>
+                <select
+                  id="province"
+                  name="province"
+                  value={formData.province || ''}
+                  onChange={handleChange}
+                  className={`w-full px-4 py-3 pe-10 appearance-none rounded-lg border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors cursor-pointer ${errors.province ? 'border-destructive' : 'border-input'
+                    }`}
+                >
+                  <option value="">{t('customerForm.province')}</option>
+                  {COUNTRY_STATES[formData.country].map((state) => (
+                    <option key={state.code} value={state.code}>{state.name}</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 end-4 flex items-center text-muted-foreground">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+                {errors.province && (
+                  <p className="mt-1 text-sm text-destructive">{errors.province}</p>
+                )}
+              </div>
+            )}
             <div>
               <label htmlFor="postalCode" className="sr-only">{t('customerForm.postalCode')}</label>
               <input

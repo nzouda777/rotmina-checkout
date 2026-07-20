@@ -3,11 +3,10 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { translations, type Language } from './translations'
 
-// Display currencies offered in the header selector. The Tranzila terminal
-// can only charge ILS or USD (see lib/currency.ts) — any other selection here
-// is converted to USD server-side (toPayableCurrency/convertCart in the
-// session PATCH route) before the customer is charged, so it's safe to offer
-// more display currencies without risking a wrong-currency charge (bug #2).
+// Currencies offered in the header selector. Tranzila's v1 API charges
+// directly in whichever of these the customer picks (see lib/currency.ts) —
+// selecting one PATCHes the session so the real cart/charge amount and the
+// Shopify order both convert to it, not just the on-screen price.
 export type Currency = 'USD' | 'EUR' | 'CAD' | 'GBP' | 'CHF' | 'ILS'
 export const CURRENCIES: Currency[] = ['USD', 'EUR', 'CAD', 'GBP', 'CHF', 'ILS']
 

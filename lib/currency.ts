@@ -1,43 +1,82 @@
 // Single source of truth for payment currencies.
 //
-// The Tranzila terminal supports exactly two currencies: ILS (code 1) and
-// USD (code 2). Any other display currency (EUR, CHF, CAD…) MUST be converted
-// to USD before checkout — never silently mapped to another Tranzila code.
-// Bug #2 (300 EUR charged as 300 ILS) came from `currency === 'USD' ? '2' : '1'`
-// ternaries scattered across routes; every currency → Tranzila-code decision
-// must go through this module instead.
+// Tranzila's v1 API (Hosted Fields SDK + REST "create" endpoint) charges
+// directly in ISO 4217 alphabetic currency codes — ILS, USD, EUR, GBP, CAD,
+// CHF, etc — per https://docs.tranzila.com. These are the currencies actually
+// offered in the checkout's currency selector (see CURRENCIES in
+// lib/language-context.tsx); whichever one the customer selects is the one
+// that gets charged and the one the Shopify order is created in.
+//
+// Bit is the one exception: it's an Israeli mobile-payment method that only
+// ever settles in ILS, regardless of this list — that restriction is enforced
+// separately in app/api/checkout/charge/route.ts and is unrelated to card
+// charges going through this module.
 
-export const PAYABLE_CURRENCIES = ['ILS', 'USD'] as const
+export const PAYABLE_CURRENCIES = ['ILS', 'USD', 'EUR', 'GBP', 'CAD', 'CHF'] as const
 export type PayableCurrency = (typeof PAYABLE_CURRENCIES)[number]
-
-export const TRANZILA_CURRENCY_CODES: Record<PayableCurrency, string> = {
-  ILS: '1',
-  USD: '2',
-}
 
 export function isPayableCurrency(currency: string | undefined | null): boolean {
   return PAYABLE_CURRENCIES.includes(((currency || '') as string).toUpperCase() as PayableCurrency)
 }
 
-/** ILS stays ILS; every other currency is charged in USD. */
+/** Any supported currency passes through unchanged; anything unrecognized falls back to USD. */
 export function toPayableCurrency(currency: string | undefined | null): PayableCurrency {
-  return (currency || 'ILS').toUpperCase() === 'ILS' ? 'ILS' : 'USD'
+  const normalized = (currency || 'ILS').toUpperCase()
+  return isPayableCurrency(normalized) ? (normalized as PayableCurrency) : 'USD'
+}
+
+// ─── Bit-only legacy numeric codes ──────────────────────────────────────────
+// Bit payments are hard-restricted to ILS (see the guard in charge/route.ts),
+// and Tranzila's legacy Bit REST/handshake calls historically used numeric
+// currency codes. Kept separate from the ISO codes above so widening
+// PAYABLE_CURRENCIES for card charges doesn't imply numeric codes exist for
+// the other currencies (they don't — Bit never charges them).
+const BIT_LEGACY_NUMERIC_CODES: Record<'ILS' | 'USD', string> = {
+  ILS: '1',
+  USD: '2',
 }
 
 /**
- * Numeric Tranzila currency code for a cart currency.
- * Throws on non-payable currencies so a bad session can never reach Tranzila
- * with the wrong code — callers turn this into a 400, not a silent ILS charge.
+ * Legacy numeric Tranzila currency code — used only for Bit's handshake/REST
+ * calls. Throws for anything besides ILS/USD (Bit never reaches this with
+ * another currency; the guard in charge/route.ts blocks it first).
  */
 export function tranzilaCurrencyCode(currency: string | undefined | null): string {
-  const normalized = ((currency || '') as string).toUpperCase() as PayableCurrency
-  const code = TRANZILA_CURRENCY_CODES[normalized]
+  const normalized = ((currency || '') as string).toUpperCase()
+  const code = BIT_LEGACY_NUMERIC_CODES[normalized as 'ILS' | 'USD']
   if (!code) {
+    throw new Error(`Unsupported Bit currency "${currency}" — only ILS/USD have legacy numeric codes`)
+  }
+  return code
+}
+
+/**
+ * ISO 4217 currency code for a real card charge via Tranzila's v1 API, which
+ * takes alphabetic codes directly. Throws on anything not in PAYABLE_CURRENCIES
+ * so a bad session can never reach Tranzila with an unsupported currency —
+ * callers turn this into a 400, not a silent mischarge.
+ */
+export function tranzilaChargeCurrency(currency: string | undefined | null): PayableCurrency {
+  const normalized = ((currency || '') as string).toUpperCase()
+  if (!isPayableCurrency(normalized)) {
     throw new Error(
       `Unsupported payment currency "${currency}" — only ${PAYABLE_CURRENCIES.join(', ')} can be charged`
     )
   }
-  return code
+  return normalized as PayableCurrency
+}
+
+// Approximate USD value of one unit of each currency — used only when the
+// live rate API below is unreachable, to derive a fallback cross rate for
+// any pair (e.g. EUR→CHF), not just a few hardcoded directions.
+const APPROX_USD_VALUE: Record<string, number> = {
+  USD: 1,
+  ILS: 1 / 3.75,
+  EUR: 1.08,
+  GBP: 1.27,
+  CHF: 1.1,
+  CAD: 0.73,
+  AUD: 0.65,
 }
 
 export async function getExchangeRate(from: string, to: string): Promise<number> {
@@ -51,16 +90,21 @@ export async function getExchangeRate(from: string, to: string): Promise<number>
   } catch (e) {
     console.warn('[CURRENCY] Failed to fetch live exchange rate, using fallback')
   }
-  if (from === 'USD' && to === 'ILS') return 3.75
-  if (from === 'ILS' && to === 'USD') return 1 / 3.75
-  if (from === 'EUR' && to === 'ILS') return 4.05
-  if (from === 'EUR' && to === 'USD') return 1.08
-  if (from === 'GBP' && to === 'ILS') return 4.75
-  if (from === 'GBP' && to === 'USD') return 1.27
-  if (from === 'CHF' && to === 'USD') return 1.1
-  if (from === 'CAD' && to === 'USD') return 0.73
-  if (from === 'AUD' && to === 'USD') return 0.65
+  if (APPROX_USD_VALUE[from] && APPROX_USD_VALUE[to]) {
+    return APPROX_USD_VALUE[from] / APPROX_USD_VALUE[to]
+  }
   return 1
+}
+
+/**
+ * Append `?currency=`/`&currency=` to a URL so the destination (e.g. the
+ * Shopify storefront or order status page) can read the checkout's currency
+ * and react to it (pricing display, analytics, etc).
+ */
+export function withCurrencyParam(url: string, currency: string | undefined | null): string {
+  if (!url || !currency) return url
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}currency=${encodeURIComponent(currency)}`
 }
 
 /** Convert every monetary field of a session cart to `targetCurrency`. */

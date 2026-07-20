@@ -4,6 +4,7 @@ import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 // Tranzila peut appeler en GET ou POST selon la config
@@ -175,7 +176,7 @@ async function handleCallback(request: NextRequest) {
             giftCard: giftCardInfo,
           })
           shopifyOrderId = String(order.id)
-          shopifyOrderUrl = order.order_status_url || null
+          shopifyOrderUrl = order.order_status_url ? withCurrencyParam(order.order_status_url, session.cart?.currency) : null
           console.log('[3DS-CALLBACK] Shopify order created:', shopifyOrderId, 'status_url:', shopifyOrderUrl)
         } catch (err) {
           console.error('[3DS-CALLBACK] Shopify order failed:', err)
@@ -198,6 +199,7 @@ async function handleCallback(request: NextRequest) {
               quantity: item.quantity,
               price: Number(item.price),
             })),
+            lang: session.cart?.language === 'en' ? 'en' : 'he',
           })
         }
       } catch (morningErr) {
@@ -256,7 +258,10 @@ function redirectToSuccess(sessionId: string, confirmationCode: string) {
 
 function redirectToShopify(session: any, shopifyOrderId?: string | null, orderStatusUrl?: string | null) {
   const shopifyDomain = session.shop || 'rotmina.myshopify.com'
-  const targetUrl = orderStatusUrl || `https://${shopifyDomain}/pages/success${shopifyOrderId ? `?order_id=${shopifyOrderId}` : ''}`
+  const targetUrl = orderStatusUrl || withCurrencyParam(
+    `https://${shopifyDomain}/pages/success${shopifyOrderId ? `?order_id=${shopifyOrderId}` : ''}`,
+    session.cart?.currency
+  )
   return breakoutRedirect(targetUrl, session.id)
 }
 

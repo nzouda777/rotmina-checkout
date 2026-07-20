@@ -3,9 +3,11 @@
 // the root. Example: storeUrl('en', '/collections/shop')
 // → https://rotmina.co/en/collections/shop
 
+import { withCurrencyParam } from './currency'
+
 const STORE_BASE = (process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co').replace(/\/$/, '')
 
-export function storeUrl(lang: string, path: string = ''): string {
+export function storeUrl(lang: string, path: string = '', currency?: string): string {
   const prefix = lang === 'he' ? '' : '/en'
-  return `${STORE_BASE}${prefix}${path}`
+  return withCurrencyParam(`${STORE_BASE}${prefix}${path}`, currency)
 }

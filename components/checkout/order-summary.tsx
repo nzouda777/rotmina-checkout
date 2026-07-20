@@ -15,13 +15,15 @@ interface OrderSummaryProps {
   couponAmount?: number
   couponCode?: string
   taxOverride?: number
-  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx). The
-  // actual charge always stays in cartData.currency (ILS/USD) — these only
-  // affect what's shown on screen.
+  // Currently always equal to cartData.currency/1 — Tranzila charges directly
+  // in whatever currency the customer selects (see lib/currency.ts), so there
+  // is no separate cosmetic display currency anymore.
   displayCurrency?: string
   displayRate?: number
+  onRemoveItem?: (itemId: string) => void
+  removingItemId?: string | null
 }
-export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode, taxOverride, displayCurrency, displayRate = 1 }: OrderSummaryProps) {
+export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, couponAmount = 0, couponCode, taxOverride, displayCurrency, displayRate = 1, onRemoveItem, removingItemId }: OrderSummaryProps) {
   const displayTax = taxOverride !== undefined ? taxOverride : cartData.tax
   const displayTotal = taxOverride !== undefined
     ? Math.round((cartData.subtotal + cartData.shipping + taxOverride) * 100) / 100
@@ -114,9 +116,21 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
                   </p>
                 )}
               </div>
-              <div className="text-sm font-medium text-foreground">
+              <div className="text-sm font-medium text-foreground whitespace-nowrap">
                 {item.title == "gift-card" ? "" : formatPrice(item.price * item.quantity)}
               </div>
+              {onRemoveItem && cartData.items.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveItem(item.id)}
+                  disabled={removingItemId === item.id}
+                  aria-label={t('orderSummary.removeItem')}
+                  title={t('orderSummary.removeItem')}
+                  className="self-center text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -213,7 +227,7 @@ export function OrderSummary({ cartData, giftCardAmount = 0, giftCardCode, coupo
         {/* Return to site */}
         <div className="border-t border-border mt-4 pt-4 flex justify-center">
           <a
-            href={storeUrl(lang, '/collections/shop')}
+            href={storeUrl(lang, '/collections/shop', displayCurrency || cartData.currency)}
             className="text-xs text-black font-medium hover:text-black transition-colors bg-[#7c7a7a45] w-full text-center py-2 rounded-md"
           >
             {t('orderSummaryExtra.keepExploring')}
@@ -244,6 +258,14 @@ function GiftIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M20 12v10H4V12M2 7h20v5H2V7zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z" />
+    </svg>
+  )
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0-.867 12.142A2 2 0 0115.138 21H8.862a2 2 0 01-1.995-1.858L6 7h12z" />
     </svg>
   )
 }

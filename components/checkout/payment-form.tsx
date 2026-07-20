@@ -11,16 +11,18 @@ import { useLanguage } from '@/lib/language-context'
 import { storeUrl } from '@/lib/store-url'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
 import { CouponForm } from '@/components/checkout/coupon-form'
+import { isPayableCurrency } from '@/lib/currency'
 
 interface PaymentFormProps {
   sessionId: string
   customerInfo: CustomerInfo
   total: number
-  // Real charge currency (ILS/USD) — drives installment eligibility and the
-  // actual Tranzila charge. Must NOT be swapped for a cosmetic currency.
+  // Real charge currency — whatever the customer selected (ILS/USD/EUR/GBP/
+  // CAD/CHF, see lib/currency.ts). Drives installment eligibility and the
+  // actual Tranzila charge.
   currency: string
-  // Cosmetic display currency/rate (see checkout/[sessionId]/page.tsx),
-  // for formatting only — the real charge always stays in `currency`/`total`.
+  // Currently always equal to `currency`/1 — kept for prop-shape compatibility
+  // with OrderSummary/CouponForm/GiftCardForm.
   displayCurrency?: string
   displayRate?: number
   shopDomain?: string
@@ -53,6 +55,8 @@ function getMaxInstallments(amount: number, currency: string, country: string): 
   if (normalizedCurrency === 'USD') rate = 3.7
   else if (normalizedCurrency === 'EUR') rate = 4.0
   else if (normalizedCurrency === 'GBP') rate = 4.7
+  else if (normalizedCurrency === 'CHF') rate = 4.1
+  else if (normalizedCurrency === 'CAD') rate = 2.7
 
   const amountInILS = amount * rate
   if (amountInILS < 500) return 1
@@ -820,6 +824,7 @@ export function PaymentForm({
           shippingFeeAmount: shippingFeeAmount || undefined,
           israeliId: israeliId || undefined,
           cardNumber: cardNumberOverride || undefined,
+          lang,
         }),
       })
 
@@ -876,17 +881,16 @@ export function PaymentForm({
         // ── STEP 6: Build params ────────────────────────────────────────────
         const isBitPayment = !!result.isBit
 
-        // Map numeric Tranzila currency code to ISO for the new hosted fields API.
-        // The server only ever returns '1' (ILS) or '2' (USD) — any other cart
-        // currency is blocked or converted server-side before reaching here.
-        if (result.currency !== '1' && result.currency !== '2') {
+        // Server returns the real ISO currency code to charge (card: the
+        // customer's selected currency — ILS/USD/EUR/GBP/CAD/CHF; Bit: always ILS).
+        if (!isPayableCurrency(result.currency)) {
           console.error(`[PAY][${submitId}] Unexpected currency code from server: ${result.currency}`)
           setPaymentError(t('paymentForm.paymentSystemNotReady'))
           setIsSubmitting(false)
           isSubmittingRef.current = false
           return
         }
-        const currencyIso = result.currency === '2' ? 'USD' : 'ILS'
+        const currencyIso = result.currency
 
         // Common base (same for card and Bit)
         const baseContact = {
@@ -1624,7 +1628,7 @@ export function PaymentForm({
                   {showTestCardInput ? '← Real card' : 'Test card'}
                 </button>
               </div>
-            )} */}
+            )}  */}
 
             {/* ── Bit section ── */}
             {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK

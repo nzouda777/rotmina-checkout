@@ -182,8 +182,20 @@ export const translations = {
       he: 'עיר',
     },
     postalCode: {
-      en: 'Postal code (Optional)',
-      he: 'מיקוד (אופציונלי)',
+      en: 'Postal code',
+      he: 'מיקוד',
+    },
+    province: {
+      en: 'State/Province',
+      he: 'מדינה/מחוז',
+    },
+    autofillLoading: {
+      en: 'Checking for saved information…',
+      he: 'בודק אם קיים מידע שמור...',
+    },
+    autofillFound: {
+      en: 'Filled in from your previous order',
+      he: 'מולא מתוך ההזמנה הקודמת שלך',
     },
     phone: {
       en: 'Phone',
@@ -218,9 +230,25 @@ export const translations = {
       en: 'Address is required',
       he: 'נדרשת כתובת',
     },
+    addressNumberHint: {
+      en: 'Tip: include a house/building number if you have one (e.g. "Herzl St 10") — helps avoid shipping delays',
+      he: 'טיפ: כדאי לכלול מספר בית/בניין אם יש (לדוגמה "הרצל 10") — מסייע למנוע עיכובים במשלוח',
+    },
     cityRequired: {
       en: 'City is required',
       he: 'נדרשת עיר',
+    },
+    postalCodeRequired: {
+      en: 'Postal code is required',
+      he: 'נדרש מיקוד',
+    },
+    provinceRequired: {
+      en: 'State/Province is required',
+      he: 'נדרשת מדינה/מחוז',
+    },
+    postalCodeInvalid: {
+      en: 'Invalid postal code format for this country',
+      he: 'פורמט מיקוד לא תקין עבור מדינה זו',
     },
     phoneRequired: {
       en: 'Phone is required',
@@ -322,6 +350,10 @@ export const translations = {
     giftCard: {
       en: 'Gift card',
       he: 'כרטיס מתנה',
+    },
+    removeItem: {
+      en: 'Remove item',
+      he: 'הסר פריט',
     },
     discount: {
       en: 'Discount',

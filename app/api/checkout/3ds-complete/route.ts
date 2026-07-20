@@ -6,6 +6,7 @@ import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 /**
@@ -40,8 +41,11 @@ export async function POST(request: NextRequest) {
     if (session.status === 'paid') {
       console.log('[3DS-COMPLETE] Already paid')
       const shopifyDomain = session.shop || 'rotmina.myshopify.com'
-      const shopifyOrderUrl = `https://${shopifyDomain}/pages/success${session.order_id ? `?order_id=${session.order_id}` : ''}`
-      
+      const shopifyOrderUrl = withCurrencyParam(
+        `https://${shopifyDomain}/pages/success${session.order_id ? `?order_id=${session.order_id}` : ''}`,
+        session.cart?.currency
+      )
+
       return NextResponse.json({
         success: true,
         confirmationCode: session.tranzila_transaction_id,
@@ -177,7 +181,10 @@ export async function POST(request: NextRequest) {
           })
           shopifyOrderId = String(order.id)
           const shopifyDomain = session.shop || 'rotmina.myshopify.com'
-          shopifyOrderUrl = `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`
+          shopifyOrderUrl = withCurrencyParam(
+            `https://${shopifyDomain}/pages/success?order_id=${shopifyOrderId}`,
+            session.cart?.currency
+          )
           console.log('[3DS-COMPLETE] Shopify order created:', shopifyOrderId)
 
           // ── Send Order Confirmation Email ────────────────────────
@@ -206,6 +213,7 @@ export async function POST(request: NextRequest) {
                 country: customerInfo.country,
               },
               orderStatusUrl: shopifyOrderUrl,
+              lang: session.cart?.language === 'en' ? 'en' : 'he',
             })
           } catch (emailErr) {
             console.error(`[3DS-COMPLETE][${sessionId}] Failed to send order confirmation email:`, emailErr)
@@ -226,6 +234,7 @@ export async function POST(request: NextRequest) {
                 quantity: item.quantity,
                 price: Number(item.price),
               })),
+              lang: session.cart?.language === 'en' ? 'en' : 'he',
             })
           } catch (morningErr) {
             console.error(`[3DS-COMPLETE][${sessionId}] Failed to send Morning receipt:`, morningErr)
