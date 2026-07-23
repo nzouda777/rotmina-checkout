@@ -18,7 +18,7 @@ interface PaymentFormProps {
   customerInfo: CustomerInfo
   total: number
   // Real charge currency — whatever the customer selected (ILS/USD/EUR/GBP/
-  // CAD/CHF, see lib/currency.ts). Drives installment eligibility and the
+  // CAD/CHF/AUD, see lib/currency.ts). Drives installment eligibility and the
   // actual Tranzila charge.
   currency: string
   // Currently always equal to `currency`/1 — kept for prop-shape compatibility
@@ -57,6 +57,7 @@ function getMaxInstallments(amount: number, currency: string, country: string): 
   else if (normalizedCurrency === 'GBP') rate = 4.7
   else if (normalizedCurrency === 'CHF') rate = 4.1
   else if (normalizedCurrency === 'CAD') rate = 2.7
+  else if (normalizedCurrency === 'AUD') rate = 2.4
 
   const amountInILS = amount * rate
   if (amountInILS < 500) return 1
@@ -882,7 +883,7 @@ export function PaymentForm({
         const isBitPayment = !!result.isBit
 
         // Server returns the real ISO currency code to charge (card: the
-        // customer's selected currency — ILS/USD/EUR/GBP/CAD/CHF; Bit: always ILS).
+        // customer's selected currency — ILS/USD/EUR/GBP/CAD/CHF/AUD; Bit: always ILS).
         if (!isPayableCurrency(result.currency)) {
           console.error(`[PAY][${submitId}] Unexpected currency code from server: ${result.currency}`)
           setPaymentError(t('paymentForm.paymentSystemNotReady'))

@@ -693,7 +693,7 @@ export async function POST(request: NextRequest) {
       const callbackUrl = `${baseUrl}/api/checkout/callback`
 
       // Real ISO currency code — Tranzila's v1 API charges directly in the
-      // customer's selected currency (ILS/USD/EUR/GBP/CAD/CHF), not just ILS/USD.
+      // customer's selected currency (ILS/USD/EUR/GBP/CAD/CHF/AUD), not just ILS/USD.
       const currencyCode = tranzilaChargeCurrency(cartCurrency)
       console.log(`[CHARGE][${logId}] Currency: ${cartCurrency} → Tranzila charge currency: ${currencyCode}`)
 

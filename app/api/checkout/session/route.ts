@@ -623,7 +623,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // The session actually converts to whatever currency the client asks for
-    // (ILS/USD/EUR/GBP/CAD/CHF are all real, chargeable currencies — see
+    // (ILS/USD/EUR/GBP/CAD/CHF/AUD are all real, chargeable currencies — see
     // lib/currency.ts). Anything outside that list falls back to USD.
     const requested = (targetCurrency as string).toUpperCase()
     const normalized = toPayableCurrency(requested)

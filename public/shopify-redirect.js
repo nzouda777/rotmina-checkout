@@ -10,7 +10,7 @@
  * <button type="button" onclick="redirectToCustomCheckout()">Checkout</button>
  */
 
-const APP_URL = 'https://703e-129-0-99-85.ngrok-free.app'; // Replace with your production URL
+const APP_URL = 'https://rotmina-checkout.vercel.app'; // Replace with your production URL
 
 async function redirectToCustomCheckout() {
   try {

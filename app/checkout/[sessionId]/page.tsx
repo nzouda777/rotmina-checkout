@@ -11,6 +11,7 @@ import { CheckoutFooter } from '@/components/checkout/checkout-footer'
 import type { PaymentSession, CustomerInfo, AppliedCoupon } from '@/lib/types'
 import { useLanguage } from '@/lib/language-context'
 import { storeUrl } from '@/lib/store-url'
+import { isPayableCurrency } from '@/lib/currency'
 
 // console.log('CheckoutPage module loaded');
 
@@ -63,7 +64,7 @@ export default function CheckoutPage() {
   const [applyingTax, setApplyingTax] = useState(false)
 
   // Tranzila charges directly in whatever currency the customer selects
-  // (ILS/USD/EUR/GBP/CAD/CHF — see lib/currency.ts), so there is no cosmetic
+  // (ILS/USD/EUR/GBP/CAD/CHF/AUD — see lib/currency.ts), so there is no cosmetic
   // display-only conversion anymore; displayRate always stays 1 and every
   // currency switch below triggers a real session conversion.
   const [displayRate, setDisplayRate] = useState(1)
@@ -150,8 +151,23 @@ export default function CheckoutPage() {
   // the checkout language: USD for English, ILS for Hebrew. If the session was
   // created in another currency (including legacy EUR carts), the mismatch
   // triggers the conversion PATCH below before any payment can start.
+  //
+  // Exception: arriving from Shopify with a `?currency=` param (see
+  // public/shopify-checkout-button.liquid) means the customer was already
+  // shopping in that currency — honor it once instead of the language default,
+  // then strip it from the URL so a later manual language switch on this page
+  // falls back to the normal language-based default.
   useEffect(() => {
     if (!session) return
+    const params = new URLSearchParams(window.location.search)
+    const currencyParam = params.get('currency')
+    if (currencyParam && isPayableCurrency(currencyParam)) {
+      setCurrency(currencyParam.toUpperCase() as typeof currency)
+      params.delete('currency')
+      const query = params.toString()
+      window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''))
+      return
+    }
     setCurrency(lang === 'he' ? 'ILS' : 'USD')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, lang])

@@ -12,7 +12,7 @@
 // separately in app/api/checkout/charge/route.ts and is unrelated to card
 // charges going through this module.
 
-export const PAYABLE_CURRENCIES = ['ILS', 'USD', 'EUR', 'GBP', 'CAD', 'CHF'] as const
+export const PAYABLE_CURRENCIES = ['ILS', 'USD', 'EUR', 'GBP', 'CAD', 'CHF', 'AUD'] as const
 export type PayableCurrency = (typeof PAYABLE_CURRENCIES)[number]
 
 export function isPayableCurrency(currency: string | undefined | null): boolean {

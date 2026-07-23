@@ -85,6 +85,19 @@
         var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
         var apiUrl = '{{ settings.EXTERNAL_PAYMENT_API_URL | default: "https://rotmina-checkout.vercel.app" }}';
         var lang = document.documentElement.lang || 'he';
+        // Shopify's own cart.currency stays the shop's base currency (ILS) no matter
+        // what the customer picks — BUCKS is a display-only converter, it never
+        // touches cart.js. BUCKS keeps its own live selection (manual or
+        // auto-detected) in localStorage under 'buckscc_last_manual', which is what
+        // the header widget actually reflects — that's the value we need so the
+        // checkout opens already showing the same currency the customer was seeing.
+        var shopifyCurrency = '';
+        try {
+          var bucksLastManual = JSON.parse(localStorage.getItem('buckscc_last_manual') || 'null');
+          if (bucksLastManual && bucksLastManual.currency) {
+            shopifyCurrency = String(bucksLastManual.currency).toUpperCase();
+          }
+        } catch (_) {}
 
         var response = await fetch(apiUrl + '/api/checkout/session', {
           method: 'POST',
@@ -98,7 +111,11 @@
 
         // 5. Redirect — path is /checkout/[sessionId] (NOT /pay/)
         var frontendUrl = '{{ settings.EXTERNAL_PAYMENT_FRONTEND_URL | default: "https://rotmina-checkout.vercel.app" }}';
-        window.location.href = frontendUrl + '/checkout/' + sessionId + '?language=' + lang;
+        var redirectUrl = frontendUrl + '/checkout/' + sessionId + '?language=' + lang;
+        if (shopifyCurrency) {
+          redirectUrl += '&currency=' + encodeURIComponent(shopifyCurrency);
+        }
+        window.location.href = redirectUrl;
 
       } catch (err) {
         console.error('[Checkout] error:', err);

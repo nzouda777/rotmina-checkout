@@ -2,13 +2,14 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { translations, type Language } from './translations'
+import { isPayableCurrency } from './currency'
 
 // Currencies offered in the header selector. Tranzila's v1 API charges
 // directly in whichever of these the customer picks (see lib/currency.ts) —
 // selecting one PATCHes the session so the real cart/charge amount and the
 // Shopify order both convert to it, not just the on-screen price.
-export type Currency = 'USD' | 'EUR' | 'CAD' | 'GBP' | 'CHF' | 'ILS'
-export const CURRENCIES: Currency[] = ['USD', 'EUR', 'CAD', 'GBP', 'CHF', 'ILS']
+export type Currency = 'USD' | 'EUR' | 'CAD' | 'GBP' | 'CHF' | 'AUD' | 'ILS'
+export const CURRENCIES: Currency[] = ['USD', 'EUR', 'CAD', 'GBP', 'CHF', 'AUD', 'ILS']
 
 interface LanguageContextType {
   lang: Language
@@ -65,9 +66,18 @@ function resolveInitialLang(): Language {
 // Hebrew. A previously saved currency choice is deliberately NOT restored —
 // the default at open must always match the language (the user can still
 // switch manually via the header selector during the session).
+//
+// Exception: when arriving from the Shopify storefront with a `?currency=`
+// param (see public/shopify-checkout-button.liquid), that's the currency the
+// customer was already shopping in — it takes priority over the language default.
 function resolveInitialCurrency(): Currency {
   if (typeof window === 'undefined') return 'ILS'
-  const urlParam = new URLSearchParams(window.location.search).get('language')
+  const params = new URLSearchParams(window.location.search)
+  const currencyParam = params.get('currency')
+  if (currencyParam && isPayableCurrency(currencyParam)) {
+    return currencyParam.toUpperCase() as Currency
+  }
+  const urlParam = params.get('language')
   if (urlParam === 'en') return 'USD'
   if (urlParam === 'he') return 'ILS'
   try {
