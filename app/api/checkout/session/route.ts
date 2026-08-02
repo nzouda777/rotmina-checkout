@@ -360,6 +360,26 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
+      // The storefront checkout button retries a failed session request with
+      // the SAME idempotency key (see public/shopify-checkout-button.liquid), so
+      // a response lost in transit — timeout, connection dropped mid-flight on
+      // mobile — comes back here as a unique violation on idempotency_key: the
+      // first insert did land, only its reply never arrived. Hand back that
+      // session instead of a 500, otherwise a flaky network turns a checkout
+      // that actually succeeded into a visible error for the customer.
+      if ((error as { code?: string }).code === '23505') {
+        const { data: existing } = await supabase
+          .from('payment_sessions')
+          .select('id')
+          .eq('idempotency_key', idempotencyKey)
+          .single()
+
+        if (existing) {
+          console.log(`[SESSION] Idempotent replay for key ${idempotencyKey} → existing session ${existing.id}`)
+          return corsResponse(request, { sessionId: existing.id })
+        }
+      }
+
       console.error('Error creating session:', error)
       return corsResponse(
         request,

@@ -1,127 +1,443 @@
 <!-- À ajouter dans cart.liquid ou un fichier snippet -->
 
-<button
+{%- if request.locale.iso_code == 'he' -%}
+  {%- assign label_idle    = 'לתשלום' -%}
+  {%- assign label_busy    = 'מעבד…' -%}
+  {%- assign label_error   = 'שגיאה, נסו שוב' -%}
+  {%- assign label_empty   = 'העגלה שלכם ריקה' -%}
+{%- else -%}
+  {%- assign label_idle    = 'Pay' -%}
+  {%- assign label_busy    = 'Processing…' -%}
+  {%- assign label_error   = 'Error — please try again' -%}
+  {%- assign label_empty   = 'Your cart is empty' -%}
+{%- endif -%}
+
+{%- comment -%}
+  ISOLATION FROM THE THEME — why this is a <div> and carries no theme class.
+
+  This element deliberately matches NOTHING the theme or any installed app
+  selects on:
+
+  * No `btn` / `btn--primary` / `button` class. Those are the classes themes and
+    apps delegate jQuery handlers on, and — more damaging — the ones they bulk
+    mutate. A theme that disables every `.btn` inside the cart form during an
+    AJAX cart update and fails to re-enable them leaves this element dead, and
+    a disabled <button> fires no click event at all, so no amount of JS on our
+    side can recover it. That is the likeliest cause of the intermittent
+    "clicking does nothing".
+  * A <div>, not a <button>: it cannot be disabled, it cannot submit a form, and
+    it does not match tag selectors like `form button` or `.cart__footer button`.
+  * `rotmina-checkout-cta` is the only class, and no theme ships it. Note that
+    obscurity is not what protects it — being absent from every selector in the
+    page is. A per-shop or randomised suffix would add nothing, and would stop
+    you writing your own CSS against it.
+
+  Because it is a div, role/tabindex and keyboard handling are supplied
+  explicitly below to keep it operable exactly like a real button.
+
+  The inline onclick is not the real handler — it only records that a click
+  happened. Inline attributes are live the moment the HTML is parsed, so a
+  customer tapping while the page is still loading has their click replayed by
+  the script once it binds, instead of silently losing it.
+{%- endcomment -%}
+
+<style>
+  .rotmina-checkout-cta {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 14px 20px;
+    border: 0;
+    border-radius: 4px;
+    background: #dfdfdf;
+    color: #000;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    /* Removes the ~300ms tap delay some mobile browsers still apply. */
+    touch-action: manipulation;
+  }
+  .rotmina-checkout-cta:focus-visible {
+    outline: 2px solid #000;
+    outline-offset: 2px;
+  }
+  .rotmina-checkout-cta[data-busy] {
+    opacity: 0.6;
+    cursor: default;
+  }
+</style>
+
+<div
   id="external-payment-btn"
-  class="btn btn--primary button"
-  style="text-align: center; width: 100%; background: #dfdfdf; color: #000;"
+  class="rotmina-checkout-cta"
+  data-external-payment-btn
+  role="button"
+  tabindex="0"
   data-cart-token="{{ cart.token }}"
->
-  {% if request.locale.iso_code == 'he' %}
-    לתשלום
-  {% else %}
-    Pay
-  {% endif %}
-</button>
+  onclick="window.__rotminaCheckoutQueuedClick = true;"
+>{{ label_idle }}</div>
 
 <script>
-  (function() {
-    var btn = document.getElementById('external-payment-btn');
-    if (!btn) return;
+  (function () {
+    // The snippet can legitimately be rendered more than once per page (cart
+    // drawer + cart page, or a section re-rendered by Shopify's AJAX cart), and
+    // each copy re-executes this script. Bind exactly once per document.
+    if (window.__rotminaCheckoutBound) return;
+    window.__rotminaCheckoutBound = true;
 
-    btn.addEventListener('click', async function(e) {
-      e.preventDefault();
+    var SELECTOR     = '[data-external-payment-btn]';
+    var API_URL      = '{{ settings.EXTERNAL_PAYMENT_API_URL | default: "https://rotmina-checkout.vercel.app" }}';
+    var FRONTEND_URL = '{{ settings.EXTERNAL_PAYMENT_FRONTEND_URL | default: "https://rotmina-checkout.vercel.app" }}';
 
-      var originalText = btn.textContent.trim();
-      btn.textContent = '...';
-      btn.disabled = true;
+    var TEXT = {
+      idle:  {{ label_idle    | json }},
+      busy:  {{ label_busy    | json }},
+      error: {{ label_error   | json }},
+      empty: {{ label_empty   | json }}
+    };
 
+    var CART_TIMEOUT_MS    = 8000;
+    var SESSION_TIMEOUT_MS = 15000;
+    var MAX_ATTEMPTS       = 3;
+    var RETRY_BASE_MS      = 500;
+    // Absolute ceiling on the busy state. Even if a promise never settles (a
+    // dead socket that neither responds nor errors), the button comes back.
+    var SAFETY_RESET_MS    = 45000;
+
+    var inFlight = false;
+    var safetyTimer = null;
+
+    // ── Button state ────────────────────────────────────────────────────────
+    // No `disabled` property to set — this is a div, which is the point: nothing
+    // on the page can put it into a state where it stops emitting clicks. The
+    // `inFlight` flag is what prevents a double submission.
+    function setBusy(el, busy) {
+      if (!el) return;
+      el.setAttribute('aria-busy', busy ? 'true' : 'false');
+      el.setAttribute('aria-disabled', busy ? 'true' : 'false');
+      if (busy) el.setAttribute('data-busy', ''); else el.removeAttribute('data-busy');
+      el.textContent = busy ? TEXT.busy : TEXT.idle;
+    }
+
+    function showError(el, message) {
+      if (!el) return;
+      el.textContent = message;
+      setTimeout(function () {
+        // Only restore if no new attempt has started in the meantime.
+        if (!inFlight) el.textContent = TEXT.idle;
+      }, 4000);
+    }
+
+    // Reset every button, not just the one clicked — after a bfcache restore we
+    // no longer have a reference to whichever one was pressed.
+    function resetAll() {
+      inFlight = false;
+      if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+      var buttons = document.querySelectorAll(SELECTOR);
+      for (var i = 0; i < buttons.length; i++) setBusy(buttons[i], false);
+    }
+
+    // ── Networking ──────────────────────────────────────────────────────────
+    // Grab the real fetch now, before any later-loading Shopify app wraps
+    // window.fetch for analytics/tracking. A wrapper that throws would otherwise
+    // take this button down with it.
+    var nativeFetch = (typeof window.fetch === 'function') ? window.fetch.bind(window) : null;
+
+    function fetchWithTimeout(url, options, timeoutMs) {
+      var controller = null;
+      try { controller = new AbortController(); } catch (_) {}
+
+      var opts = {};
+      for (var key in options) { if (options.hasOwnProperty(key)) opts[key] = options[key]; }
+      if (controller) opts.signal = controller.signal;
+
+      var timer;
+      var timeout = new Promise(function (_, reject) {
+        timer = setTimeout(function () {
+          if (controller) { try { controller.abort(); } catch (_) {} }
+          var err = new Error('timeout');
+          err.retriable = true;
+          reject(err);
+        }, timeoutMs);
+      });
+
+      // Never let a synchronous throw escape: a broken fetch wrapper installed
+      // by another app would otherwise bypass every .catch() downstream and
+      // leave the button stuck on its busy label.
+      var request;
       try {
-        // 1. Fetch full Shopify cart
-        var cartRes = await fetch('/cart.js');
-        var cart = await cartRes.json();
-
-        // 2. Detect discount.
-        //
-        //    Shopify exposes discount info across multiple fields:
-        //      - cart_level_discount_applications  → full info (title, value_type, total_allocated_amount)
-        //      - discount_codes                    → only { code, applicable } in newer Shopify versions (no amount/type!)
-        //      - total_discount                    → total cents discounted
-        //      - original_total_price vs total_price → price drop (always reliable)
-        //
-        //    Strategy: always use cart_level_discount_applications as primary source
-        //    because it carries the full title (correct casing) + the exact amount.
-
-        var origCents     = Number(cart.original_total_price || 0);
-        var curCents      = Number(cart.total_price || 0);
-        var totalDiscount = Number(cart.total_discount || 0) || (origCents > curCents ? origCents - curCents : 0);
-        var cartApps      = cart.cart_level_discount_applications || [];
-        var discountCodes = cart.discount_codes || [];
-
-        var codes = [];
-        if (cartApps.length > 0) {
-          // Preferred: cart_level_discount_applications has title + amount + value_type
-          codes = cartApps.map(function(app) {
-            return {
-              code:   app.title || '',
-              amount: String((app.total_allocated_amount || totalDiscount) / 100),
-              type:   app.value_type || 'fixed_amount'
-            };
-          });
-        } else if (discountCodes.length > 0) {
-          // Fallback: discount_codes (may lack amount/type in newer Shopify)
-          codes = discountCodes
-            .filter(function(d) { return d.code; })
-            .map(function(d) {
-              return { code: d.code, amount: String(totalDiscount / 100), type: d.type || 'fixed_amount' };
-            });
-        }
-
-        // Only set shopifyDiscount when there is actually a discount
-        var shopifyDiscount = (totalDiscount > 0 || codes.length > 0)
-          ? { amountCents: totalDiscount, codes: codes }
-          : null;
-
-        console.log('[Checkout] discount detected:', shopifyDiscount);
-
-        // 3. Shopify customer (pre-fills checkout form if logged in)
-        var customer = null;
-        try {
-          var meta = window.ShopifyAnalytics && window.ShopifyAnalytics.meta;
-          var c = meta && meta.page && meta.page.customer;
-          if (c) customer = { email: c.email, firstName: c.first_name, lastName: c.last_name };
-        } catch (_) {}
-
-        // 4. Create checkout session
-        var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
-        var apiUrl = '{{ settings.EXTERNAL_PAYMENT_API_URL | default: "https://rotmina-checkout.vercel.app" }}';
-        var lang = document.documentElement.lang || 'he';
-        // Shopify's own cart.currency stays the shop's base currency (ILS) no matter
-        // what the customer picks — BUCKS is a display-only converter, it never
-        // touches cart.js. BUCKS keeps its own live selection (manual or
-        // auto-detected) in localStorage under 'buckscc_last_manual', which is what
-        // the header widget actually reflects — that's the value we need so the
-        // checkout opens already showing the same currency the customer was seeing.
-        var shopifyCurrency = '';
-        try {
-          var bucksLastManual = JSON.parse(localStorage.getItem('buckscc_last_manual') || 'null');
-          if (bucksLastManual && bucksLastManual.currency) {
-            shopifyCurrency = String(bucksLastManual.currency).toUpperCase();
-          }
-        } catch (_) {}
-
-        var response = await fetch(apiUrl + '/api/checkout/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ shop: shop, cart: cart, customer: customer, shopify_discount: shopifyDiscount, locale: lang })
-        });
-
-        if (!response.ok) throw new Error('Session creation failed');
-
-        var sessionId = (await response.json()).sessionId;
-
-        // 5. Redirect — path is /checkout/[sessionId] (NOT /pay/)
-        var frontendUrl = '{{ settings.EXTERNAL_PAYMENT_FRONTEND_URL | default: "https://rotmina-checkout.vercel.app" }}';
-        var redirectUrl = frontendUrl + '/checkout/' + sessionId + '?language=' + lang;
-        if (shopifyCurrency) {
-          redirectUrl += '&currency=' + encodeURIComponent(shopifyCurrency);
-        }
-        window.location.href = redirectUrl;
-
-      } catch (err) {
-        console.error('[Checkout] error:', err);
-        btn.textContent = originalText;
-        btn.disabled = false;
+        request = nativeFetch ? nativeFetch(url, opts) : fetch(url, opts);
+      } catch (syncErr) {
+        clearTimeout(timer);
+        syncErr.retriable = false;
+        return Promise.reject(syncErr);
       }
+
+      return Promise.race([request, timeout]).then(
+        function (res) { clearTimeout(timer); return res; },
+        function (err) { clearTimeout(timer); throw err; }
+      );
+    }
+
+    /**
+     * GET/POST JSON with timeout and bounded retries.
+     *
+     * Retries cover the transient failures that make the button feel broken on
+     * mobile: a request fired while the connection is switching between WiFi and
+     * cellular, a cold serverless start that exceeds the timeout, a 502/504 from
+     * the edge. 4xx responses are NOT retried — those are real rejections and
+     * repeating them only delays the error the customer needs to see.
+     */
+    function requestJson(url, options, timeoutMs, attemptsLeft) {
+      return fetchWithTimeout(url, options, timeoutMs)
+        .then(function (res) {
+          if (!res.ok) {
+            var err = new Error('HTTP ' + res.status);
+            err.status = res.status;
+            err.retriable = res.status >= 500 || res.status === 429;
+            throw err;
+          }
+          return res.json();
+        })
+        .catch(function (err) {
+          // A thrown TypeError from fetch() means the request never completed
+          // (offline, DNS, connection reset) — always worth one more try.
+          var retriable = err.retriable !== false && (err.retriable || !err.status);
+          if (attemptsLeft > 1 && retriable) {
+            var delay = RETRY_BASE_MS * (MAX_ATTEMPTS - attemptsLeft + 1);
+            return new Promise(function (resolve) { setTimeout(resolve, delay); })
+              .then(function () { return requestJson(url, options, timeoutMs, attemptsLeft - 1); });
+          }
+          throw err;
+        });
+    }
+
+    // ── Cart → session payload ──────────────────────────────────────────────
+    // Detect discount.
+    //
+    //    Shopify exposes discount info across multiple fields:
+    //      - cart_level_discount_applications  → full info (title, value_type, total_allocated_amount)
+    //      - discount_codes                    → only { code, applicable } in newer Shopify versions (no amount/type!)
+    //      - total_discount                    → total cents discounted
+    //      - original_total_price vs total_price → price drop (always reliable)
+    //
+    //    Strategy: always use cart_level_discount_applications as primary source
+    //    because it carries the full title (correct casing) + the exact amount.
+    function detectDiscount(cart) {
+      var origCents     = Number(cart.original_total_price || 0);
+      var curCents      = Number(cart.total_price || 0);
+      var totalDiscount = Number(cart.total_discount || 0) || (origCents > curCents ? origCents - curCents : 0);
+      var cartApps      = cart.cart_level_discount_applications || [];
+      var discountCodes = cart.discount_codes || [];
+
+      var codes = [];
+      if (cartApps.length > 0) {
+        // Preferred: cart_level_discount_applications has title + amount + value_type
+        codes = cartApps.map(function (app) {
+          return {
+            code:   app.title || '',
+            amount: String((app.total_allocated_amount || totalDiscount) / 100),
+            type:   app.value_type || 'fixed_amount'
+          };
+        });
+      } else if (discountCodes.length > 0) {
+        // Fallback: discount_codes (may lack amount/type in newer Shopify)
+        codes = discountCodes
+          .filter(function (d) { return d.code; })
+          .map(function (d) {
+            return { code: d.code, amount: String(totalDiscount / 100), type: d.type || 'fixed_amount' };
+          });
+      }
+
+      // Only set shopifyDiscount when there is actually a discount
+      return (totalDiscount > 0 || codes.length > 0)
+        ? { amountCents: totalDiscount, codes: codes }
+        : null;
+    }
+
+    // Shopify's own cart.currency stays the shop's base currency (ILS) no matter
+    // what the customer picks — BUCKS is a display-only converter, it never
+    // touches cart.js. BUCKS keeps its own live selection (manual or
+    // auto-detected) in localStorage under 'buckscc_last_manual', which is what
+    // the header widget actually reflects — that's the value we need so the
+    // checkout opens already showing the same currency the customer was seeing.
+    // 'rotmina_currency' is our own key (see public/currencyHandler.js) and acts
+    // as the backup when BUCKS hasn't recorded a pick of its own.
+    function detectCurrency() {
+      try {
+        var bucksLastManual = JSON.parse(localStorage.getItem('buckscc_last_manual') || 'null');
+        if (bucksLastManual && bucksLastManual.currency) {
+          return String(bucksLastManual.currency).toUpperCase();
+        }
+      } catch (_) {}
+      try {
+        var stored = localStorage.getItem('rotmina_currency');
+        if (stored) return String(stored).toUpperCase();
+      } catch (_) {}
+      return '';
+    }
+
+    function detectCustomer() {
+      // Shopify customer (pre-fills checkout form if logged in)
+      try {
+        var meta = window.ShopifyAnalytics && window.ShopifyAnalytics.meta;
+        var c = meta && meta.page && meta.page.customer;
+        if (c) return { email: c.email, firstName: c.first_name, lastName: c.last_name };
+      } catch (_) {}
+      return null;
+    }
+
+    // ── Main flow ───────────────────────────────────────────────────────────
+    // Themes and apps do override navigation helpers. Try each way out in turn
+    // so one patched method can't strand the customer on the cart page.
+    function redirect(url) {
+      try { window.location.assign(url); return; } catch (_) {}
+      try { window.location.href = url; return; } catch (_) {}
+      try { window.location = url; return; } catch (_) {}
+      console.error('[Checkout] could not navigate to', url);
+    }
+
+    function startCheckout(btn) {
+      try {
+        runCheckout(btn);
+      } catch (err) {
+        // Last resort: whatever went wrong, the button must not stay stuck.
+        console.error('[Checkout] unexpected error:', err);
+        resetAll();
+        showError(btn, TEXT.error);
+      }
+    }
+
+    function runCheckout(btn) {
+      if (inFlight) return;
+      inFlight = true;
+      window.__rotminaCheckoutQueuedClick = false;
+      setBusy(btn, true);
+
+      safetyTimer = setTimeout(resetAll, SAFETY_RESET_MS);
+
+      // One key per checkout attempt, reused across retries of that attempt, so
+      // a retry after a lost response reuses the session the server already
+      // created instead of creating a second one (the server resolves the
+      // conflict — see app/api/checkout/session/route.ts).
+      var idempotencyKey = Math.random().toString(36).substring(2) + Date.now().toString(36);
+      var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
+      var lang = document.documentElement.lang || 'he';
+
+      requestJson('/cart.js', { cache: 'no-store', credentials: 'same-origin' }, CART_TIMEOUT_MS, MAX_ATTEMPTS)
+        .then(function (cart) {
+          if (!cart || !cart.items || cart.items.length === 0) {
+            var empty = new Error('empty cart');
+            empty.userMessage = TEXT.empty;
+            throw empty;
+          }
+
+          var shopifyDiscount = detectDiscount(cart);
+          console.log('[Checkout] discount detected:', shopifyDiscount);
+
+          return requestJson(
+            API_URL + '/api/checkout/session',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                shop: shop,
+                idempotencyKey: idempotencyKey,
+                cart: cart,
+                customer: detectCustomer(),
+                shopify_discount: shopifyDiscount,
+                locale: lang
+              })
+            },
+            SESSION_TIMEOUT_MS,
+            MAX_ATTEMPTS
+          );
+        })
+        .then(function (data) {
+          if (!data || !data.sessionId) throw new Error('no sessionId in response');
+
+          // Redirect — path is /checkout/[sessionId] (NOT /pay/)
+          var redirectUrl = FRONTEND_URL + '/checkout/' + data.sessionId + '?language=' + encodeURIComponent(lang);
+          var currency = detectCurrency();
+          if (currency) redirectUrl += '&currency=' + encodeURIComponent(currency);
+
+          // Leave the button busy through the navigation so it can't be pressed
+          // again while the browser is already leaving the page.
+          if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+          redirect(redirectUrl);
+        })
+        .catch(function (err) {
+          console.error('[Checkout] error:', err);
+          resetAll();
+          showError(btn, err && err.userMessage ? err.userMessage : TEXT.error);
+        });
+    }
+
+    // ── Binding ─────────────────────────────────────────────────────────────
+    // Delegated rather than bound to the element: Shopify's AJAX cart replaces
+    // the cart section's HTML on every quantity change, which destroys the
+    // original node. A handler attached directly to that node dies with it and
+    // the replacement does nothing. Delegation also means this script no longer
+    // cares whether it runs before or after the element exists.
+    //
+    // Bound on `window` in the CAPTURE phase, which is the very first step of
+    // the event path — before any theme or app handler, all of which use bubble
+    // phase (jQuery cannot even register capture listeners). Combined with the
+    // element matching no theme selector, that is what makes this independent of
+    // the rest of the page's JavaScript.
+    function claimEvent(e) {
+      var btn = e.target && e.target.closest && e.target.closest(SELECTOR);
+      if (!btn) return null;
+      // This element belongs to us and does exactly one thing. Cut the event off
+      // here so no other script ever sees it, in case one still delegates on
+      // something broad enough to reach it.
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      return btn;
+    }
+
+    window.addEventListener('click', function (e) {
+      var btn = claimEvent(e);
+      if (!btn) return;
+      e.preventDefault();
+      startCheckout(btn);
+    }, true);
+
+    // A <div role="button"> gets no keyboard activation for free — Enter and
+    // Space have to be wired up by hand to match native button behaviour.
+    window.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      var btn = claimEvent(e);
+      if (!btn) return;
+      e.preventDefault();
+      startCheckout(btn);
+    }, true);
+
+    // Same interception for the events themes commonly hang handlers on, so the
+    // theme's code never runs for this element at all. Deliberately no
+    // preventDefault here — on touchstart that would kill scrolling for a swipe
+    // that happens to begin on the button.
+    ['mousedown', 'touchstart'].forEach(function (type) {
+      window.addEventListener(type, claimEvent, true);
+    });
+
+    // Replay a click that landed before this script was parsed.
+    if (window.__rotminaCheckoutQueuedClick) {
+      var queued = document.querySelector(SELECTOR);
+      if (queued) startCheckout(queued);
+    }
+
+    // Coming back from the checkout via the browser's Back button restores the
+    // page from the bfcache exactly as it was left — element still showing the
+    // busy label, which reads as broken. Clear it on restore.
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) resetAll();
     });
   })();
 </script>

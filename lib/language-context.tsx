@@ -62,10 +62,14 @@ function resolveInitialLang(): Language {
   return 'he'
 }
 
-// Default currency follows the checkout language: USD for English, ILS for
-// Hebrew. A previously saved currency choice is deliberately NOT restored —
-// the default at open must always match the language (the user can still
-// switch manually via the header selector during the session).
+// Starting currency before a session is known: USD for English, ILS for Hebrew.
+//
+// This is only the value the header shows during the initial load. Once the
+// session arrives, app/checkout/[sessionId]/page.tsx replaces it with the
+// currency the session is actually stored in — that's what makes a manual
+// switch survive a refresh, and it's per-session rather than a stale global
+// preference. localStorage's 'rotmina-currency' (written by setCurrency below)
+// is kept only as a debugging trace; nothing reads it back.
 //
 // Exception: when arriving from the Shopify storefront with a `?currency=`
 // param (see public/shopify-checkout-button.liquid), that's the currency the
@@ -111,11 +115,18 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   // Re-read the URL param on mount (resolveInitialLang may have run server-side
   // where window is undefined, so the ?language= param gets ignored on SSR).
+  //
+  // Only when it actually differs from the language already resolved. setLang
+  // resets the currency to the language default, and the `?language=` param
+  // stays in the checkout URL across reloads — so calling it unconditionally
+  // wiped the customer's currency choice on every single refresh, independently
+  // of (and after) the session restoring it in app/checkout/[sessionId]/page.tsx.
   useEffect(() => {
     const urlParam = new URLSearchParams(window.location.search).get('language')
-    if (urlParam === 'en' || urlParam === 'he') {
+    if ((urlParam === 'en' || urlParam === 'he') && urlParam !== lang) {
       setLang(urlParam)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Update <html> dir and lang attributes when language changes

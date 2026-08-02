@@ -147,16 +147,27 @@ export default function CheckoutPage() {
   fetchSession()
 }, [sessionId])
 
-  // When the session loads (or the language changes), the currency defaults to
-  // the checkout language: USD for English, ILS for Hebrew. If the session was
-  // created in another currency (including legacy EUR carts), the mismatch
-  // triggers the conversion PATCH below before any payment can start.
+  // Adopt the currency the session is actually stored in, so a refresh (or a
+  // second tab, or reopening the link later) keeps whatever the customer picked.
+  //
+  // The session row is the source of truth, not localStorage: the conversion
+  // PATCH below already rewrites cart.currency and every amount in it, so the
+  // stored currency is by definition the one the cart is denominated in and the
+  // one Tranzila would charge. Reading it back is what makes the choice survive
+  // a reload; previously this effect unconditionally forced the language default
+  // (ILS for Hebrew, USD for English), which threw the pick away on every load
+  // and then PATCHed the session straight back.
+  //
+  // Sessions are always created in the language's currency (see the locale
+  // handling in app/api/checkout/session/route.ts), so on a first load this
+  // still resolves to exactly the language default — it only differs once the
+  // customer has actively changed it.
   //
   // Exception: arriving from Shopify with a `?currency=` param (see
   // public/shopify-checkout-button.liquid) means the customer was already
-  // shopping in that currency — honor it once instead of the language default,
-  // then strip it from the URL so a later manual language switch on this page
-  // falls back to the normal language-based default.
+  // shopping in that currency — honor it once, then strip it from the URL so a
+  // refresh falls through to the session's own stored currency instead of
+  // re-applying a param that may since have been overridden here.
   useEffect(() => {
     if (!session) return
     const params = new URLSearchParams(window.location.search)
@@ -168,9 +179,22 @@ export default function CheckoutPage() {
       window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : ''))
       return
     }
+
+    const sessionCurrency = ((session.cart?.currency as string) || '').toUpperCase()
+    if (isPayableCurrency(sessionCurrency)) {
+      setCurrency(sessionCurrency as typeof currency)
+      return
+    }
+
+    // Unrecognized/missing currency on the session — fall back to the language
+    // default, which the conversion PATCH below then makes real.
     setCurrency(lang === 'he' ? 'ILS' : 'USD')
+  // Intentionally keyed on the session identity alone. Adding `lang` here would
+  // re-run this on a language switch and overwrite the customer's currency with
+  // the session's — switching language already updates the currency in
+  // lib/language-context.tsx's setLang.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, lang])
+  }, [session?.id])
 
   // Keep the session's stored language in sync with whatever language the
   // customer is actually checking out in, so the post-payment receipt and
