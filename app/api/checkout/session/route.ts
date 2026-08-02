@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { randomInt } from 'crypto'
 import { separateGiftCardItems } from '@/lib/gift-card-utils'
-import { getShippingSettings } from '@/lib/shipping-settings'
+import { getShippingSettings, computeShippingFee } from '@/lib/shipping-settings'
 import { getTaxRules, getTaxRateForCountry } from '@/lib/tax-rules'
-import { getExchangeRate, convertCart, toPayableCurrency } from '@/lib/currency'
+import { getExchangeRate, convertCart, toPayableCurrency, isPayableCurrency, type PayableCurrency } from '@/lib/currency'
 
 function sanitizeShopDomain(shop: string): string {
   return shop.replace(/^https?:\/\//, '').replace(/\/$/, '')
@@ -280,61 +280,86 @@ export async function POST(request: NextRequest) {
     // Fetch main product images from Shopify Admin API and enrich each item
     finalCart.items = await enrichItemsWithProductImages(finalCart.items || [])
 
-    // Determine target currency from the locale passed by the Shopify storefront script.
-    // Locale examples: 'en', 'en-US', 'he', 'he-IL'. Default to ILS.
+    // ── Language and currency are two independent axes ───────────────────────
+    // Language comes from the storefront locale ('en', 'en-US', 'he', 'he-IL')
+    // and decides the SHIPPING POLICY: Hebrew is the domestic market, English is
+    // international. Currency is whatever the storefront was displaying when the
+    // customer clicked through — BUCKS's selection, reported by
+    // public/shopify-checkout-button.liquid.
+    //
+    // These used to be collapsed into one ("English ⇒ USD"), which meant an
+    // English customer shopping in ILS got a session created in USD and then
+    // converted straight back to ILS by the client. That ILS→USD→ILS round trip
+    // rounds to cents twice — once per item and once on the subtotal — so the
+    // checkout showed totals that no longer matched the storefront. Creating the
+    // session directly in the requested currency removes the round trip: when
+    // the target is already ILS the rate is exactly 1 and nothing is touched.
     const localeParam: string = body.locale || body.language || ''
     const localeLang = localeParam.split('-')[0].toLowerCase()
-    const targetCurrency = localeLang === 'en' ? 'USD' : 'ILS'
+    const language: 'en' | 'he' = localeLang === 'en' ? 'en' : 'he'
 
-    // ── Shipping logic (always computed in ILS before any conversion) ─────────
+    const requestedCurrency = String(body.currency || '').toUpperCase()
+    const targetCurrency: PayableCurrency = isPayableCurrency(requestedCurrency)
+      ? (requestedCurrency as PayableCurrency)
+      : language === 'en'
+        ? 'USD'
+        : 'ILS'
+    console.log(`[CURRENCY] language=${language} requested=${requestedCurrency || '(none)'} → target=${targetCurrency}`)
+
+    const round2 = (n: number) => Math.round((n || 0) * 100) / 100
+
+    // ── Shipping logic ───────────────────────────────────────────────────────
     // Gift card-only orders are digital → always free shipping.
-    // Hebrew (ILS): free shipping at threshold+, otherwise flat fee.
-    // English (USD): shipping = configured % of cart subtotal.
+    // Hebrew (domestic): free above the threshold, otherwise a flat fee — both
+    //   configured in ILS.
+    // English (international): a flat fee, configured in USD.
     // Values are editable in Admin → Shipping.
     const shippingCfg = await getShippingSettings()
     const { regularItems: regularCartItems } = separateGiftCardItems(finalCart.items || [])
     const isGiftCardOnlyCart = regularCartItems.length === 0 && (finalCart.items || []).length > 0
-    const subtotalForShipping = finalCart.subtotal || 0
-    // Use the displayed price (pre-Shopify-discount) for the free-shipping threshold.
-    // Shopify's total_price is already post-discount, so we add back any discount so the
+
+    // finalCart is still denominated in ILS here. The free-shipping threshold is
+    // configured in ILS, so the comparison has to happen before conversion.
+    // Use the displayed price (pre-Shopify-discount) for the threshold: Shopify's
+    // total_price is already post-discount, so we add any discount back so the
     // threshold reflects what the customer sees in their cart.
-    const displayedSubtotal = subtotalForShipping + (finalCart.shopify_discount?.amount || 0)
+    const displayedSubtotalILS = (finalCart.subtotal || 0) + (finalCart.shopify_discount?.amount || 0)
 
-    if (targetCurrency === 'USD') {
-      // Shipping and tax set after USD conversion below so amounts stay exact in USD.
-      finalCart.shipping = 0
-      finalCart.tax = 0
-    } else {
-      if (isGiftCardOnlyCart || displayedSubtotal >= shippingCfg.free_shipping_threshold_ils) {
-        finalCart.shipping = 0
-      } else {
-        finalCart.shipping = shippingCfg.domestic_shipping_fee_ils
-      }
-      finalCart.tax = 0
-    }
-
-    finalCart.total = Math.round((subtotalForShipping + finalCart.shipping + finalCart.tax) * 100) / 100
-
-    // ── Convert to target currency (ILS → USD for English locale) ────────────
-    if (targetCurrency === 'USD') {
-      const usdRate = await getExchangeRate('ILS', 'USD')
-      console.log(`[CURRENCY] Converting ILS → USD for English locale (rate: ${usdRate})`)
+    // ── Convert the cart body ILS → target currency, exactly once ─────────────
+    const rateToTarget = await getExchangeRate('ILS', targetCurrency)
+    if (rateToTarget !== 1) {
+      console.log(`[CURRENCY] Converting ILS → ${targetCurrency} (rate: ${rateToTarget})`)
       finalCart.items = (finalCart.items || []).map((item: any) => ({
         ...item,
-        price: Math.round(item.price * usdRate * 100) / 100,
+        price: round2(item.price * rateToTarget),
       }))
-      finalCart.subtotal = Math.round(finalCart.subtotal * usdRate * 100) / 100
+      finalCart.subtotal = round2(finalCart.subtotal * rateToTarget)
       if (finalCart.shopify_discount?.amount) {
-        finalCart.shopify_discount.amount = Math.round(finalCart.shopify_discount.amount * usdRate * 100) / 100
+        finalCart.shopify_discount.amount = round2(finalCart.shopify_discount.amount * rateToTarget)
       }
-      // Apply exact flat USD shipping fee — bypasses ILS→USD conversion to stay precise.
-      // Tax (on the shipping fee) is applied later via PATCH when the customer selects their country.
-      finalCart.shipping = isGiftCardOnlyCart ? 0 : shippingCfg.en_shipping_fee_usd
-      finalCart.tax = 0
-      finalCart.total = Math.round((finalCart.subtotal + finalCart.shipping + finalCart.tax) * 100) / 100
     }
-    finalCart.currency = targetCurrency;
-    finalCart.language = localeLang === 'en' ? 'en' : 'he';
+
+    // Shipping is derived in the target currency rather than converted along
+    // with the cart, so each configured tariff stays exact in its own currency.
+    // No country yet at this point — the customer hasn't reached the address
+    // step — so the language stands in as the provisional market, and the
+    // apply-tax PATCH recomputes this once the real country is known.
+    finalCart.shipping = computeShippingFee({
+      cfg: shippingCfg,
+      country: null,
+      language,
+      displayedSubtotal: displayedSubtotalILS * rateToTarget,
+      isGiftCardOnlyCart,
+      ilsToCart: rateToTarget,
+      usdToCart: await getExchangeRate('USD', targetCurrency),
+    })
+
+    // Tax (on the shipping fee) is applied later via PATCH when the customer
+    // selects their country.
+    finalCart.tax = 0
+    finalCart.total = round2(finalCart.subtotal + finalCart.shipping + finalCart.tax)
+    finalCart.currency = targetCurrency
+    finalCart.language = language
 
     console.log(`[SESSION] Final cart shopify_discount before INSERT:`, JSON.stringify(finalCart.shopify_discount ?? null))
     console.log(`[SESSION] Final cart total: ${finalCart.total} | subtotal: ${finalCart.subtotal}`)
@@ -532,27 +557,28 @@ export async function PATCH(request: NextRequest) {
       const { regularItems } = separateGiftCardItems(remainingItems)
       const isGiftCardOnlyCart = regularItems.length === 0 && remainingItems.length > 0
 
-      let shipping = 0
-      if (isGiftCardOnlyCart) {
-        shipping = 0
-      } else if (cartCurrencyUpper === 'ILS') {
-        shipping = subtotal >= shippingCfg.free_shipping_threshold_ils ? 0 : shippingCfg.domestic_shipping_fee_ils
-      } else if (cartCurrencyUpper === 'USD') {
-        shipping = shippingCfg.en_shipping_fee_usd
-      } else {
-        // EUR/GBP/CAD/CHF — the free-shipping threshold and domestic fee are
-        // configured in ILS, so convert them into the cart's currency first
-        // (otherwise e.g. a 499 ILS threshold would wrongly read as 499 EUR).
-        const ilsToCartRate = await getExchangeRate('ILS', cartCurrencyUpper)
-        const thresholdInCartCurrency = shippingCfg.free_shipping_threshold_ils * ilsToCartRate
-        const feeInCartCurrency = Math.round(shippingCfg.domestic_shipping_fee_ils * ilsToCartRate * 100) / 100
-        shipping = subtotal >= thresholdInCartCurrency ? 0 : feeInCartCurrency
-      }
+      // Same policy as session creation and apply-tax: destination country first,
+      // language as the fallback when the customer hasn't submitted an address
+      // yet. Keying this on the cart CURRENCY (as it previously did) meant an
+      // English cart denominated in ILS lost its international fee the moment a
+      // line item was removed, dropping to the Israeli domestic rules.
+      const [ilsToCart, usdToCart] = await Promise.all([
+        getExchangeRate('ILS', cartCurrencyUpper),
+        getExchangeRate('USD', cartCurrencyUpper),
+      ])
+      const shipping = computeShippingFee({
+        cfg: shippingCfg,
+        country: (cart.shipping_country as string) || null,
+        language: cart.language === 'en' ? 'en' : 'he',
+        displayedSubtotal: subtotal + (cart.shopify_discount?.amount || 0),
+        isGiftCardOnlyCart,
+        ilsToCart,
+        usdToCart,
+      })
 
       // Tax was applied earlier (apply-tax PATCH) as taxableSubtotal * countryRate.
-      // The customer's country isn't persisted onto the session until charge time,
-      // so instead of re-deriving the rate, scale the existing tax amount by how
-      // much the taxable subtotal shrank — equivalent result, no extra dependency.
+      // Rather than re-deriving the rate, scale the existing tax amount by how
+      // much the taxable subtotal shrank — equivalent result, no extra lookup.
       // Only relevant once the cart has left ILS (tax is always 0 for ILS carts).
       let tax = 0
       if (cartCurrencyUpper !== 'ILS' && Number(cart.tax) > 0) {
@@ -613,13 +639,37 @@ export async function PATCH(request: NextRequest) {
       const { regularItems } = separateGiftCardItems(cart.items || [])
       const taxableSubtotal = regularItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0)
       const taxAmount = Math.round(taxableSubtotal * (taxRate / 100) * 100) / 100
+
+      // This is the first moment the real shipping destination is known, so the
+      // provisional fee picked at session creation (from the checkout language)
+      // is replaced with one based on the actual country. The country is stored
+      // on the cart so later mutations — removing a line item — keep applying the
+      // same policy instead of falling back to the language or the currency.
+      const cartCurrency = ((cart.currency as string) || 'ILS').toUpperCase()
+      const shippingCfg = await getShippingSettings()
+      const [ilsToCart, usdToCart] = await Promise.all([
+        getExchangeRate('ILS', cartCurrency),
+        getExchangeRate('USD', cartCurrency),
+      ])
+      const shipping = computeShippingFee({
+        cfg: shippingCfg,
+        country,
+        language: cart.language === 'en' ? 'en' : 'he',
+        displayedSubtotal: (cart.subtotal || 0) + (cart.shopify_discount?.amount || 0),
+        isGiftCardOnlyCart: regularItems.length === 0 && (cart.items || []).length > 0,
+        ilsToCart,
+        usdToCart,
+      })
+
       const updatedCart = {
         ...cart,
+        shipping_country: country,
+        shipping,
         tax: taxAmount,
-        total: Math.round(((cart.subtotal || 0) + (cart.shipping || 0) + taxAmount) * 100) / 100,
+        total: Math.round(((cart.subtotal || 0) + shipping + taxAmount) * 100) / 100,
       }
 
-      console.log(`[SESSION PATCH] apply-tax: country=${country} rate=${taxRate}% taxableSubtotal=${taxableSubtotal} tax=${taxAmount}`)
+      console.log(`[SESSION PATCH] apply-tax: country=${country} rate=${taxRate}% taxableSubtotal=${taxableSubtotal} tax=${taxAmount} shipping=${shipping} ${cartCurrency}`)
 
       const { data: updated, error: updateError } = await supabase
         .from('payment_sessions')

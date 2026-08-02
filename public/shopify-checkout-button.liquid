@@ -329,6 +329,12 @@
       var idempotencyKey = Math.random().toString(36).substring(2) + Date.now().toString(36);
       var shop = (window.Shopify && window.Shopify.shop) || window.location.hostname;
       var lang = document.documentElement.lang || 'he';
+      // Resolved once and sent BOTH in the session payload and on the redirect
+      // URL. The payload is what matters: it lets the session be created
+      // directly in this currency, instead of being created in the language's
+      // default and converted back client-side — a round trip that rounded every
+      // amount twice and left the checkout disagreeing with the storefront.
+      var currency = detectCurrency();
 
       requestJson('/cart.js', { cache: 'no-store', credentials: 'same-origin' }, CART_TIMEOUT_MS, MAX_ATTEMPTS)
         .then(function (cart) {
@@ -352,7 +358,8 @@
                 cart: cart,
                 customer: detectCustomer(),
                 shopify_discount: shopifyDiscount,
-                locale: lang
+                locale: lang,
+                currency: currency
               })
             },
             SESSION_TIMEOUT_MS,
@@ -364,7 +371,6 @@
 
           // Redirect — path is /checkout/[sessionId] (NOT /pay/)
           var redirectUrl = FRONTEND_URL + '/checkout/' + data.sessionId + '?language=' + encodeURIComponent(lang);
-          var currency = detectCurrency();
           if (currency) redirectUrl += '&currency=' + encodeURIComponent(currency);
 
           // Leave the button busy through the navigation so it can't be pressed
