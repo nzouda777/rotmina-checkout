@@ -4,10 +4,10 @@ import { validateCoupon } from '@/lib/coupons'
 const ALLOWED_ORIGINS = [
   'https://rotmina-israel.myshopify.com',
   'https://step-devserver.com',
-  'https://rotmina.co.il',
-  'https://www.rotmina.co.il',
-  'https://rotmina.co',
-  'https://www.rotmina.co',
+  'https://rotmina.com.il',
+  'https://www.rotmina.com.il',
+  'https://rotmina.com',
+  'https://www.rotmina.com',
 ]
 
 function getCorsHeaders(request: Request | NextRequest) {

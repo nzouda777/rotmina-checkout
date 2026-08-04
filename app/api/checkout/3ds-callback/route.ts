@@ -251,7 +251,7 @@ async function handleCallback(request: NextRequest) {
 }
 
 function redirectToSuccess(sessionId: string, confirmationCode: string) {
-  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co'
+  const storeUrl = process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.com'
   const targetUrl = `${storeUrl}/pages/success?session=${sessionId}&confirmation=${confirmationCode}`
   return breakoutRedirect(targetUrl, sessionId)
 }

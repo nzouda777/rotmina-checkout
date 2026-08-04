@@ -1,11 +1,11 @@
 // Links back to the public storefront must keep the checkout language:
 // English visitors go to the /en/… version of the site, Hebrew visitors to
 // the root. Example: storeUrl('en', '/collections/shop')
-// → https://rotmina.co/en/collections/shop
+// → https://rotmina.com/en/collections/shop
 
 import { withCurrencyParam } from './currency'
 
-const STORE_BASE = (process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.co').replace(/\/$/, '')
+const STORE_BASE = (process.env.NEXT_PUBLIC_STORE_URL || 'https://rotmina.com').replace(/\/$/, '')
 
 export function storeUrl(lang: string, path: string = '', currency?: string): string {
   const prefix = lang === 'he' ? '' : '/en'
