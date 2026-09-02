@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
@@ -463,7 +463,8 @@ export async function POST(request: NextRequest) {
         )
 
         // Morning receipt (non-blocking)
-        sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
+        // `after` keeps the serverless instance alive past the response — see callback route.
+        after(() => sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
           customerEmail: customerForOrder.email,
           customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
           amount: Number(sessionForOrder.cart?.total || 0),
@@ -475,7 +476,7 @@ export async function POST(request: NextRequest) {
             price: Number(item.price),
           })),
           lang: receiptLang,
-        })
+        }))
       } catch (err: any) {
         console.error(`[CHARGE][${logId}] ❌ Shopify order creation failed:`, err?.message || err)
       }

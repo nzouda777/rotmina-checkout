@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { generateGiftCardsForOrder } from '@/lib/gift-cards'
@@ -203,7 +203,10 @@ export async function POST(request: NextRequest) {
           )
 
           // Send Morning Receipt (non-blocking)
-          sendMorningReceiptLogged(`[CALLBACK][${logId}]`, {
+          // `after` keeps the serverless instance alive past the response. A bare
+          // fire-and-forget call is killed on Vercel before Morning's two round
+          // trips (token, then document) complete — it only appears to work locally.
+          after(() => sendMorningReceiptLogged(`[CALLBACK][${logId}]`, {
             customerEmail: customer.email,
             customerName: `${customer.firstName} ${customer.lastName}`,
             amount: Number(session.cart?.total || 0),
@@ -215,7 +218,7 @@ export async function POST(request: NextRequest) {
               price: Number(item.price),
             })),
             lang: receiptLang,
-          })
+          }))
 
           // Generate gift card codes for gift card products in the cart
           try {

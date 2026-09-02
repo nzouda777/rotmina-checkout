@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
@@ -301,7 +301,8 @@ async function processSuccess(
         )
 
         // 4. Send Morning Receipt (non-blocking)
-        sendMorningReceiptLogged(`[BIT-CALLBACK][${logId}]`, {
+        // `after` keeps the serverless instance alive past the response — see callback route.
+        after(() => sendMorningReceiptLogged(`[BIT-CALLBACK][${logId}]`, {
           customerEmail: customer.email,
           customerName: `${customer.firstName} ${customer.lastName}`,
           amount: Number(session.cart?.total || 0),
@@ -313,7 +314,7 @@ async function processSuccess(
             price: Number(item.price),
           })),
           lang: receiptLang,
-        })
+        }))
 
         // 5. Generate gift card codes for gift card products in the cart
         try {
