@@ -5,7 +5,7 @@ import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder, validateGiftCard } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
-import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { isPayableCurrency, tranzilaCurrencyCode, tranzilaChargeCurrency, getExchangeRate, withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -162,7 +162,7 @@ async function createOrderAndNotify(params: {
   // Send Morning Receipt (non-blocking)
   try {
     console.log(`[CHARGE][${logId}] Sending Morning receipt...`)
-    await sendMorningReceipt({
+    await sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
       customerEmail: customerInfo.email,
       customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
       amount: Number(session.cart.total),
@@ -463,7 +463,7 @@ export async function POST(request: NextRequest) {
         )
 
         // Morning receipt (non-blocking)
-        sendMorningReceipt({
+        sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
           customerEmail: customerForOrder.email,
           customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
           amount: Number(sessionForOrder.cart?.total || 0),
@@ -475,9 +475,7 @@ export async function POST(request: NextRequest) {
             price: Number(item.price),
           })),
           lang: receiptLang,
-        }).catch((morningErr: any) =>
-          console.error(`[CHARGE][${logId}] Morning receipt failed (non-fatal):`, morningErr)
-        )
+        })
       } catch (err: any) {
         console.error(`[CHARGE][${logId}] ❌ Shopify order creation failed:`, err?.message || err)
       }

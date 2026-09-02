@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
-import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -188,7 +188,7 @@ async function handleCallback(request: NextRequest) {
         const customerInfo = session.customer as CustomerInfo
         if (customerInfo) {
           console.log(`[3DS-CALLBACK][${actualSessionId}] Sending Morning receipt...`)
-          await sendMorningReceipt({
+          await sendMorningReceiptLogged(`[3DS-CALLBACK][${actualSessionId}]`, {
             customerEmail: customerInfo.email,
             customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
             amount: Number(session.cart.total),

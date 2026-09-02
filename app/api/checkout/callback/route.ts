@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
-import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
           )
 
           // Send Morning Receipt (non-blocking)
-          sendMorningReceipt({
+          sendMorningReceiptLogged(`[CALLBACK][${logId}]`, {
             customerEmail: customer.email,
             customerName: `${customer.firstName} ${customer.lastName}`,
             amount: Number(session.cart?.total || 0),
@@ -215,9 +215,7 @@ export async function POST(request: NextRequest) {
               price: Number(item.price),
             })),
             lang: receiptLang,
-          }).catch((morningErr: any) =>
-            console.error(`[CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
-          )
+          })
 
           // Generate gift card codes for gift card products in the cart
           try {

@@ -5,7 +5,7 @@ import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
-import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
           try {
             const customerInfo = session.customer as CustomerInfo
             console.log(`[3DS-COMPLETE][${sessionId}] Sending Morning receipt...`)
-            await sendMorningReceipt({
+            await sendMorningReceiptLogged(`[3DS-COMPLETE][${sessionId}]`, {
               customerEmail: customerInfo.email,
               customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
               amount: Number(session.cart.total),

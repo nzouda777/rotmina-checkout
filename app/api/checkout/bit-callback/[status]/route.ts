@@ -4,7 +4,7 @@ import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
-import { sendMorningReceipt, detectPaymentMethod } from '@/lib/morning'
+import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -301,7 +301,7 @@ async function processSuccess(
         )
 
         // 4. Send Morning Receipt (non-blocking)
-        sendMorningReceipt({
+        sendMorningReceiptLogged(`[BIT-CALLBACK][${logId}]`, {
           customerEmail: customer.email,
           customerName: `${customer.firstName} ${customer.lastName}`,
           amount: Number(session.cart?.total || 0),
@@ -313,9 +313,7 @@ async function processSuccess(
             price: Number(item.price),
           })),
           lang: receiptLang,
-        }).catch((morningErr: any) =>
-          console.error(`[BIT-CALLBACK][${logId}] Morning receipt failed (non-fatal):`, morningErr)
-        )
+        })
 
         // 5. Generate gift card codes for gift card products in the cart
         try {

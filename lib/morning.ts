@@ -314,6 +314,39 @@ export async function sendMorningReceipt(
   }
 }
 
+/**
+ * Logging wrapper around `sendMorningReceipt`.
+ *
+ * `sendMorningReceipt` reports failure by *resolving* with `{ success: false }`
+ * rather than throwing — so a bare `.catch()` on the call never runs and the
+ * failure leaves no trace in the route logs. Always go through this helper so
+ * every outcome is logged against the calling route.
+ *
+ * Never rejects: a receipt problem must not take down a paid checkout.
+ *
+ * @param tag - Route log prefix, e.g. `[CALLBACK][${logId}]`
+ */
+export function sendMorningReceiptLogged(
+  tag: string,
+  params: MorningReceiptParams
+): Promise<MorningReceiptResult> {
+  return sendMorningReceipt(params)
+    .then(result => {
+      if (result.success) {
+        console.log(`${tag} Morning receipt created — docId: ${result.documentId}`)
+      } else {
+        console.error(`${tag} Morning receipt failed (non-fatal): ${result.error}`)
+      }
+      return result
+    })
+    .catch((morningErr: any) => {
+      // Only reachable if sendMorningReceipt itself throws outside its own try/catch.
+      const error = morningErr?.message || String(morningErr)
+      console.error(`${tag} Morning receipt threw (non-fatal): ${error}`)
+      return { success: false, error }
+    })
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
