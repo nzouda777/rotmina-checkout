@@ -6,6 +6,7 @@ import { debitGiftCard, generateGiftCardsForOrder, validateGiftCard } from '@/li
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { isPayableCurrency, tranzilaCurrencyCode, tranzilaChargeCurrency, getExchangeRate, withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -162,17 +163,15 @@ async function createOrderAndNotify(params: {
   // Send Morning Receipt (non-blocking)
   try {
     console.log(`[CHARGE][${logId}] Sending Morning receipt...`)
+    const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
     await sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
       customerEmail: customerInfo.email,
       customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
       amount: Number(session.cart.total),
       currency: session.cart.currency,
       paymentMethod: detectPaymentMethod(session.raw_response),
-      items: session.cart.items.map((item: any) => ({
-        description: item.title,
-        quantity: item.quantity,
-        price: Number(item.price),
-      })),
+      items: await buildLocalizedReceiptItems(session.cart.items, receiptLang),
+      lang: receiptLang,
     })
   } catch (morningErr) {
     console.error(`[CHARGE][${logId}] Failed to send Morning receipt:`, morningErr)
@@ -464,17 +463,13 @@ export async function POST(request: NextRequest) {
 
         // Morning receipt (non-blocking)
         // `after` keeps the serverless instance alive past the response — see callback route.
-        after(() => sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
+        after(async () => sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
           customerEmail: customerForOrder.email,
           customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
           amount: Number(sessionForOrder.cart?.total || 0),
           currency: sessionForOrder.cart?.currency,
           paymentMethod: isTestCard ? 'test_card' : 'gift_card',
-          items: (sessionForOrder.cart?.items || []).map((item: any) => ({
-            description: item.title,
-            quantity: item.quantity,
-            price: Number(item.price),
-          })),
+          items: await buildLocalizedReceiptItems(sessionForOrder.cart?.items || [], receiptLang),
           lang: receiptLang,
         }))
       } catch (err: any) {

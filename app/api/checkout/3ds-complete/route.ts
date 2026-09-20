@@ -6,6 +6,7 @@ import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
 import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -223,18 +224,15 @@ export async function POST(request: NextRequest) {
           try {
             const customerInfo = session.customer as CustomerInfo
             console.log(`[3DS-COMPLETE][${sessionId}] Sending Morning receipt...`)
+            const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
             await sendMorningReceiptLogged(`[3DS-COMPLETE][${sessionId}]`, {
               customerEmail: customerInfo.email,
               customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
               amount: Number(session.cart.total),
               currency: session.cart.currency,
               paymentMethod: detectPaymentMethod(session.raw_response),
-              items: session.cart.items.map((item: any) => ({
-                description: item.title,
-                quantity: item.quantity,
-                price: Number(item.price),
-              })),
-              lang: session.cart?.language === 'en' ? 'en' : 'he',
+              items: await buildLocalizedReceiptItems(session.cart.items, receiptLang),
+              lang: receiptLang,
             })
           } catch (morningErr) {
             console.error(`[3DS-COMPLETE][${sessionId}] Failed to send Morning receipt:`, morningErr)

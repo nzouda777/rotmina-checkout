@@ -4,6 +4,7 @@ import { createShopifyOrder } from '@/lib/shopify'
 import { generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
 
@@ -206,17 +207,13 @@ export async function POST(request: NextRequest) {
           // `after` keeps the serverless instance alive past the response. A bare
           // fire-and-forget call is killed on Vercel before Morning's two round
           // trips (token, then document) complete — it only appears to work locally.
-          after(() => sendMorningReceiptLogged(`[CALLBACK][${logId}]`, {
+          after(async () => sendMorningReceiptLogged(`[CALLBACK][${logId}]`, {
             customerEmail: customer.email,
             customerName: `${customer.firstName} ${customer.lastName}`,
             amount: Number(session.cart?.total || 0),
             currency: session.cart?.currency,
             paymentMethod: detectPaymentMethod(session.raw_response),
-            items: (session.cart?.items || []).map((item: any) => ({
-              description: item.title,
-              quantity: item.quantity,
-              price: Number(item.price),
-            })),
+            items: await buildLocalizedReceiptItems(session.cart?.items || [], receiptLang),
             lang: receiptLang,
           }))
 

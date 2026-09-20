@@ -5,6 +5,7 @@ import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { debitCoupon } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
 import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
@@ -302,17 +303,13 @@ async function processSuccess(
 
         // 4. Send Morning Receipt (non-blocking)
         // `after` keeps the serverless instance alive past the response — see callback route.
-        after(() => sendMorningReceiptLogged(`[BIT-CALLBACK][${logId}]`, {
+        after(async () => sendMorningReceiptLogged(`[BIT-CALLBACK][${logId}]`, {
           customerEmail: customer.email,
           customerName: `${customer.firstName} ${customer.lastName}`,
           amount: Number(session.cart?.total || 0),
           currency: session.cart?.currency,
           paymentMethod: detectPaymentMethod(session.raw_response),
-          items: (session.cart?.items || []).map((item: any) => ({
-            description: item.title,
-            quantity: item.quantity,
-            price: Number(item.price),
-          })),
+          items: await buildLocalizedReceiptItems(session.cart?.items || [], receiptLang),
           lang: receiptLang,
         }))
 
