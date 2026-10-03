@@ -7,10 +7,15 @@ import { createClient } from '@/lib/supabase/server'
  * 
  * Only resets if the session is in a "waiting" state (processing, pending_3ds, pending_bit).
  * Does NOT reset already paid or permanently failed sessions.
+ *
+ * The reason for the failed attempt is kept in raw_response._last_failure so the
+ * admin panel can still explain it after the session goes back to 'pending'.
+ * The checkout may send { failure: { code, message, method } } for declines the
+ * gateway only reported to the browser (SDK result, 3DS modal closed).
  */
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId } = await request.json()
+    const { sessionId, failure } = await request.json()
 
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
@@ -23,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const { data: session, error: fetchError } = await supabase
       .from('payment_sessions')
-      .select('id, status')
+      .select('id, status, error_message, raw_response')
       .eq('id', sessionId)
       .single()
 
@@ -39,11 +44,30 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Server-recorded reason wins over what the browser reports.
+    const clip = (v: unknown, max: number) =>
+      typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined
+    const serverMessage = clip(session.error_message, 300)
+    const clientMessage = clip(failure?.message, 300)
+    const lastFailure = serverMessage || clientMessage
+      ? {
+          message: serverMessage || clientMessage,
+          code: clip(failure?.code, 10),
+          method: failure?.method === 'bit' ? 'bit' : failure?.method === 'card' ? 'card' : undefined,
+          source: serverMessage ? 'gateway' : 'checkout',
+          previous_status: session.status,
+          at: new Date().toISOString(),
+        }
+      : undefined
+
     const { error: updateError } = await supabase
       .from('payment_sessions')
-      .update({ 
+      .update({
         status: 'pending',
         error_message: null,
+        ...(lastFailure
+          ? { raw_response: { ...((session.raw_response as Record<string, unknown>) || {}), _last_failure: lastFailure } }
+          : {}),
       })
       .eq('id', sessionId)
 

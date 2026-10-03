@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { explainTransaction } from '@/lib/transaction-insight'
 
 function checkAuth(req: NextRequest) {
   const key = req.headers.get('x-admin-key')
@@ -23,11 +24,17 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('payment_sessions')
-    .select('id, shop, status, amount, currency, customer, cart, order_id, tranzila_transaction_id, error_message, created_at, updated_at', { count: 'exact' })
+    .select('id, shop, status, amount, currency, customer, cart, order_id, tranzila_transaction_id, error_message, raw_response, created_at, updated_at', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range((page - 1) * limit, page * limit - 1)
 
-  if (status !== 'all') query = query.eq('status', status)
+  if (status === 'failed') {
+    // Declined attempts are reset to 'pending' so the customer can retry —
+    // include those that were never retried successfully.
+    query = query.or('status.eq.failed,and(status.eq.pending,raw_response->_last_failure.not.is.null)')
+  } else if (status !== 'all') {
+    query = query.eq('status', status)
+  }
   if (from) query = query.gte('created_at', from)
   if (to) query = query.lte('created_at', to)
 
@@ -49,5 +56,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 })
   }
 
-  return NextResponse.json({ sessions, total: count, page, limit })
+  // Ship the interpreted outcome instead of the (large) raw gateway response
+  const rows = (sessions || []).map(({ raw_response, ...row }) => ({
+    ...row,
+    insight: explainTransaction({ ...row, raw_response }),
+  }))
+
+  return NextResponse.json({ sessions: rows, total: count, page, limit })
 }

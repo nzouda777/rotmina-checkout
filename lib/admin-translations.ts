@@ -137,6 +137,22 @@ export const adminTranslations = {
     applied:            { en: 'Applied',                            he: 'הוחל' },
     remaining:          { en: 'Remaining',                          he: 'יתרה' },
     rawResponse:        { en: 'Raw payment response',               he: 'תגובת תשלום גולמית' },
+    sectionTransaction: { en: 'Transaction',                        he: 'עסקה' },
+    whatHappened:       { en: 'What happened',                      he: 'מה קרה' },
+    whatToDo:           { en: 'What to do',                         he: 'מה לעשות' },
+    declineCode:        { en: 'Code {code}',                        he: 'קוד {code}' },
+    sourceGateway:      { en: 'Reported by Tranzila',               he: 'דווח על ידי טרנזילה' },
+    sourceCheckout:     { en: 'Reported by the checkout (customer browser)', he: 'דווח על ידי הצ\'קאאוט (דפדפן הלקוח)' },
+    method:             { en: 'Method',                             he: 'אמצעי תשלום' },
+    lastUpdate:         { en: 'Last update',                        he: 'עדכון אחרון' },
+    colResult:          { en: 'Result',                             he: 'תוצאה' },
+  },
+
+  paymentMethod: {
+    card:      { en: 'Credit card', he: 'כרטיס אשראי' },
+    bit:       { en: 'Bit',         he: 'Bit' },
+    gift_card: { en: 'Gift card',   he: 'כרטיס מתנה' },
+    test_card: { en: 'Test card',   he: 'כרטיס בדיקה' },
   },
 
   customers: {

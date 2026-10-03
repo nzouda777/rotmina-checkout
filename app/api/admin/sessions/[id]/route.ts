@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { explainTransaction } from '@/lib/transaction-insight'
 
 function checkAuth(req: NextRequest) {
   const key = req.headers.get('x-admin-key')
@@ -39,5 +40,5 @@ export async function GET(
     giftCard = gc
   }
 
-  return NextResponse.json({ session, giftCard })
+  return NextResponse.json({ session, giftCard, insight: explainTransaction(session) })
 }

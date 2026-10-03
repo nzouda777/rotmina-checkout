@@ -5,9 +5,11 @@ import {
   Search, ChevronLeft, ChevronRight, Loader2, X,
   Package, CreditCard, User, MapPin, ExternalLink,
   RefreshCw, ChevronDown, ChevronUp, Copy, CheckCircle2, Gift,
+  XCircle, AlertTriangle, Clock, Info,
 } from 'lucide-react'
 import { useAdmin } from '@/lib/admin-context'
 import { useAdminLanguage } from '@/lib/admin-language-context'
+import type { TransactionInsight, InsightOutcome } from '@/lib/transaction-insight'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,6 +32,7 @@ interface SessionRow {
     items?: { title: string; quantity: number; price: number; variant?: string; image?: string }[]
     subtotal?: number; shipping?: number; tax?: number; total?: number; currency?: string
   }
+  insight?: TransactionInsight
 }
 
 interface SessionDetail extends SessionRow {
@@ -48,6 +51,14 @@ const STATUS_STYLE: Record<string, { cls: string; dot: string }> = {
   expired:     { cls: 'text-gray-500 bg-gray-50 border-gray-200',       dot: 'bg-gray-300' },
 }
 
+const OUTCOME_STYLE: Record<InsightOutcome, { box: string; text: string; icon: React.ReactNode }> = {
+  success:     { box: 'bg-green-50 border-green-200',  text: 'text-green-700', icon: <CheckCircle2 className="h-4 w-4 text-green-600" /> },
+  failed:      { box: 'bg-red-50 border-red-200',      text: 'text-red-700',   icon: <XCircle className="h-4 w-4 text-red-600" /> },
+  attention:   { box: 'bg-amber-50 border-amber-200',  text: 'text-amber-700', icon: <AlertTriangle className="h-4 w-4 text-amber-600" /> },
+  abandoned:   { box: 'bg-gray-50 border-gray-200',    text: 'text-gray-500',  icon: <Clock className="h-4 w-4 text-gray-400" /> },
+  in_progress: { box: 'bg-blue-50 border-blue-200',    text: 'text-blue-700',  icon: <Loader2 className="h-4 w-4 text-blue-500 animate-spin" /> },
+}
+
 const ALL_STATUSES = ['paid', 'failed', 'pending', 'processing', 'pending_3ds', 'pending_bit', 'expired']
 
 const LIMIT = 25
@@ -56,7 +67,7 @@ const LIMIT = 25
 
 export default function OrdersPage() {
   const { apiFetch } = useAdmin()
-  const { t } = useAdminLanguage()
+  const { t, lang } = useAdminLanguage()
 
   // List state
   const [sessions, setSessions] = useState<SessionRow[]>([])
@@ -80,7 +91,7 @@ export default function OrdersPage() {
 
   // Detail drawer
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<{ session: SessionDetail; giftCard: unknown } | null>(null)
+  const [detail, setDetail] = useState<{ session: SessionDetail; giftCard: unknown; insight?: TransactionInsight } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -216,16 +227,17 @@ export default function OrdersPage() {
                   <Th>{t('orders.colCustomer')}</Th>
                   <Th>{t('orders.colAmount')}</Th>
                   <Th>{t('orders.colStatus')}</Th>
+                  <Th>{t('orders.colResult')}</Th>
                   <Th>{t('orders.colOrder')}</Th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading && sessions.length === 0 ? (
-                  <tr><td colSpan={5} className="py-16 text-center">
+                  <tr><td colSpan={6} className="py-16 text-center">
                     <Loader2 className="h-5 w-5 animate-spin text-gray-300 mx-auto" />
                   </td></tr>
                 ) : sessions.length === 0 ? (
-                  <tr><td colSpan={5} className="py-16 text-center text-gray-400 text-sm">
+                  <tr><td colSpan={6} className="py-16 text-center text-gray-400 text-sm">
                     {t('orders.noOrdersFound')}
                   </td></tr>
                 ) : (
@@ -259,6 +271,20 @@ export default function OrdersPage() {
                             <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
                             {t(`status.${s.status}`)}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 max-w-56">
+                          {s.insight && (
+                            <>
+                              <p className={`text-xs font-medium truncate ${OUTCOME_STYLE[s.insight.outcome].text}`}>
+                                {s.insight.headline[lang]}
+                              </p>
+                              <p className="text-xs text-gray-400 truncate">
+                                {t(`paymentMethod.${s.insight.method}`)}
+                                {s.insight.code && ` · ${t('orders.declineCode', { code: s.insight.code })}`}
+                                {!s.insight.code && s.insight.facts[0] && ` · ${s.insight.facts[0].value}`}
+                              </p>
+                            </>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-400 font-mono">
                           {s.order_id || '—'}
@@ -323,6 +349,7 @@ export default function OrdersPage() {
               fmt={fmt}
               fmtDate={fmtDate}
               t={t}
+              lang={lang}
             />
           )}
         </div>
@@ -334,9 +361,9 @@ export default function OrdersPage() {
 // ── Detail content ────────────────────────────────────────────────────────────
 
 function DetailContent({
-  detail, rawOpen, setRawOpen, copied, copyId, fmt, fmtDate, t,
+  detail, rawOpen, setRawOpen, copied, copyId, fmt, fmtDate, t, lang,
 }: {
-  detail: { session: SessionDetail; giftCard: unknown }
+  detail: { session: SessionDetail; giftCard: unknown; insight?: TransactionInsight }
   rawOpen: boolean
   setRawOpen: (v: boolean) => void
   copied: boolean
@@ -344,8 +371,9 @@ function DetailContent({
   fmt: (n: number, currency?: string) => string
   fmtDate: (iso: string) => string
   t: (key: string, params?: Record<string, string | number>) => string
+  lang: 'en' | 'he'
 }) {
-  const { session, giftCard } = detail
+  const { session, giftCard, insight } = detail
   const style = STATUS_STYLE[session.status] || STATUS_STYLE.pending
   const gc = giftCard as {
     code?: string; discount_type?: string; discount_value?: number
@@ -400,20 +428,29 @@ function DetailContent({
           </a>
         )}
 
-        {/* Transaction ID */}
-        {session.tranzila_transaction_id && (
-          <p className="text-xs text-gray-400">
-            {t('orders.tranzilaRef')} <span className="font-mono">{session.tranzila_transaction_id}</span>
-          </p>
-        )}
-
-        {/* Error */}
-        {session.error_message && (
+        {/* Outcome explanation */}
+        {insight ? (
+          <InsightCard insight={insight} lang={lang} t={t} />
+        ) : session.error_message && (
           <div className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-700">
             {session.error_message}
           </div>
         )}
       </div>
+
+      {/* Transaction facts */}
+      <Section icon={<CreditCard className="h-4 w-4" />} title={t('orders.sectionTransaction')}>
+        <dl className="space-y-1.5">
+          {insight && <Row label={t('orders.method')} value={t(`paymentMethod.${insight.method}`)} />}
+          {insight?.facts.map((f, i) => (
+            <Row key={i} label={f.label[lang]} value={f.value} mono={f.mono} />
+          ))}
+          {!insight && session.tranzila_transaction_id && (
+            <Row label={t('orders.tranzilaRef')} value={session.tranzila_transaction_id} mono />
+          )}
+          <Row label={t('orders.lastUpdate')} value={fmtDate(session.updated_at || session.created_at)} />
+        </dl>
+      </Section>
 
       {/* Customer */}
       {session.customer && (
@@ -530,6 +567,47 @@ function DetailContent({
               {JSON.stringify(session.raw_response, null, 2)}
             </pre>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Outcome card ──────────────────────────────────────────────────────────────
+
+function InsightCard({
+  insight, lang, t,
+}: {
+  insight: TransactionInsight
+  lang: 'en' | 'he'
+  t: (key: string, params?: Record<string, string | number>) => string
+}) {
+  const style = OUTCOME_STYLE[insight.outcome]
+  return (
+    <div className={`rounded-xl border px-4 py-3 space-y-2 ${style.box}`}>
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 flex-shrink-0">{style.icon}</span>
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold ${style.text}`}>{insight.headline[lang]}</p>
+          {(insight.code || insight.source) && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              {insight.code && <span className="font-mono">{t('orders.declineCode', { code: insight.code })}</span>}
+              {insight.code && insight.source && ' · '}
+              {insight.source && t(insight.source === 'gateway' ? 'orders.sourceGateway' : 'orders.sourceCheckout')}
+            </p>
+          )}
+        </div>
+      </div>
+      {insight.explanation && (
+        <div className="text-xs text-gray-700">
+          <span className="font-semibold">{t('orders.whatHappened')}: </span>
+          {insight.explanation[lang]}
+        </div>
+      )}
+      {insight.action && (
+        <div className="flex items-start gap-1.5 text-xs text-gray-700">
+          <Info className="h-3.5 w-3.5 mt-px flex-shrink-0 text-gray-400" />
+          <span><span className="font-semibold">{t('orders.whatToDo')}: </span>{insight.action[lang]}</span>
         </div>
       )}
     </div>

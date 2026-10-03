@@ -169,7 +169,7 @@ export function PaymentForm({
       fetch(`/api/checkout/session/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, failure: { message: 'user_cancelled_3ds', method: 'card' } }),
       }).catch((err) => console.error('[3DS] Failed to reset session:', err))
     }
     if (popupMonitorRef.current) { clearInterval(popupMonitorRef.current); popupMonitorRef.current = null }
@@ -694,6 +694,14 @@ export function PaymentForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const tzDeclineCode = (res: any): string | undefined => {
+    const c = res?.transaction_response?.processor_response_code
+      || res?.transaction_result?.processor_response_code
+      || res?.processor_response_code
+      || res?.Response
+    return c && c !== '000' ? String(c) : undefined
+  }
+
   const isTzSuccess = useCallback((res: any): boolean => {
     if (!res) return false
     if (res.success === true) return true
@@ -758,13 +766,18 @@ export function PaymentForm({
     }
   }, [])
 
-  const resetSession = useCallback(async (sid: string) => {
+  // `failure` is kept on the session so the admin panel can explain the decline
+  // even though the session goes back to 'pending' for a retry.
+  const resetSession = useCallback(async (
+    sid: string,
+    failure?: { message?: string; code?: string; method?: 'card' | 'bit' },
+  ) => {
     try {
       console.log(`[SESSION-RESET] Resetting session ${sid}...`)
       await fetch('/api/checkout/session/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sid })
+        body: JSON.stringify({ sessionId: sid, failure })
       })
     } catch (err) {
       console.error('[SESSION-RESET] Failed to reset session:', err)
@@ -1102,7 +1115,7 @@ export function PaymentForm({
                 setLoadingStep(null)
                 setPaymentError(errMsg)
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                resetSession(sessionId)
+                resetSession(sessionId, { message: errMsg, code: tzDeclineCode(tzResult), method: isBitPayment ? 'bit' : 'card' })
                 return
               }
 
@@ -1154,7 +1167,7 @@ export function PaymentForm({
                   setLoadingStep(null)
                   setPaymentError(recheckData.error_message || parseTranzilaError(tzResult, isBitPayment))
                   setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                  resetSession(sessionId)
+                  resetSession(sessionId, { message: recheckData.error_message || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: isBitPayment ? 'bit' : 'card' })
                   return
                 }
 
@@ -1185,7 +1198,7 @@ export function PaymentForm({
                         setLoadingStep(null)
                         setPaymentError(verifyData.error || parseTranzilaError(tzResult, isBitPayment))
                         setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                        resetSession(sessionId)
+                        resetSession(sessionId, { message: verifyData.error || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: 'card' })
                         return
                       }
                       // verifyData.pending → still in flight, fall through to selfComplete
@@ -1213,7 +1226,12 @@ export function PaymentForm({
                 setLoadingStep(null)
                 setPaymentError(parseTranzilaError(tzResult, isBitPayment))
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                resetSession(sessionId)
+                resetSession(sessionId, {
+                  message: parseTranzilaError(tzResult, isBitPayment),
+                  // 3DS started but no bank answer → '930' (verification not completed)
+                  code: tzDeclineCode(tzResult) || (had3DSChallengeRef.current && !sdkExplicitFailure ? '930' : undefined),
+                  method: isBitPayment ? 'bit' : 'card',
+                })
                 return
               }
 
@@ -1253,7 +1271,7 @@ export function PaymentForm({
                       setLoadingStep(null)
                       setPaymentError(verifyData.error || parseTranzilaError(tzResult, isBitPayment))
                       setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                      resetSession(sessionId)
+                      resetSession(sessionId, { message: verifyData.error || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: 'card' })
                       return
                     }
                     // verifyData.pending → transaction still in flight, use active polling
@@ -1592,10 +1610,10 @@ export function PaymentForm({
                         onChange={e => setInstallments(parseInt(e.target.value))}
                         className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                       >
-                        <option value={1}>{t('paymentForm.fullPayment')} — {formatPrice(chargeAmount)}</option>
+                        <option value={1}>{t('paymentForm.fullPayment')}: {formatPrice(chargeAmount)}</option>
                         {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 2).map(num => (
                           <option key={num} value={num}>
-                            {num} {t('paymentForm.installments')} — {formatPrice(chargeAmount / num)} {t('paymentForm.perMonth')}
+                            {num} {t('paymentForm.installments')}: {formatPrice(chargeAmount / num)} {t('paymentForm.interestFree')}
                           </option>
                         ))}
                       </select>
@@ -1616,7 +1634,7 @@ export function PaymentForm({
             </div>
 
             {/* ── Test card toggle (card mode only) ── */}
-             {paymentMethod === 'card' && (
+             {/* {paymentMethod === 'card' && (
               <div className="flex justify-end mt-1">
                 <button
                   type="button"
@@ -1629,7 +1647,7 @@ export function PaymentForm({
                   {showTestCardInput ? '← Real card' : 'Test card'}
                 </button>
               </div>
-            )}  
+            )}   */}
 
             {/* ── Bit section ── */}
             {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK

@@ -544,9 +544,9 @@ export const translations = {
       en: 'installments',
       he: 'תשלומים',
     },
-    perMonth: {
-      en: '/ mo (interest-free)',
-      he: '/ חודש (ללא ריבית)',
+    interestFree: {
+      en: 'interest-free',
+      he: 'ללא ריבית',
     },
     interestFreePayments: {
       en: 'interest-free payments of',
