@@ -7,37 +7,9 @@ import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
+import { tranzilaCodeMessage } from '@/lib/tranzila-codes'
+import { gatewayMessage } from '@/lib/tranzila-response'
 
-const TRANZILA_RESPONSE_CODES: Record<string, string> = {
-  '000': 'Approved',
-  '001': 'Card blocked – contact your bank',
-  '002': 'Card stolen – contact your bank',
-  '003': 'Contact your credit company',
-  '004': 'Refused by bank',
-  '005': 'Do not honor – card rejected by bank',
-  '006': 'CVV or ID verification error',
-  '007': 'Contact your credit company',
-  '009': 'Transaction not permitted',
-  '010': 'Transaction not approved',
-  '011': 'Invalid amount',
-  '012': 'Invalid card number',
-  '014': 'Invalid terminal',
-  '015': 'Terminal not found',
-  '017': 'Card expired',
-  '033': 'Invalid currency or test/live mode mismatch',
-  '041': 'Lost card',
-  '043': 'Stolen card',
-  '051': 'Insufficient funds',
-  '054': 'Expired card',
-  '055': 'Incorrect PIN',
-  '057': 'Transaction not permitted to cardholder',
-  '058': 'Transaction not permitted to terminal',
-  '061': 'Exceeds withdrawal amount limit',
-  '062': 'Restricted card',
-  '065': 'Exceeds withdrawal frequency limit',
-  '091': 'Card issuer unavailable – try again later',
-  '096': 'System error – try again later',
-}
 
 // Callback from Tranzila after payment (hosted fields success_url / fail_url)
 export async function POST(request: NextRequest) {
@@ -68,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     // Derive human-readable error before we lose the code
     const errorMsg = !isSuccess
-      ? (TRANZILA_RESPONSE_CODES[responseCode] || `Payment declined (code: ${responseCode || 'unknown'})`)
+      ? (tranzilaCodeMessage(responseCode) || gatewayMessage(params) || `Payment declined (code: ${responseCode || 'unknown'})`)
       : undefined
 
     if (errorMsg) {

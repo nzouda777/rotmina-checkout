@@ -438,6 +438,27 @@ function DetailContent({
         )}
       </div>
 
+      {/* What Tranzila actually returned */}
+      {insight?.gateway && (
+        <Section icon={<AlertTriangle className="h-4 w-4" />} title={t('orders.sectionGateway')}>
+          {insight.gateway.message && (
+            <p dir="auto" className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-sm font-medium text-red-800">
+              {insight.gateway.message}
+            </p>
+          )}
+          {insight.gateway.fields.length > 0 && (
+            <dl className="space-y-1">
+              {insight.gateway.fields.map((f) => (
+                <div key={f.key} className="flex items-baseline justify-between gap-4">
+                  <dt className="text-xs font-mono text-gray-400 flex-shrink-0">{f.key}</dt>
+                  <dd dir="auto" className="text-xs font-mono text-gray-700 text-right break-all">{f.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </Section>
+      )}
+
       {/* Transaction facts */}
       <Section icon={<CreditCard className="h-4 w-4" />} title={t('orders.sectionTransaction')}>
         <dl className="space-y-1.5">
@@ -589,6 +610,11 @@ function InsightCard({
         <span className="mt-0.5 flex-shrink-0">{style.icon}</span>
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-semibold ${style.text}`}>{insight.headline[lang]}</p>
+          {insight.official && insight.official !== insight.headline[lang] && (
+            <p dir="auto" className="text-xs text-gray-600 mt-0.5">
+              {t('orders.officialMeaning')}: “{insight.official}”
+            </p>
+          )}
           {(insight.code || insight.source) && (
             <p className="text-xs text-gray-500 mt-0.5">
               {insight.code && <span className="font-mono">{t('orders.declineCode', { code: insight.code })}</span>}

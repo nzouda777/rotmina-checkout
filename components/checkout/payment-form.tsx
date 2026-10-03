@@ -12,6 +12,8 @@ import { storeUrl } from '@/lib/store-url'
 import { TERMS_TEXT_EN, TERMS_TEXT_HE } from '@/lib/terms'
 import { CouponForm } from '@/components/checkout/coupon-form'
 import { isPayableCurrency } from '@/lib/currency'
+import { gatewayMessage, sanitizeGatewayResponse } from '@/lib/tranzila-response'
+import { describeTranzilaCode } from '@/lib/tranzila-codes'
 
 interface PaymentFormProps {
   sessionId: string
@@ -593,37 +595,8 @@ export function PaymentForm({
 
   // ── Tranzila error helpers (shared between card and Bit) ─────────────────
 
-  const TRANZILA_CODE_MAP: Record<string, string> = {
-    '001': 'Card blocked – please contact your bank',
-    '002': 'Card reported stolen – contact your bank',
-    '003': 'Contact your credit company',
-    '004': 'Transaction refused by bank',
-    '005': 'Card rejected by bank (do not honor)',
-    '006': 'CVV or ID verification error',
-    '007': 'Contact your credit company',
-    '009': 'Transaction not permitted',
-    '010': 'Transaction not approved',
-    '011': 'Invalid transaction amount',
-    '012': 'Invalid card number',
-    '013': 'Invalid amount',
-    '014': 'Invalid card number or terminal',
-    '015': 'Terminal not found',
-    '017': 'Card has expired',
-    '033': 'Currency mismatch or test/live mode configuration error',
-    '041': 'Lost card – contact your bank',
-    '043': 'Stolen card – contact your bank',
-    '051': 'Insufficient funds on card',
-    '054': 'Card has expired',
-    '055': 'Incorrect PIN',
-    '057': 'Transaction not permitted to this cardholder',
-    '058': 'Transaction not permitted on this terminal',
-    '061': 'Card withdrawal limit exceeded',
-    '062': 'Restricted card',
-    '065': 'Card usage frequency limit exceeded',
-    '091': 'Card issuer unavailable – please try again',
-    '096': 'Payment system error – please try again',
-    '900': 'Transaction cancelled or declined by processor',
-  }
+  // Official Tranzila codes (lib/tranzila-codes.ts), in the customer's language
+  const tranzilaCodeText = (code: string): string | undefined => describeTranzilaCode(code)?.headline[lang]
 
   const parseTranzilaError = useCallback((res: any, isBit?: boolean): string => {
     if (!res || res === false) {
@@ -654,7 +627,7 @@ export function PaymentForm({
     if (txnResponse?.success === false || (txnResponse?.processor_response_code && txnResponse.processor_response_code !== '000')) {
       const code = txnResponse?.processor_response_code
       if (code && code !== '000') {
-        const msg = TRANZILA_CODE_MAP[code] || `Card declined (code: ${code})`
+        const msg = `${tranzilaCodeText(code) || 'Card declined'} (${code})`
         console.log('[PARSE-ERROR] transaction_response.processor_response_code:', code, '→', msg)
         return msg
       }
@@ -665,7 +638,7 @@ export function PaymentForm({
     const txnResult = res.transaction_result
     if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
       const code = txnResult.processor_response_code
-      const msg = TRANZILA_CODE_MAP[code] || `Card declined (code: ${code})`
+      const msg = `${tranzilaCodeText(code) || 'Card declined'} (${code})`
       console.log('[PARSE-ERROR] processor_response_code:', code, '→', msg)
       return msg
     }
@@ -676,13 +649,13 @@ export function PaymentForm({
       console.log('[PARSE-ERROR] transaction_result.approved=false →', msg)
       return msg
     }
-    if (Array.isArray(res.errors) && res.errors.length > 0) {
-      const msg = res.errors.map((e: any) => e.message || e.code || 'Unknown').join(', ')
-      console.log('[PARSE-ERROR] errors[] →', msg)
-      return msg
+    // Validation errors: { error: 'invalid_resource', messages: [{ code, message, param }] }
+    if (Array.isArray(res.messages) || Array.isArray(res.errors) || res.error_description) {
+      const msg = gatewayMessage(res)
+      if (msg) { console.log('[PARSE-ERROR] gateway messages →', msg); return msg }
     }
     if (res.Response && res.Response !== '000') {
-      const msg = TRANZILA_CODE_MAP[res.Response] || `Transaction failed (code: ${res.Response})`
+      const msg = `${tranzilaCodeText(res.Response) || 'Transaction failed'} (${res.Response})`
       console.log('[PARSE-ERROR] legacy Response:', res.Response, '→', msg)
       return msg
     }
@@ -770,14 +743,17 @@ export function PaymentForm({
   // even though the session goes back to 'pending' for a retry.
   const resetSession = useCallback(async (
     sid: string,
-    failure?: { message?: string; code?: string; method?: 'card' | 'bit' },
+    failure?: { message?: string; code?: string; method?: 'card' | 'bit'; gateway_response?: unknown },
   ) => {
     try {
       console.log(`[SESSION-RESET] Resetting session ${sid}...`)
       await fetch('/api/checkout/session/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sid, failure })
+        body: JSON.stringify({
+          sessionId: sid,
+          failure: failure && { ...failure, gateway_response: sanitizeGatewayResponse(failure.gateway_response) },
+        })
       })
     } catch (err) {
       console.error('[SESSION-RESET] Failed to reset session:', err)
@@ -1115,7 +1091,7 @@ export function PaymentForm({
                 setLoadingStep(null)
                 setPaymentError(errMsg)
                 setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                resetSession(sessionId, { message: errMsg, code: tzDeclineCode(tzResult), method: isBitPayment ? 'bit' : 'card' })
+                resetSession(sessionId, { message: errMsg, code: tzDeclineCode(tzResult), method: isBitPayment ? 'bit' : 'card', gateway_response: tzResult })
                 return
               }
 
@@ -1167,7 +1143,7 @@ export function PaymentForm({
                   setLoadingStep(null)
                   setPaymentError(recheckData.error_message || parseTranzilaError(tzResult, isBitPayment))
                   setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                  resetSession(sessionId, { message: recheckData.error_message || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: isBitPayment ? 'bit' : 'card' })
+                  resetSession(sessionId, { message: recheckData.error_message || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: isBitPayment ? 'bit' : 'card', gateway_response: tzResult })
                   return
                 }
 
@@ -1198,7 +1174,7 @@ export function PaymentForm({
                         setLoadingStep(null)
                         setPaymentError(verifyData.error || parseTranzilaError(tzResult, isBitPayment))
                         setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                        resetSession(sessionId, { message: verifyData.error || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: 'card' })
+                        resetSession(sessionId, { message: verifyData.error || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: 'card', gateway_response: tzResult })
                         return
                       }
                       // verifyData.pending → still in flight, fall through to selfComplete
@@ -1231,6 +1207,7 @@ export function PaymentForm({
                   // 3DS started but no bank answer → '930' (verification not completed)
                   code: tzDeclineCode(tzResult) || (had3DSChallengeRef.current && !sdkExplicitFailure ? '930' : undefined),
                   method: isBitPayment ? 'bit' : 'card',
+                  gateway_response: tzResult,
                 })
                 return
               }
@@ -1271,7 +1248,7 @@ export function PaymentForm({
                       setLoadingStep(null)
                       setPaymentError(verifyData.error || parseTranzilaError(tzResult, isBitPayment))
                       setIsSubmitting(false); isSubmittingRef.current = false; is3DSActiveRef.current = false
-                      resetSession(sessionId, { message: verifyData.error || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: 'card' })
+                      resetSession(sessionId, { message: verifyData.error || parseTranzilaError(tzResult, isBitPayment), code: tzDeclineCode(tzResult), method: 'card', gateway_response: tzResult })
                       return
                     }
                     // verifyData.pending → transaction still in flight, use active polling

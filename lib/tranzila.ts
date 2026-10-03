@@ -1,5 +1,7 @@
 import crypto from 'crypto'
 import type { TranzilaConfig, TranzilaChargeParams, TranzilaResponse } from './types'
+import { gatewayMessage } from './tranzila-response'
+import { tranzilaCodeMessage } from './tranzila-codes'
 
 const DEFAULT_TRANZILA_API_URL = 'https://api.tranzila.com/v1/transaction/credit_card/create'
 
@@ -313,97 +315,20 @@ export class TranzilaClient {
   static getErrorMessage(response: any): string {
     if (!response) return 'Unknown error'
 
-    // error_code from 3DS complete response (0 = success, non-zero = error)
-    if (typeof response.error_code === 'number' && response.error_code !== 0) {
-      return response.message || `Transaction error (code: ${response.error_code})`
-    }
-    if (response.error_code && response.error_code !== 0) {
-      let msg = response.message || 'Validation error'
-      if (response.mismatch_info && Array.isArray(response.mismatch_info)) {
-        const details = response.mismatch_info
-          .map((m: any) => `${(m.data_path || []).join('.')}: ${m.keyword || 'invalid type'}`)
-          .join(', ')
-        if (details) msg += ` (${details})`
-      }
-      return msg
-    }
+    // Official SHVA / 3DS / API code wording (lib/tranzila-codes.ts), then
+    // whatever Tranzila wrote itself (message, messages[], mismatch_info…).
+    const txnResult = response.transaction_result || response.transaction_response
+    const processorCode = txnResult?.processor_response_code
+    const apiCode = response.error_code && Number(response.error_code) !== 0 ? response.error_code : undefined
+    const legacyCode = response.Response && response.Response !== '000' ? response.Response : undefined
+    const code = (processorCode && processorCode !== '000' ? processorCode : undefined) || apiCode || legacyCode
 
-    // Check nested transaction_result for processor errors
-    const txnResult = response.transaction_result
-    if (txnResult?.processor_response_code && txnResult.processor_response_code !== '000') {
-      const processorMessages: Record<string, string> = {
-        '001': 'Refer to card issuer',
-        '002': 'Refer to card issuer, special condition',
-        '003': 'Invalid merchant',
-        '004': 'Pick up card',
-        '005': 'Do not honor',
-        '012': 'Invalid transaction',
-        '013': 'Invalid amount',
-        '014': 'Invalid card number',
-        '041': 'Lost card',
-        '043': 'Stolen card',
-        '051': 'Insufficient funds',
-        '054': 'Expired card',
-        '055': 'Incorrect PIN',
-        '057': 'Transaction not permitted to cardholder',
-        '058': 'Transaction not permitted to terminal',
-        '061': 'Exceeds withdrawal amount limit',
-        '062': 'Restricted card',
-        '065': 'Exceeds withdrawal frequency limit',
-        '091': 'Issuer unavailable',
-        '096': 'System error',
-        '900': 'Transaction cancelled or declined by processor',
-      }
-      const code = txnResult.processor_response_code
-      return processorMessages[code] || `Transaction declined (code: ${code})`
-    }
-
-    // Tableau errors[]
-    if (Array.isArray(response.errors) && response.errors.length > 0) {
-      return response.errors.map((e: any) => e.message || e.code).join(', ')
-    }
-
-    // Champ error string
-    if (response.error && typeof response.error === 'string') {
-      return response.error
-    }
-
-    // Codes Response legacy
-    const errorMessages: Record<string, string> = {
-      '001': 'Card blocked',
-      '002': 'Card stolen',
-      '003': 'Contact credit company',
-      '004': 'Refusal',
-      '005': 'Forged card',
-      '006': 'CVV or ID error',
-      '007': 'Contact credit company',
-      '009': 'Transaction not permitted',
-      '010': 'Transaction not approved',
-      '011': 'Invalid amount',
-      '012': 'Invalid card number',
-      '014': 'Invalid terminal',
-      '015': 'Terminal not found',
-      '017': 'Card expired',
-      '033': 'Invalid currency',
-      '041': 'Lost card',
-      '043': 'Stolen card',
-      '051': 'Insufficient funds',
-      '054': 'Expired card',
-      '055': 'Incorrect PIN',
-      '057': 'Transaction not permitted to cardholder',
-      '058': 'Transaction not permitted to terminal',
-      '061': 'Exceeds withdrawal amount limit',
-      '062': 'Restricted card',
-      '065': 'Exceeds withdrawal frequency limit',
-      '091': 'Issuer unavailable',
-      '096': 'System error',
-    }
-
-    const code = response.Response
-    if (code && code !== '000') {
-      return errorMessages[code] || `Transaction failed (Code: ${code})`
-    }
-
+    const official = code ? tranzilaCodeMessage(code) : undefined
+    const gwMessage = gatewayMessage(response)
+    if (official && gwMessage && gwMessage !== official) return `${official} — ${gwMessage} (code: ${code})`
+    if (official) return `${official} (code: ${code})`
+    if (gwMessage) return code ? `${gwMessage} (code: ${code})` : gwMessage
+    if (code) return `Transaction failed (code: ${code})`
     return 'Transaction failed'
   }
 }

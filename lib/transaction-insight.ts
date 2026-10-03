@@ -8,6 +8,9 @@
  * since error_message comes from several code paths with inconsistent wording.
  */
 
+import { gatewayFields, gatewayMessage, mismatchSummary, type GatewayField } from './tranzila-response'
+import { describeTranzilaCode, normalizeTranzilaCode } from './tranzila-codes'
+
 type L = { en: string; he: string }
 
 export type InsightOutcome = 'success' | 'failed' | 'attention' | 'abandoned' | 'in_progress'
@@ -41,6 +44,10 @@ export interface TransactionInsight {
   explanation?: L
   action?: L
   facts: InsightFact[]
+  /** Tranzila's documented meaning of `code`, verbatim. */
+  official?: string
+  /** What Tranzila actually returned (failed transactions only). */
+  gateway?: { message?: string; fields: GatewayField[] }
 }
 
 export interface InsightSessionInput {
@@ -64,156 +71,14 @@ interface CodeInfo {
   action: L
 }
 
-const ASK_OTHER_CARD: L = {
-  en: 'Nothing to fix on our side. The customer should contact their bank or pay with another card or Bit.',
-  he: 'אין מה לתקן מצדנו. על הלקוח לפנות לבנק או לשלם בכרטיס אחר או ב-Bit.',
-}
-const ASK_RECHECK_DETAILS: L = {
-  en: 'The customer should re-enter their card details carefully and try again.',
-  he: 'על הלקוח להזין מחדש את פרטי הכרטיס בקפידה ולנסות שוב.',
-}
-const CHECK_TERMINAL: L = {
-  en: 'Configuration issue on our side: check the Tranzila terminal settings (currencies, test/live mode, installments) or contact Tranzila support.',
-  he: 'בעיית הגדרות מצדנו: יש לבדוק את הגדרות המסוף בטרנזילה (מטבעות, מצב בדיקה/אמת, תשלומים) או לפנות לתמיכת טרנזילה.',
-}
-const RETRY_LATER: L = {
-  en: 'Temporary problem at the bank or gateway. The customer can simply try again in a few minutes.',
-  he: 'תקלה זמנית בבנק או בשער התשלום. הלקוח יכול פשוט לנסות שוב בעוד מספר דקות.',
-}
-
 function code(category: InsightCategory, headline: L, explanation: L, action: L): CodeInfo {
   return { category, headline, explanation, action }
 }
 
-const TRANZILA_CODES: Record<string, CodeInfo> = {
-  '001': code('bank_decline',
-    { en: 'Card blocked', he: 'כרטיס חסום' },
-    { en: 'The issuing bank reports this card as blocked.', he: 'הבנק המנפיק מדווח שהכרטיס חסום.' },
-    ASK_OTHER_CARD),
-  '002': code('bank_decline',
-    { en: 'Card reported stolen', he: 'כרטיס מדווח כגנוב' },
-    { en: 'The issuing bank reports this card as stolen.', he: 'הבנק המנפיק מדווח שהכרטיס גנוב.' },
-    { en: 'Do not retry with this card. Be cautious if the same customer keeps trying different cards.', he: 'אין לנסות שוב עם כרטיס זה. יש לנהוג בזהירות אם אותו לקוח מנסה כרטיסים שונים.' }),
-  '003': code('bank_decline',
-    { en: 'Bank asks to call the card company', he: 'הבנק מבקש לפנות לחברת האשראי' },
-    { en: 'The card company needs the cardholder to call them before approving.', he: 'חברת האשראי דורשת שבעל הכרטיס יתקשר אליה לפני אישור.' },
-    ASK_OTHER_CARD),
-  '004': code('bank_decline',
-    { en: 'Refused by the bank', he: 'סירוב של הבנק' },
-    { en: 'The issuing bank refused the charge without giving a specific reason.', he: 'הבנק המנפיק סירב לחיוב ללא סיבה מפורטת.' },
-    ASK_OTHER_CARD),
-  '005': code('bank_decline',
-    { en: 'Refused by the bank (do not honor)', he: 'סירוב של הבנק (Do not honor)' },
-    { en: 'The issuing bank refused the charge (generic "do not honor" decline).', he: 'הבנק המנפיק סירב לחיוב (סירוב כללי).' },
-    ASK_OTHER_CARD),
-  '006': code('card_details',
-    { en: 'Wrong CVV or ID number', he: 'CVV או תעודת זהות שגויים' },
-    { en: 'The 3-digit security code or the ID number does not match the card.', he: 'קוד האבטחה (3 ספרות) או מספר תעודת הזהות אינם תואמים לכרטיס.' },
-    ASK_RECHECK_DETAILS),
-  '007': code('bank_decline',
-    { en: 'Bank asks to call the card company', he: 'הבנק מבקש לפנות לחברת האשראי' },
-    { en: 'The card company needs the cardholder to call them before approving.', he: 'חברת האשראי דורשת שבעל הכרטיס יתקשר אליה לפני אישור.' },
-    ASK_OTHER_CARD),
-  '009': code('bank_decline',
-    { en: 'Transaction not permitted', he: 'העסקה אינה מורשית' },
-    { en: 'This card is not allowed to make this type of transaction.', he: 'הכרטיס אינו מורשה לבצע עסקה מסוג זה.' },
-    ASK_OTHER_CARD),
-  '010': code('bank_decline',
-    { en: 'Not approved', he: 'לא אושר' },
-    { en: 'The transaction was not approved by the card company.', he: 'העסקה לא אושרה על ידי חברת האשראי.' },
-    ASK_OTHER_CARD),
-  '011': code('configuration',
-    { en: 'Invalid amount', he: 'סכום לא תקין' },
-    { en: 'The gateway rejected the amount sent by the checkout.', he: 'שער התשלום דחה את הסכום שנשלח מהצ\'קאאוט.' },
-    CHECK_TERMINAL),
-  '012': code('card_details',
-    { en: 'Invalid card number', he: 'מספר כרטיס לא תקין' },
-    { en: 'The card number entered is not valid.', he: 'מספר הכרטיס שהוזן אינו תקין.' },
-    ASK_RECHECK_DETAILS),
-  '013': code('configuration',
-    { en: 'Invalid amount', he: 'סכום לא תקין' },
-    { en: 'The gateway rejected the amount sent by the checkout.', he: 'שער התשלום דחה את הסכום שנשלח מהצ\'קאאוט.' },
-    CHECK_TERMINAL),
-  '014': code('card_details',
-    { en: 'Invalid card number', he: 'מספר כרטיס לא תקין' },
-    { en: 'The card number is not valid for this terminal.', he: 'מספר הכרטיס אינו תקף עבור מסוף זה.' },
-    ASK_RECHECK_DETAILS),
-  '015': code('configuration',
-    { en: 'Terminal not found', he: 'המסוף לא נמצא' },
-    { en: 'Tranzila does not recognise the terminal used by the checkout.', he: 'טרנזילה אינה מזהה את המסוף שבו משתמש הצ\'קאאוט.' },
-    CHECK_TERMINAL),
-  '017': code('card_details',
-    { en: 'Card expired', he: 'פג תוקף הכרטיס' },
-    { en: 'The card is past its expiry date, or the expiry date was entered incorrectly.', he: 'תוקף הכרטיס פג, או שתאריך התוקף הוזן בטעות.' },
-    ASK_RECHECK_DETAILS),
-  '033': code('configuration',
-    { en: 'Currency or test/live mismatch', he: 'אי התאמה במטבע או במצב בדיקה/אמת' },
-    { en: 'The terminal does not accept this currency, or a test card was used on a live terminal (or the opposite).', he: 'המסוף אינו מקבל מטבע זה, או שנעשה שימוש בכרטיס בדיקה במסוף אמיתי (או להפך).' },
-    CHECK_TERMINAL),
-  '036': code('card_details',
-    { en: 'Card expired', he: 'פג תוקף הכרטיס' },
-    { en: 'The card is past its expiry date.', he: 'תוקף הכרטיס פג.' },
-    ASK_RECHECK_DETAILS),
-  '039': code('card_details',
-    { en: 'Invalid card number', he: 'מספר כרטיס לא תקין' },
-    { en: 'The card number failed the validity check (typo likely).', he: 'מספר הכרטיס נכשל בבדיקת התקינות (כנראה טעות הקלדה).' },
-    ASK_RECHECK_DETAILS),
-  '041': code('bank_decline',
-    { en: 'Card reported lost', he: 'כרטיס מדווח כאבוד' },
-    { en: 'The issuing bank reports this card as lost.', he: 'הבנק המנפיק מדווח שהכרטיס אבד.' },
-    ASK_OTHER_CARD),
-  '043': code('bank_decline',
-    { en: 'Card reported stolen', he: 'כרטיס מדווח כגנוב' },
-    { en: 'The issuing bank reports this card as stolen.', he: 'הבנק המנפיק מדווח שהכרטיס גנוב.' },
-    { en: 'Do not retry with this card. Be cautious if the same customer keeps trying different cards.', he: 'אין לנסות שוב עם כרטיס זה. יש לנהוג בזהירות אם אותו לקוח מנסה כרטיסים שונים.' }),
-  '051': code('bank_decline',
-    { en: 'Insufficient funds', he: 'אין מספיק יתרה / מסגרת' },
-    { en: 'The card does not have enough available credit for this amount.', he: 'אין בכרטיס מסגרת פנויה מספקת לסכום זה.' },
-    { en: 'The customer can use another card, choose installments, or pay with Bit.', he: 'הלקוח יכול להשתמש בכרטיס אחר, לבחור בתשלומים או לשלם ב-Bit.' }),
-  '054': code('card_details',
-    { en: 'Card expired', he: 'פג תוקף הכרטיס' },
-    { en: 'The card is past its expiry date, or the expiry date was entered incorrectly.', he: 'תוקף הכרטיס פג, או שתאריך התוקף הוזן בטעות.' },
-    ASK_RECHECK_DETAILS),
-  '055': code('card_details',
-    { en: 'Incorrect PIN', he: 'קוד PIN שגוי' },
-    { en: 'The card company rejected the PIN.', he: 'חברת האשראי דחתה את קוד ה-PIN.' },
-    ASK_RECHECK_DETAILS),
-  '057': code('bank_decline',
-    { en: 'Not allowed for this cardholder', he: 'לא מורשה לבעל הכרטיס' },
-    { en: 'The bank does not allow this cardholder to make this kind of purchase (often online or foreign purchases).', he: 'הבנק אינו מאפשר לבעל הכרטיס לבצע רכישה מסוג זה (לרוב רכישה אונליין או בחו"ל).' },
-    ASK_OTHER_CARD),
-  '058': code('configuration',
-    { en: 'Not allowed on this terminal', he: 'לא מורשה במסוף זה' },
-    { en: 'Our terminal is not allowed to accept this card type or transaction type (e.g. installments, Amex, Diners).', he: 'המסוף שלנו אינו מורשה לקבל סוג כרטיס או עסקה זה (למשל תשלומים, אמריקן אקספרס, דיינרס).' },
-    CHECK_TERMINAL),
-  '061': code('bank_decline',
-    { en: 'Card limit exceeded', he: 'חריגה ממגבלת הכרטיס' },
-    { en: 'The amount exceeds the card\'s spending limit.', he: 'הסכום חורג ממגבלת ההוצאה של הכרטיס.' },
-    ASK_OTHER_CARD),
-  '062': code('bank_decline',
-    { en: 'Restricted card', he: 'כרטיס מוגבל' },
-    { en: 'The card has restrictions set by the bank.', he: 'הבנק הגדיר הגבלות על הכרטיס.' },
-    ASK_OTHER_CARD),
-  '065': code('bank_decline',
-    { en: 'Too many attempts on this card', he: 'יותר מדי ניסיונות בכרטיס זה' },
-    { en: 'The card exceeded its allowed number of transactions.', he: 'הכרטיס חרג ממספר העסקאות המותר.' },
-    ASK_OTHER_CARD),
-  '091': code('technical',
-    { en: 'Bank unavailable', he: 'הבנק אינו זמין' },
-    { en: 'The card issuer could not be reached.', he: 'לא ניתן היה ליצור קשר עם מנפיק הכרטיס.' },
-    RETRY_LATER),
-  '096': code('technical',
-    { en: 'Payment system error', he: 'שגיאת מערכת תשלומים' },
-    { en: 'A system error occurred at the card processor.', he: 'אירעה שגיאת מערכת אצל מעבד האשראי.' },
-    RETRY_LATER),
-  '900': code('authentication',
-    { en: '3D Secure verification failed', he: 'אימות 3D Secure נכשל' },
-    { en: 'The transaction was cancelled because the bank\'s identity check (3D Secure) did not succeed.', he: 'העסקה בוטלה כי אימות הזהות של הבנק (3D Secure) לא הצליח.' },
-    { en: 'The customer should retry and complete the bank verification (SMS code / banking app), or pay with Bit.', he: 'על הלקוח לנסות שוב ולהשלים את אימות הבנק (קוד SMS / אפליקציית הבנק), או לשלם ב-Bit.' }),
-  '930': code('authentication',
-    { en: '3D Secure not completed', he: 'אימות 3D Secure לא הושלם' },
-    { en: 'The customer started the bank verification but did not finish it.', he: 'הלקוח התחיל את אימות הבנק אך לא סיים אותו.' },
-    { en: 'No money was taken. The customer can retry and complete the verification.', he: 'לא בוצע חיוב. הלקוח יכול לנסות שוב ולהשלים את האימות.' }),
+/** Official Tranzila code → CodeInfo (see lib/tranzila-codes.ts). */
+function tz(c: string): CodeInfo {
+  const info = describeTranzilaCode(c)!
+  return { category: info.category, headline: info.headline, explanation: info.explanation, action: info.action }
 }
 
 // Free-text messages (error_message / client-reported reasons) → category.
@@ -239,17 +104,24 @@ const MESSAGE_PATTERNS: { re: RegExp; info: CodeInfo; code?: string }[] = [
     { en: 'Customer closed the bank verification', he: 'הלקוח סגר את חלון אימות הבנק' },
     { en: 'The customer closed the 3D Secure window before finishing it.', he: 'הלקוח סגר את חלון ה-3D Secure לפני שסיים.' },
     { en: 'No money was taken. The customer can retry.', he: 'לא בוצע חיוב. הלקוח יכול לנסות שוב.' }) },
-  { re: /insufficient/i, code: '051', info: TRANZILA_CODES['051'] },
-  { re: /expired/i, code: '054', info: TRANZILA_CODES['054'] },
-  { re: /stolen/i, code: '043', info: TRANZILA_CODES['043'] },
-  { re: /lost card/i, code: '041', info: TRANZILA_CODES['041'] },
-  { re: /cvv|id (verification|error)/i, code: '006', info: TRANZILA_CODES['006'] },
-  { re: /invalid card number/i, code: '012', info: TRANZILA_CODES['012'] },
-  { re: /blocked/i, code: '001', info: TRANZILA_CODES['001'] },
-  { re: /currency|test\/live/i, code: '033', info: TRANZILA_CODES['033'] },
-  { re: /terminal/i, code: '058', info: TRANZILA_CODES['058'] },
-  { re: /3d ?s|authentication/i, code: '930', info: TRANZILA_CODES['930'] },
-  { re: /do not honor|refus|declined by (bank|processor)|not approved/i, code: '004', info: TRANZILA_CODES['004'] },
+  { re: /\b999\b/, code: '999', info: code('technical',
+    { en: 'No readable answer from Tranzila', he: 'לא התקבלה תשובה קריאה מטרנזילה' },
+    { en: '999 is not a Tranzila code: our checkout records it when the payment window closed or returned nothing it could interpret. The real result is only in the Tranzila portal.', he: '999 אינו קוד של טרנזילה: הצ\'קאאוט שלנו רושם אותו כאשר חלון התשלום נסגר או לא החזיר תשובה שניתן לפענח. התוצאה האמיתית נמצאת רק בפורטל טרנזילה.' },
+    { en: 'Check this transaction in the Tranzila portal (by date and amount). If it was charged, create the order manually in Shopify.', he: 'יש לבדוק את העסקה בפורטל טרנזילה (לפי תאריך וסכום). אם בוצע חיוב, יש ליצור את ההזמנה ידנית בשופיפיי.' }) },
+  { re: /json|schema|mismatch_info/i, code: '20003', info: tz('20003') },
+  { re: /credit_card_number|card_number_invalid|invalid card number|wrong credit card|מספר כרטיס/i, code: '447', info: tz('447') },
+  { re: /expir|תוקף/i, code: '015', info: tz('015') },
+  { re: /cvv|קוד אבטחה|תעודת זהות|id (verification|error)/i, code: '006', info: tz('006') },
+  { re: /insufficient|יתרה|מסגרת/i, info: code('bank_decline',
+    { en: 'Insufficient credit on the card', he: 'אין מסגרת מספקת בכרטיס' },
+    { en: 'The card does not have enough available credit for this amount.', he: 'אין בכרטיס מסגרת פנויה מספקת לסכום זה.' },
+    { en: 'The customer can use another card, choose installments, or pay with Bit.', he: 'הלקוח יכול להשתמש בכרטיס אחר, לבחור בתשלומים או לשלם ב-Bit.' }) },
+  { re: /stolen/i, code: '002', info: tz('002') },
+  { re: /blocked|lost card/i, code: '001', info: tz('001') },
+  { re: /currency/i, code: '016', info: tz('016') },
+  { re: /terminal/i, code: '417', info: tz('417') },
+  { re: /3d ?s|authentication/i, code: '930', info: tz('930') },
+  { re: /do not honor|refus|declined by (bank|processor)|not approved/i, code: '004', info: tz('004') },
 ]
 
 const GENERIC_DECLINE: CodeInfo = code('bank_decline',
@@ -260,7 +132,7 @@ const GENERIC_DECLINE: CodeInfo = code('bank_decline',
 const API_ERROR: CodeInfo = code('configuration',
   { en: 'Gateway rejected the request', he: 'שער התשלום דחה את הבקשה' },
   { en: 'Tranzila rejected the request before contacting the bank (invalid parameters or terminal settings).', he: 'טרנזילה דחתה את הבקשה לפני הפנייה לבנק (פרמטרים או הגדרות מסוף לא תקינים).' },
-  CHECK_TERMINAL)
+  { en: 'Send the code and the Tranzila response below to Tranzila support or to the developer.', he: 'יש להעביר את הקוד ואת תגובת טרנזילה למטה לתמיכת טרנזילה או למפתח.' })
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -333,43 +205,97 @@ function fromInfo(
   }
 }
 
+/** Attach Tranzila's official wording for the code, shown under the headline. */
+function withOfficial(insight: TransactionInsight, codeStr: string): TransactionInsight {
+  const official = describeTranzilaCode(codeStr)?.official
+  if (official) insight.official = official
+  return insight
+}
+
 function explainFailure(
   session: InsightSessionInput, raw: Record<string, any>, method: PaymentMethodKind, facts: InsightFact[],
   outcome: InsightOutcome,
 ): TransactionInsight | null {
-  const lastFailure = raw._last_failure as { code?: string; message?: string; source?: string } | undefined
+  const lastFailure = raw._last_failure as
+    { code?: string; message?: string; source?: string; gateway_response?: Record<string, any> } | undefined
+
+  // The Tranzila response to read: the SDK result the browser reported, or
+  // the response stored by the server routes (callback params / 3DS-complete body).
+  const { _last_failure, _gift_card, _coupon, _generated_gift_cards, ...serverResponse } = raw
+  const tzResponse = lastFailure?.gateway_response || serverResponse
+  const fields = gatewayFields(tzResponse)
+  const tzMessage = gatewayMessage(tzResponse)
+
+  const insight = interpretFailure(session, raw, tzResponse, tzMessage, lastFailure, method, facts, outcome)
+  if (insight && (fields.length || tzMessage)) insight.gateway = { message: tzMessage, fields }
+  return insight
+}
+
+function interpretFailure(
+  session: InsightSessionInput, raw: Record<string, any>, resp: Record<string, any>, tzMessage: string | undefined,
+  lastFailure: { code?: string; message?: string; source?: string } | undefined,
+  method: PaymentMethodKind, facts: InsightFact[], outcome: InsightOutcome,
+): TransactionInsight | null {
   const source: 'gateway' | 'checkout' = !session.error_message && lastFailure?.source === 'checkout'
     ? 'checkout'
     : 'gateway'
 
-  const gwCode = extractGatewayCode(raw)
-  if (gwCode && TRANZILA_CODES[gwCode]) return fromInfo(TRANZILA_CODES[gwCode], outcome, method, facts, gwCode, source)
+  const gwCode = extractGatewayCode(raw) || extractGatewayCode(resp)
+  if (gwCode && describeTranzilaCode(gwCode)) return withOfficial(fromInfo(tz(gwCode), outcome, method, facts, gwCode, source), gwCode)
 
   // Tranzila API-level rejection (error_code != 0) — the bank was never contacted
-  if (raw.error_code != null && Number(raw.error_code) !== 0 && Number(raw.error_code) !== 930) {
-    const detail = typeof raw.message === 'string' ? raw.message : undefined
-    const insight = fromInfo(API_ERROR, outcome, method, facts, String(raw.error_code), 'gateway')
-    if (detail) {
+  const apiCode = resp.error_code ?? raw.error_code
+  // Application error codes (900, 20003…) — the bank may never have been contacted
+  const apiCodeStr = normalizeTranzilaCode(apiCode)
+  if (apiCodeStr && apiCodeStr !== '000' && describeTranzilaCode(apiCodeStr)) {
+    const insight = withOfficial(fromInfo(tz(apiCodeStr), outcome, method, facts, apiCodeStr, 'gateway'), apiCodeStr)
+    const fieldsRejected = mismatchSummary(resp.mismatch_info ?? raw.mismatch_info)
+    if (fieldsRejected) {
       insight.explanation = {
-        en: `${API_ERROR.explanation.en} Gateway message: "${detail}".`,
-        he: `${API_ERROR.explanation.he} הודעת השער: "${detail}".`,
+        en: `${insight.explanation!.en} Rejected field(s): ${fieldsRejected}.`,
+        he: `${insight.explanation!.he} שדות שנדחו: ${fieldsRejected}.`,
       }
     }
     return insight
   }
-  if (Number(raw.error_code) === 930) return fromInfo(TRANZILA_CODES['930'], outcome, method, facts, '930', source)
 
-  const message = session.error_message || lastFailure?.message || ''
-  if (message) {
-    const match = MESSAGE_PATTERNS.find((p) => p.re.test(message))
-    const info = match?.info || GENERIC_DECLINE
-    const insight = fromInfo(info, outcome, method, facts, gwCode || match?.code, source)
-    if (!match) {
-      insight.explanation = {
-        en: `${GENERIC_DECLINE.explanation.en} Message received: "${message}".`,
-        he: `${GENERIC_DECLINE.explanation.he} הודעה שהתקבלה: "${message}".`,
+  if (apiCode != null && Number(apiCode) !== 0) {
+    const insight = fromInfo(API_ERROR, outcome, method, facts, String(apiCode), 'gateway')
+    if (tzMessage) insight.headline = { en: tzMessage, he: tzMessage }
+    return insight
+  }
+
+  // Everything we know in words: our stored message, Tranzila's message, Tranzila's message codes
+  const tzCodes = [resp.error, ...(Array.isArray(resp.messages) ? resp.messages.map((m: any) => m?.code) : [])]
+    .filter((x) => typeof x === 'string')
+  const text = [session.error_message, lastFailure?.message, tzMessage, ...tzCodes].filter(Boolean).join(' | ')
+  const match = text ? MESSAGE_PATTERNS.find((p) => p.re.test(text)) : undefined
+  if (match) {
+    const insight = fromInfo(match.info, outcome, method, facts, gwCode || match.code, source)
+    if (match.code === '20003') {
+      insight.official = describeTranzilaCode('20003')?.official
+      insight.action = {
+        en: 'Developer issue. Tranzila\'s detailed answer (which field was rejected) was not saved for this transaction. Failures recorded from now on include it under "mismatch_info".',
+        he: 'בעיה לטיפול המפתח. התשובה המפורטת של טרנזילה (איזה שדה נדחה) לא נשמרה עבור עסקה זו. כשלים שיירשמו מעתה יכללו אותה תחת "mismatch_info".',
       }
     }
+    return insight
+  }
+
+  if (tzMessage || text) {
+    // Unknown reason: show Tranzila's own words as the headline
+    const insight = fromInfo(GENERIC_DECLINE, outcome, method, facts, gwCode, source)
+    const said = tzMessage || text
+    insight.headline = { en: said, he: said }
+    insight.explanation = tzMessage
+      ? {
+          en: 'The payment was declined. The reason above is the exact message returned by Tranzila.',
+          he: 'התשלום נדחה. הסיבה למעלה היא ההודעה המדויקת שהחזירה טרנזילה.',
+        }
+      : {
+          en: 'The payment was declined. The reason above is what our checkout recorded; Tranzila\'s detailed answer was not saved.',
+          he: 'התשלום נדחה. הסיבה למעלה היא מה שרשם הצ\'קאאוט שלנו; התשובה המפורטת של טרנזילה לא נשמרה.',
+        }
     return insight
   }
 
@@ -453,7 +379,7 @@ export function explainTransaction(session: InsightSessionInput): TransactionIns
 
   if (session.status === 'pending_3ds') {
     return age > 15
-      ? fromInfo(TRANZILA_CODES['930'], 'abandoned', method, facts)
+      ? fromInfo(tz('930'), 'abandoned', method, facts)
       : { outcome: 'in_progress', method, facts, headline: { en: 'Waiting for bank verification (3DS)', he: 'ממתין לאימות בנק (3DS)' } }
   }
 

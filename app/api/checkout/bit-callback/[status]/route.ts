@@ -7,6 +7,7 @@ import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/em
 import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
+import { gatewayMessage } from '@/lib/tranzila-response'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
 
 export async function GET(
@@ -35,6 +36,11 @@ async function handleBitCallback(request: NextRequest, status: string) {
     searchParams.get('ConfirmationCode') ||
     searchParams.get('confirmation_code')
 
+  // Everything Tranzila sent (query + POST body), kept for the admin panel on failure.
+  // Contact details are left out — they already live on session.customer.
+  const tzParams: Record<string, string> = {}
+  searchParams.forEach((value, key) => { tzParams[key] = value })
+
   // Customer info extracted from the Tranzila webhook body (fallback when session.customer is null)
   let callbackCustomer: CustomerInfo | null = null
 
@@ -54,6 +60,7 @@ async function handleBitCallback(request: NextRequest, status: string) {
 
       const bodyObj: Record<string, string> = {}
       formData.forEach((value, key) => { bodyObj[key] = value.toString() })
+      Object.assign(tzParams, bodyObj)
       console.log(`[BIT-CALLBACK][${logId}] POST body:`, JSON.stringify(bodyObj))
 
       // Extract customer info from callback body as fallback.
@@ -126,9 +133,20 @@ async function handleBitCallback(request: NextRequest, status: string) {
     if (!sessionId) return redirectToErrorUrl(request, 'Session ID missing')
 
     const supabase = await createClient()
+    const { contact: _c, email: _e, phone: _p, ...tzResponse } = tzParams
+    const tzMessage = gatewayMessage(tzResponse)
+    const { data: failedSession } = await supabase
+      .from('payment_sessions')
+      .select('raw_response')
+      .eq('id', sessionId)
+      .single()
     await supabase
       .from('payment_sessions')
-      .update({ status: 'failed', error_message: `Bit payment ${status}` })
+      .update({
+        status: 'failed',
+        error_message: tzMessage ? `Bit payment ${status}: ${tzMessage}` : `Bit payment ${status}`,
+        raw_response: { ...((failedSession?.raw_response as Record<string, unknown>) || {}), ...tzResponse },
+      })
       .eq('id', sessionId)
 
     return redirectToErrorUrl(request, `Bit payment was ${status}.`, sessionId)

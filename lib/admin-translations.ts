@@ -146,6 +146,8 @@ export const adminTranslations = {
     method:             { en: 'Method',                             he: 'אמצעי תשלום' },
     lastUpdate:         { en: 'Last update',                        he: 'עדכון אחרון' },
     colResult:          { en: 'Result',                             he: 'תוצאה' },
+    sectionGateway:     { en: 'Tranzila response',                  he: 'תגובת טרנזילה' },
+    officialMeaning:    { en: 'Tranzila definition',                he: 'הגדרת טרנזילה' },
   },
 
   paymentMethod: {

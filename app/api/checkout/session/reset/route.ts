@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sanitizeGatewayResponse } from '@/lib/tranzila-response'
 
 /**
  * Reset a payment session status back to 'pending' when the user cancels
@@ -49,12 +50,14 @@ export async function POST(request: NextRequest) {
       typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined
     const serverMessage = clip(session.error_message, 300)
     const clientMessage = clip(failure?.message, 300)
-    const lastFailure = serverMessage || clientMessage
+    const lastFailure = serverMessage || clientMessage || failure?.gateway_response
       ? {
           message: serverMessage || clientMessage,
           code: clip(failure?.code, 10),
           method: failure?.method === 'bit' ? 'bit' : failure?.method === 'card' ? 'card' : undefined,
           source: serverMessage ? 'gateway' : 'checkout',
+          // What Tranzila returned to the browser (SDK result), for the admin panel
+          gateway_response: sanitizeGatewayResponse(failure?.gateway_response),
           previous_status: session.status,
           at: new Date().toISOString(),
         }
