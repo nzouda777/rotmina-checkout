@@ -185,7 +185,7 @@ export async function sendMorningReceipt(
           quantity: item.quantity,
           price: item.price,
           currency: getCurrencyCode(currency),
-          vatType: 0, // Default VAT included
+          vatType: 1, // ItemVatType 1 = VAT included in price (required for type 320)
         }))
       : [
           {
@@ -194,7 +194,7 @@ export async function sendMorningReceipt(
             quantity: 1,
             price: amount,
             currency: getCurrencyCode(currency),
-            vatType: 0,
+            vatType: 1,
           },
         ]
 
@@ -211,7 +211,7 @@ export async function sendMorningReceipt(
         quantity: 1,
         price: shippingGap,
         currency: getCurrencyCode(currency),
-        vatType: 0,
+        vatType: 1,
       })
     }
 
@@ -224,7 +224,7 @@ export async function sendMorningReceipt(
       dueDate: payDate,
       lang,
       currency: getCurrencyCode(currency),
-      vatType: 0, // VAT included in price
+      vatType: 0, // DocumentVatType 0 = Default (based on business type)
       amount,
       emailContent: remarksText,
       // Client (recipient) info
@@ -245,7 +245,7 @@ export async function sendMorningReceipt(
       },
       // Line items
       income,
-      // Payment details (required for type 400 Receipt)
+      // Payment details (required for type 320 Tax Invoice/Receipt)
       payment: [
         {
           type: morningPaymentType,
