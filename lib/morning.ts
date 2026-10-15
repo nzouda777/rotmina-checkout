@@ -23,7 +23,7 @@ const getConfig = () => ({
 // 305 = Tax Invoice
 // 320 = Tax Invoice + Receipt (חשבונית מס/קבלה)
 // 400 = Receipt (קבלה)
-const RECEIPT_DOC_TYPE = 400
+const RECEIPT_DOC_TYPE = 320
 
 // ─── Payment method mapping ─────────────────────────────────────────────────────
 // Morning payment type codes:
