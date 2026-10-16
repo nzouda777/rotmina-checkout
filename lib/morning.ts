@@ -177,6 +177,12 @@ export async function sendMorningReceipt(
       ? new Date(paymentDate).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0]
 
+    // VAT: Israeli customers (Hebrew checkout) get VAT shown, already included in the price.
+    // Customers abroad (English checkout) are VAT-exempt — the amount stays exactly as paid.
+    const isIsrael = lang === 'he'
+    // ItemVatType: 1 = VAT included in price, 2 = Exempt
+    const itemVatType = isIsrael ? 1 : 2
+
     // Build line items (income array)
     const income = items && items.length > 0
       ? items.map(item => ({
@@ -185,7 +191,7 @@ export async function sendMorningReceipt(
           quantity: item.quantity,
           price: item.price,
           currency: getCurrencyCode(currency),
-          vatType: 1, // ItemVatType 1 = VAT included in price (required for type 320)
+          vatType: itemVatType,
         }))
       : [
           {
@@ -194,7 +200,7 @@ export async function sendMorningReceipt(
             quantity: 1,
             price: amount,
             currency: getCurrencyCode(currency),
-            vatType: 1,
+            vatType: itemVatType,
           },
         ]
 
@@ -211,7 +217,7 @@ export async function sendMorningReceipt(
         quantity: 1,
         price: shippingGap,
         currency: getCurrencyCode(currency),
-        vatType: 1,
+        vatType: itemVatType,
       })
     }
 
@@ -224,7 +230,7 @@ export async function sendMorningReceipt(
       dueDate: payDate,
       lang,
       currency: getCurrencyCode(currency),
-      vatType: 0, // DocumentVatType 0 = Default (based on business type)
+      vatType: isIsrael ? 0 : 1, // DocumentVatType 0 = Default (based on business type), 1 = Exempt
       amount,
       emailContent: remarksText,
       // Client (recipient) info
