@@ -278,10 +278,11 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
     // Postal code validation — matches the formats Shopify/carriers actually
     // check (see help.shopify.com .../reviewing-address-formats), so a bad
     // format is caught here instead of showing up as a red banner in Shopify.
+    // Optional on the Hebrew checkout; if filled in, the format is still checked.
     const postal = formData.postalCode.trim()
     const pattern = POSTAL_CODE_PATTERNS[formData.country]
     if (!postal) {
-      newErrors.postalCode = t('customerForm.postalCodeRequired')
+      if (lang !== 'he') newErrors.postalCode = t('customerForm.postalCodeRequired')
     } else if (pattern && !pattern.test(postal)) {
       newErrors.postalCode = t('customerForm.postalCodeInvalid')
     } else if (!pattern && postal.length < 3) {
@@ -540,7 +541,7 @@ export function CustomerForm({ initialData, onSubmit, onCountryChange }: Custome
                 name="postalCode"
                 value={formData.postalCode}
                 onChange={handleChange}
-                placeholder={t('customerForm.postalCode')}
+                placeholder={lang === 'he' ? t('customerForm.postalCodeOptional') : t('customerForm.postalCode')}
                 className={`w-full px-4 py-3 rounded-lg border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors ${errors.postalCode ? 'border-destructive' : 'border-input'
                   }`}
               />

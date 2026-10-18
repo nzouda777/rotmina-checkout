@@ -185,6 +185,10 @@ export const translations = {
       en: 'Postal code',
       he: 'מיקוד',
     },
+    postalCodeOptional: {
+      en: 'Postal code (optional)',
+      he: 'מיקוד (אופציונלי)',
+    },
     province: {
       en: 'State/Province',
       he: 'מדינה/מחוז',
