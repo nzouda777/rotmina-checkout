@@ -1596,6 +1596,7 @@ export function PaymentForm({
                           </option>
                         ))}
                       </select>
+                      <p className="text-xs text-muted-foreground">{t('paymentForm.installmentsInterestFreeNote')}</p>
                       {installments > 1 && (
                         <div className="rounded-md bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/50 px-3 py-2">
                           <p className="text-xs text-blue-700 dark:text-blue-300">

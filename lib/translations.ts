@@ -560,6 +560,10 @@ export const translations = {
       en: 'interest-free payments of',
       he: 'תשלומים ללא ריבית של',
     },
+    installmentsInterestFreeNote: {
+      en: '* Installments are interest-free',
+      he: '* התשלומים ללא ריבית',
+    },
     giftCardChargedSeparately: {
       en: 'gift card {amount} charged in full separately',
       he: 'כרטיס מתנה {amount} מחויב במלואו בנפרד',
