@@ -544,6 +544,10 @@ export const translations = {
       en: 'Full payment',
       he: 'תשלום מלא',
     },
+    numberOfPayments: {
+      en: 'Number of payments',
+      he: 'מספר תשלומים',
+    },
     installments: {
       en: 'installments',
       he: 'תשלומים',

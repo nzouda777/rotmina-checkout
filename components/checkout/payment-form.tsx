@@ -1587,10 +1587,12 @@ export function PaymentForm({
                         onChange={e => setInstallments(parseInt(e.target.value))}
                         className="w-full px-4 py-3 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
                       >
-                        <option value={1}>{t('paymentForm.fullPayment')}: {formatPrice(chargeAmount)}</option>
-                        {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 2).map(num => (
+                        {/* <option value={1}>{t('paymentForm.fullPayment')}: {formatPrice(chargeAmount)}</option> */}
+                        <option value={1} disabled>{t('paymentForm.numberOfPayments')}</option>
+                        {Array.from({ length: maxInstallments - 1 }, (_, i) => i + 1).map(num => (
                           <option key={num} value={num}>
-                            {num} {t('paymentForm.installments')}: {formatPrice(chargeAmount / num)} {t('paymentForm.interestFree')}
+                            {num}
+                            {/* {num} {t('paymentForm.installments')}: {formatPrice(chargeAmount / num)} {t('paymentForm.interestFree')} */}
                           </option>
                         ))}
                       </select>
@@ -1611,7 +1613,7 @@ export function PaymentForm({
             </div>
 
             {/* ── Test card toggle (card mode only) ── */}
-             {/* {paymentMethod === 'card' && (
+              {/* {paymentMethod === 'card' && (
               <div className="flex justify-end mt-1">
                 <button
                   type="button"
@@ -1624,7 +1626,7 @@ export function PaymentForm({
                   {showTestCardInput ? '← Real card' : 'Test card'}
                 </button>
               </div>
-            )}   */}
+            )}    */}
 
             {/* ── Bit section ── */}
             {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK
