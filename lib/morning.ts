@@ -102,14 +102,21 @@ async function getAccessToken(): Promise<string> {
     throw new Error('[MORNING] Missing MORNING_API_KEY or MORNING_API_SECRET environment variables')
   }
 
-  console.log(`[MORNING] Requesting new access token from ${baseUrl}/account/token`)
+  // Morning retired the legacy `${baseUrl}/account/token` endpoint (now 404).
+  // Tokens are issued by the OAuth 2.0 identity service on a separate host.
+  const idpUrl = process.env.MORNING_SANDBOX === 'true'
+    ? 'https://api.sandbox.morning.dev/idp/v1/oauth/token'
+    : 'https://api.morning.co/idp/v1/oauth/token'
 
-  const response = await fetch(`${baseUrl}/account/token`, {
+  console.log(`[MORNING] Requesting new access token from ${idpUrl}`)
+
+  const response = await fetch(idpUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      id: apiKey,
-      secret: apiSecret,
+      grant_type: 'client_credentials',
+      client_id: apiKey,
+      client_secret: apiSecret,
     }),
   })
 
@@ -119,9 +126,14 @@ async function getAccessToken(): Promise<string> {
   }
 
   const data = await response.json()
-  cachedToken = data.token
-  // JWT tokens from Morning are typically valid for 1 hour
-  tokenExpiresAt = Date.now() + 55 * 60 * 1000 // Refresh 5 min early
+  if (!data.accessToken) {
+    throw new Error('[MORNING] Authentication response missing accessToken')
+  }
+  cachedToken = data.accessToken
+  // expiresAt is a Unix timestamp in seconds
+  tokenExpiresAt = typeof data.expiresAt === 'number'
+    ? data.expiresAt * 1000
+    : Date.now() + 55 * 60 * 1000
 
   console.log('[MORNING] Access token obtained successfully')
   return cachedToken!
