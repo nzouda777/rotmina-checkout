@@ -1614,7 +1614,7 @@ export function PaymentForm({
             </div>
 
             {/* ── Test card toggle (card mode only) ── */}
-            {paymentMethod === 'card' && (
+              {/* {paymentMethod === 'card' && (
               <div className="flex justify-end mt-1">
                 <button
                   type="button"
@@ -1627,7 +1627,7 @@ export function PaymentForm({
                   {showTestCardInput ? '← Real card' : 'Test card'}
                 </button>
               </div>
-            )}    
+            )}    */}
 
             {/* ── Bit section ── */}
             {/* Clicking "Pay with Bit" calls chargeBit() which makes the SDK
