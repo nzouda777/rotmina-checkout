@@ -483,6 +483,10 @@ export const translations = {
       en: 'Failed to validate coupon. Please try again.',
       he: 'אימות קוד הקופון נכשל. נא לנסות שוב.',
     },
+    shopifyCartOnly: {
+      en: 'This code must be applied in the store cart before checkout.',
+      he: 'יש להזין קוד זה בעגלת הקניות של החנות לפני התשלום.',
+    },
   },
 
   // ─── Payment Form ────────────────────────────────────

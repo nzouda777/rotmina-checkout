@@ -21,6 +21,9 @@ interface CouponRecord {
   applies_to_all: boolean
   allowed_variant_ids: number[]
   created_at: string
+  source?: 'local' | 'shopify'
+  shopify_title?: string | null
+  checkout_usable?: boolean
 }
 
 interface ShopifyVariant { id: number; title: string }
@@ -99,6 +102,41 @@ export default function CouponsAdminPage() {
   }, [apiFetch, page, statusFilter, typeFilter, debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchCoupons() }, [fetchCoupons])
+
+  // ── Shopify discount sync ──────────────────────────────────────────────────
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const runShopifySync = useCallback(async (silent = false) => {
+    setIsSyncing(true)
+    if (!silent) setSyncMessage(null)
+    try {
+      const res = await apiFetch('/api/admin/coupons/sync-shopify', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setSyncMessage({ ok: false, text: data.migrationRequired ? t('coupons.migrationNeeded') : `${t('coupons.syncFailed')}: ${data.error || res.status}` })
+        return
+      }
+      if (!silent || data.conflicts?.length) {
+        const parts = [t('coupons.syncDone', { n: data.synced })]
+        if (data.conflicts?.length) parts.push(t('coupons.syncConflicts', { codes: data.conflicts.join(', ') }))
+        setSyncMessage({ ok: !data.conflicts?.length, text: parts.join(' — ') })
+      }
+      fetchCoupons()
+    } catch {
+      if (!silent) setSyncMessage({ ok: false, text: t('coupons.errorNetwork') })
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [apiFetch, fetchCoupons, t])
+
+  // Pull the latest Shopify codes once when the page opens
+  const didAutoSync = useRef(false)
+  useEffect(() => {
+    if (didAutoSync.current) return
+    didAutoSync.current = true
+    runShopifySync(true)
+  }, [runShopifySync])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -192,6 +230,14 @@ export default function CouponsAdminPage() {
             <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => runShopifySync(false)}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors border border-gray-200 disabled:opacity-50"
+          >
+            {isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
+            {isSyncing ? t('coupons.syncing') : t('coupons.syncShopify')}
+          </button>
+          <button
             onClick={() => { setShowCreate(true); setCreateResult(null); setCreateError('') }}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-900 transition-colors"
           >
@@ -200,6 +246,15 @@ export default function CouponsAdminPage() {
           </button>
         </div>
       </div>
+
+      {syncMessage && (
+        <div className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm ${
+          syncMessage.ok ? 'bg-green-50 border-green-100 text-green-700' : 'bg-amber-50 border-amber-100 text-amber-800'
+        }`}>
+          <span>{syncMessage.text}</span>
+          <button onClick={() => setSyncMessage(null)} className="opacity-60 hover:opacity-100"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       {/* Stats */}
       {stats && (
@@ -460,6 +515,21 @@ export default function CouponsAdminPage() {
                     >
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs font-medium text-gray-900 tracking-wide">{coupon.code}</span>
+                        {coupon.source === 'shopify' && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">
+                              <ShoppingBag className="h-2.5 w-2.5" /> {t('coupons.sourceShopify')}
+                            </span>
+                            {coupon.checkout_usable === false && (
+                              <span
+                                title={t('coupons.cartOnlyHint')}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100 cursor-help"
+                              >
+                                {t('coupons.cartOnly')}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {coupon.discount_type === 'percentage' ? (
@@ -489,6 +559,9 @@ export default function CouponsAdminPage() {
                         {coupon.note || '—'}
                       </td>
                       <td className="px-4 py-3">
+                        {coupon.source === 'shopify' ? (
+                          <span className="text-xs text-gray-400">{t('coupons.managedInShopify')}</span>
+                        ) : (
                         <button
                           onClick={() => setProductCoupon(coupon)}
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors hover:opacity-80 ${
@@ -506,6 +579,7 @@ export default function CouponsAdminPage() {
                             : t('coupons.allVariants')
                           }
                         </button>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
                         {formatDate(coupon.created_at)}

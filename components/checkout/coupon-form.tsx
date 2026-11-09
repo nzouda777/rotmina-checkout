@@ -134,6 +134,7 @@ export function CouponForm({
           DEPLETED: t('couponForm.depleted'),
           INVALID_INPUT: t('couponForm.enterCode'),
           SERVER_ERROR: t('couponForm.failedValidation'),
+          SHOPIFY_CART_ONLY: t('couponForm.shopifyCartOnly'),
         }
         setError(errorMap[data.errorCode] ?? t('couponForm.invalidCode'))
         return

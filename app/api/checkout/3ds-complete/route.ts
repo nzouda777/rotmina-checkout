@@ -3,9 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
-import { debitCoupon } from '@/lib/coupons'
+import { recordSessionDiscountUsage } from '@/lib/coupons'
 import { sendOrderConfirmationEmail } from '@/lib/email'
-import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { detectPaymentMethod } from '@/lib/morning'
+import { issueSessionReceipt, paidReceiptAmount } from '@/lib/morning-receipts'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -130,15 +131,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const storedCoupon = (session.raw_response as any)?._coupon
-      if (storedCoupon?.code) {
-        try {
-          console.log('[3DS-COMPLETE] Debiting coupon:', storedCoupon.code)
-          await debitCoupon(storedCoupon.code)
-        } catch (cpError) {
-          console.error('[3DS-COMPLETE] Coupon debit failed:', cpError)
-        }
-      }
+      // Mark discount codes as used (checkout coupon + Shopify cart codes) — once per session
+      await recordSessionDiscountUsage(`[3DS-COMPLETE][${sessionId}]`, session)
 
       let generatedCards: any[] = []
       try {
@@ -225,10 +219,10 @@ export async function POST(request: NextRequest) {
             const customerInfo = session.customer as CustomerInfo
             console.log(`[3DS-COMPLETE][${sessionId}] Sending Morning receipt...`)
             const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
-            await sendMorningReceiptLogged(`[3DS-COMPLETE][${sessionId}]`, {
+            await issueSessionReceipt(`[3DS-COMPLETE][${sessionId}]`, sessionId, {
               customerEmail: customerInfo.email,
               customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
-              amount: Number(session.cart.total),
+              amount: paidReceiptAmount(session),
               currency: session.cart.currency,
               paymentMethod: detectPaymentMethod(session.raw_response),
               items: await buildLocalizedReceiptItems(session.cart.items, receiptLang),
@@ -251,6 +245,7 @@ export async function POST(request: NextRequest) {
           raw_response: {
             ...completeResponse as any,
             _gift_card: storedGiftCard ? { ...storedGiftCard, remainingBalance } : null,
+            _coupon: (session.raw_response as any)?._coupon || undefined,
             _generated_gift_cards: generatedCards.map((c: any) => ({
               code: c.code,
               amount: c.original_amount,

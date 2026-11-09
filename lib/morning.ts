@@ -222,7 +222,12 @@ export async function sendMorningReceipt(
     const incomeSum = Math.round(income.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100
     const roundedAmount = Math.round(amount * 100) / 100
     const shippingGap = Math.round((roundedAmount - incomeSum) * 100) / 100
-    if (shippingGap > 0) {
+    if (shippingGap < 0) {
+      // Discount (Shopify cart code / checkout coupon): items are at full price
+      // but the customer paid less. Without this, sum(income) > amount and
+      // Morning rejects the document (error 2422) — no invoice at all.
+      applyDiscountToIncome(income, roundedAmount)
+    } else if (shippingGap > 0) {
       income.push({
         catalogNum: '',
         description: lang === 'he' ? 'משלוח' : 'Shipping',
@@ -365,7 +370,99 @@ export function sendMorningReceiptLogged(
     })
 }
 
+// ─── Document search ────────────────────────────────────────────────────────────
+
+export interface MorningDocumentSummary {
+  id: string
+  number: string
+  type: number
+  documentDate: string   // YYYY-MM-DD
+  amount: number
+  currency: string
+  clientName: string
+  emails: string[]       // lower-cased
+  url?: string
+}
+
+/**
+ * All documents issued between two dates (YYYY-MM-DD, inclusive).
+ * Read-only — used to find which paid orders never got an invoice.
+ */
+export async function searchMorningDocuments(fromDate: string, toDate: string): Promise<MorningDocumentSummary[]> {
+  const { baseUrl } = getConfig()
+  const out: MorningDocumentSummary[] = []
+  let retried = false
+
+  for (let page = 1; page <= 100; page++) {
+    const token = await getAccessToken()
+    const res = await fetch(`${baseUrl}/documents/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ fromDate, toDate, page, pageSize: 100 }),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (res.status === 401 && !retried) {
+      retried = true
+      cachedToken = null
+      tokenExpiresAt = 0
+      page--
+      continue
+    }
+    if (!res.ok) throw new Error(`[MORNING] Document search failed (${res.status}): ${(await res.text()).slice(0, 300)}`)
+
+    const data = await res.json()
+    for (const d of data.items || []) {
+      const url = typeof d.url === 'object' ? (d.url?.he || d.url?.origin || d.url?.en) : d.url
+      out.push({
+        id: String(d.id),
+        number: String(d.number ?? ''),
+        type: Number(d.type),
+        documentDate: String(d.documentDate || ''),
+        amount: Number(d.amount) || 0,
+        currency: String(d.currency || 'ILS').toUpperCase(),
+        clientName: d.client?.name || '',
+        emails: (d.client?.emails || []).map((e: string) => String(e).trim().toLowerCase()),
+        url: url || undefined,
+      })
+    }
+    if (!data.pages || page >= data.pages) break
+  }
+  return out
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────────
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * Spread a discount over the line items, in place, so that
+ * sum(price × quantity) equals `target` to the agorot.
+ *
+ * Unit prices are scaled proportionally; the rounding residual goes on a
+ * quantity-1 line, or on one unit split off the last line.
+ */
+export function applyDiscountToIncome(
+  income: { description: string; quantity: number; price: number; [k: string]: any }[],
+  target: number
+): void {
+  const sum = income.reduce((s, i) => s + i.price * i.quantity, 0)
+  if (income.length === 0 || sum <= 0 || target >= sum) return
+
+  const factor = target / sum
+  for (const line of income) line.price = round2(line.price * factor)
+
+  const residual = round2(target - income.reduce((s, i) => s + i.price * i.quantity, 0))
+  if (residual === 0) return
+
+  const single = income.find(i => i.quantity === 1)
+  if (single) {
+    single.price = round2(single.price + residual)
+    return
+  }
+  const last = income[income.length - 1]
+  last.quantity -= 1
+  income.push({ ...last, quantity: 1, price: round2(last.price + residual) })
+}
 
 /**
  * Map common currency strings to the Morning/Green Invoice currency code.

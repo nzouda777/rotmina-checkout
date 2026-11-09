@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { setShopifyDiscountActive } from '@/lib/shopify-discounts'
 
 function checkAuth(request: NextRequest): boolean {
   const key = request.headers.get('x-admin-key')
@@ -47,6 +48,20 @@ export async function PATCH(
   }
 
   const supabase = await createClient()
+
+  // Shopify-sourced code: apply the status change in Shopify first, so the
+  // storefront cart and this checkout stay in agreement.
+  if (status !== undefined) {
+    const { data: current } = await supabase.from('coupon_codes').select('*').eq('id', id).single()
+    if (current?.source === 'shopify' && current.shopify_discount_id) {
+      try {
+        await setShopifyDiscountActive(current.shopify_discount_id, status === 'active')
+      } catch (err: any) {
+        return NextResponse.json({ error: `Shopify: ${err?.message || err}` }, { status: 502 })
+      }
+    }
+  }
+
   const { data, error } = await supabase
     .from('coupon_codes')
     .update(updates)

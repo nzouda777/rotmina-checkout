@@ -36,12 +36,38 @@ function parseVariantId(raw: string | number | undefined): number | undefined {
   return parsed
 }
 
-export async function createShopifyOrder({ session, customer, transactionId, giftCard }: ShopifyOrderCreateData) {
+export async function createShopifyOrder({ session, customer, transactionId, giftCard, coupon }: ShopifyOrderCreateData) {
   if (!SHOPIFY_STORE_DOMAIN || !SHOPIFY_ACCESS_TOKEN) {
     throw new Error('Missing Shopify configuration in environment variables')
   }
 
   const endpoint = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/orders.json`
+
+  // ── Discounts ────────────────────────────────────────────────────────────
+  // Line items go out at their full price, so every discount the customer got
+  // must be sent as well — otherwise the order total is higher than what was
+  // paid and Shopify shows a balance due (#1086: paid 1240, order 1740, 500 due).
+  //   - cart.shopify_discount: applied in the Shopify cart (codes or automatic);
+  //     already deducted from cart.total
+  //   - coupon: typed in this checkout; NOT deducted from cart.total
+  const shopifyDiscount = session.cart?.shopify_discount
+  const shopifyDiscountAmount = Number(shopifyDiscount?.amount) || 0
+  const checkoutCoupon = coupon ?? (session as any).raw_response?._coupon ?? null
+  const couponAmount = Number(checkoutCoupon?.appliedAmount) || 0
+  const totalDiscount = Math.round((shopifyDiscountAmount + couponAmount) * 100) / 100
+  const discountLabels = [
+    ...(shopifyDiscount?.codes || []).map(c => c.code),
+    ...(couponAmount > 0 && checkoutCoupon?.code ? [checkoutCoupon.code] : []),
+  ].filter(Boolean)
+  // REST orders accept a single discount code: use the real code when there is
+  // one (so the order is linked to it in Shopify), a combined label otherwise.
+  const discountCodes = totalDiscount > 0
+    ? [{
+        code: discountLabels.length > 0 ? discountLabels.join(' + ') : 'Shopify discount',
+        amount: totalDiscount.toFixed(2),
+        type: 'fixed_amount',
+      }]
+    : []
 
   // Build transactions array
   const transactions: any[] = []
@@ -57,10 +83,10 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
     })
   }
 
-  // Main credit card transaction (remaining amount after gift card)
-  const ccAmount = giftCard
-    ? session.cart.total - giftCard.appliedAmount
-    : session.cart.total
+  // Main credit card transaction (remaining amount after checkout coupon and gift card)
+  const ccAmount = Math.round(
+    (session.cart.total - couponAmount - (giftCard ? giftCard.appliedAmount : 0)) * 100
+  ) / 100
 
   if (ccAmount > 0) {
     transactions.push({
@@ -166,6 +192,7 @@ export async function createShopifyOrder({ session, customer, transactionId, gif
       // creating a physical shipment for a gift card.
       ...(isGiftCardOnly ? {} : { shipping_address: shippingAddress }),
       ...(shippingLines.length > 0 ? { shipping_lines: shippingLines } : {}),
+      ...(discountCodes.length > 0 ? { discount_codes: discountCodes } : {}),
       email: customer.email,
       // Deliberately no top-level `phone`: Shopify validates it far more
       // strictly than address phones (E.164 + uniqueness across customers)

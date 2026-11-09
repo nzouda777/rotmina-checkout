@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAdmin } from '@/lib/admin-context'
 import { useAdminLanguage } from '@/lib/admin-language-context'
+import { DiscountBalanceAlert } from '@/components/admin/discount-balance-alert'
 import type { TransactionInsight, InsightOutcome } from '@/lib/transaction-insight'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -171,6 +172,9 @@ export default function OrdersPage() {
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+
+          {/* Paid orders showing a balance due in Shopify (missing discount) */}
+          <DiscountBalanceAlert />
 
           {/* Filters */}
           <div className="space-y-2">

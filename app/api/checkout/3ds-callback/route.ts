@@ -3,7 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
-import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { detectPaymentMethod } from '@/lib/morning'
+import { issueSessionReceipt, paidReceiptAmount } from '@/lib/morning-receipts'
+import { recordSessionDiscountUsage } from '@/lib/coupons'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -184,16 +186,19 @@ async function handleCallback(request: NextRequest) {
         }
       }
 
+      // Mark discount codes as used (checkout coupon + Shopify cart codes) — once per session
+      await recordSessionDiscountUsage(`[3DS-CALLBACK][${actualSessionId}]`, session)
+
       // ── Send Morning Receipt ───────────────────────────────
       try {
         const customerInfo = session.customer as CustomerInfo
         if (customerInfo) {
           console.log(`[3DS-CALLBACK][${actualSessionId}] Sending Morning receipt...`)
           const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
-          await sendMorningReceiptLogged(`[3DS-CALLBACK][${actualSessionId}]`, {
+          await issueSessionReceipt(`[3DS-CALLBACK][${actualSessionId}]`, actualSessionId, {
             customerEmail: customerInfo.email,
             customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
-            amount: Number(session.cart.total),
+            amount: paidReceiptAmount(session),
             currency: session.cart.currency,
             paymentMethod: detectPaymentMethod(session.raw_response),
             items: await buildLocalizedReceiptItems(session.cart.items, receiptLang),
@@ -213,6 +218,7 @@ async function handleCallback(request: NextRequest) {
           raw_response: {
             ...completeResponse as any,
             _gift_card: storedGiftCard ? { ...storedGiftCard, remainingBalance } : null,
+            _coupon: (session.raw_response as any)?._coupon || undefined,
             _generated_gift_cards: generatedCards.map((c: any) => ({
               code: c.code,
               amount: c.original_amount,

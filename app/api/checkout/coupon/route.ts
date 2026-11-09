@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { validateCoupon } from '@/lib/coupons'
+import { validateCheckoutCoupon } from '@/lib/coupons'
 
 const ALLOWED_ORIGINS = [
   'https://rotmina-israel.myshopify.com',
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const coupon = await validateCoupon(code)
+    const coupon = await validateCheckoutCoupon(code)
 
     if (!coupon) {
       return NextResponse.json(
@@ -44,6 +44,25 @@ export async function POST(request: NextRequest) {
     if (coupon.status === 'disabled') {
       return NextResponse.json(
         { errorCode: 'DISABLED', error: 'This coupon code has been disabled.' },
+        { status: 400, headers: getCorsHeaders(request) }
+      )
+    }
+
+    // Shopify code with conditions this checkout cannot check (minimum, specific
+    // products/customers, once per customer, free shipping, BXGY…): it has to be
+    // applied in the Shopify cart, where Shopify enforces those conditions.
+    if (coupon.checkout_usable === false) {
+      return NextResponse.json(
+        { errorCode: 'SHOPIFY_CART_ONLY', error: 'This code can only be applied in the store cart.' },
+        { status: 400, headers: getCorsHeaders(request) }
+      )
+    }
+
+    const now = Date.now()
+    if ((coupon.starts_at && new Date(coupon.starts_at).getTime() > now) ||
+        (coupon.ends_at && new Date(coupon.ends_at).getTime() < now)) {
+      return NextResponse.json(
+        { errorCode: 'DISABLED', error: 'This coupon code is not active.' },
         { status: 400, headers: getCorsHeaders(request) }
       )
     }

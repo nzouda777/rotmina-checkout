@@ -2,9 +2,10 @@ import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder } from '@/lib/gift-cards'
-import { debitCoupon } from '@/lib/coupons'
+import { recordSessionDiscountUsage } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
-import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { detectPaymentMethod } from '@/lib/morning'
+import { issueSessionReceipt, paidReceiptAmount } from '@/lib/morning-receipts'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import { gatewayMessage } from '@/lib/tranzila-response'
@@ -217,16 +218,8 @@ async function processSuccess(
   }
 
   // 1b. Debit coupon if applicable
-  const storedCoupon = (session.raw_response as any)?._coupon
-  if (storedCoupon?.code) {
-    try {
-      console.log(`[BIT-CALLBACK][${logId}] Debiting coupon ${storedCoupon.code}`)
-      await debitCoupon(storedCoupon.code)
-      console.log(`[BIT-CALLBACK][${logId}] Coupon debited`)
-    } catch (cpErr) {
-      console.error(`[BIT-CALLBACK][${logId}] Coupon debit failed:`, cpErr)
-    }
-  }
+  // Mark discount codes as used (checkout coupon + Shopify cart codes) — once per session
+  await recordSessionDiscountUsage(`[BIT-CALLBACK][${logId}]`, session)
 
   // 2. Create Shopify order (only if not already done)
   let shopifyOrderId = session.order_id
@@ -321,10 +314,10 @@ async function processSuccess(
 
         // 4. Send Morning Receipt (non-blocking)
         // `after` keeps the serverless instance alive past the response — see callback route.
-        after(async () => sendMorningReceiptLogged(`[BIT-CALLBACK][${logId}]`, {
+        after(async () => issueSessionReceipt(`[BIT-CALLBACK][${logId}]`, actualSessionId, {
           customerEmail: customer.email,
           customerName: `${customer.firstName} ${customer.lastName}`,
-          amount: Number(session.cart?.total || 0),
+          amount: paidReceiptAmount(session),
           currency: session.cart?.currency,
           paymentMethod: detectPaymentMethod(session.raw_response),
           items: await buildLocalizedReceiptItems(session.cart?.items || [], receiptLang),

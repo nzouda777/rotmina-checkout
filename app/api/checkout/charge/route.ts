@@ -3,9 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { createTranzilaClient, TranzilaClient } from '@/lib/tranzila'
 import { createShopifyOrder } from '@/lib/shopify'
 import { debitGiftCard, generateGiftCardsForOrder, validateGiftCard } from '@/lib/gift-cards'
-import { debitCoupon } from '@/lib/coupons'
+import { recordSessionDiscountUsage } from '@/lib/coupons'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
-import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { detectPaymentMethod } from '@/lib/morning'
+import { issueSessionReceipt, paidReceiptAmount } from '@/lib/morning-receipts'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { isPayableCurrency, tranzilaCurrencyCode, tranzilaChargeCurrency, getExchangeRate, withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo, GiftCardInfo } from '@/lib/types'
@@ -72,17 +73,8 @@ async function handlePostPayment(params: {
     }
   }
 
-  // 1b. Debit coupon code usage
-  const couponCode = (params as any).couponCode
-  if (couponCode) {
-    try {
-      console.log(`[CHARGE][${logId}] Debiting coupon ${couponCode}...`)
-      await debitCoupon(couponCode)
-      console.log(`[CHARGE][${logId}] Coupon debited successfully`)
-    } catch (cpError) {
-      console.error(`[CHARGE][${logId}] WARNING: Payment succeeded but coupon debit failed:`, cpError)
-    }
-  }
+  // 1b. Mark discount codes as used (checkout coupon + Shopify cart codes)
+  await recordSessionDiscountUsage(`[CHARGE][${logId}]`, session, [params.couponCode])
 
   // 2. Generate gift card codes if cart contains gift card products
   try {
@@ -164,10 +156,10 @@ async function createOrderAndNotify(params: {
   try {
     console.log(`[CHARGE][${logId}] Sending Morning receipt...`)
     const receiptLang: 'he' | 'en' = session.cart?.language === 'en' ? 'en' : 'he'
-    await sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
+    await issueSessionReceipt(`[CHARGE][${logId}]`, session.id, {
       customerEmail: customerInfo.email,
       customerName: `${customerInfo.firstName} ${customerInfo.lastName}`,
-      amount: Number(session.cart.total),
+      amount: paidReceiptAmount(session),
       currency: session.cart.currency,
       paymentMethod: detectPaymentMethod(session.raw_response),
       items: await buildLocalizedReceiptItems(session.cart.items, receiptLang),
@@ -390,6 +382,7 @@ export async function POST(request: NextRequest) {
           customer: customerForOrder,
           transactionId: txnId,
           giftCard: giftCardInfo,
+          coupon: couponCode && validCouponAmount > 0 ? { code: couponCode, appliedAmount: validCouponAmount } : null,
         })
         shopifyOrderId = String(order.id)
         const shopifyDomain = sessionForOrder.shop || 'rotmina.myshopify.com'
@@ -463,10 +456,10 @@ export async function POST(request: NextRequest) {
 
         // Morning receipt (non-blocking)
         // `after` keeps the serverless instance alive past the response — see callback route.
-        after(async () => sendMorningReceiptLogged(`[CHARGE][${logId}]`, {
+        after(async () => issueSessionReceipt(`[CHARGE][${logId}]`, sessionId, {
           customerEmail: customerForOrder.email,
           customerName: `${customerForOrder.firstName} ${customerForOrder.lastName}`,
-          amount: Number(sessionForOrder.cart?.total || 0),
+          amount: paidReceiptAmount(sessionForOrder, validCouponAmount),
           currency: sessionForOrder.cart?.currency,
           paymentMethod: isTestCard ? 'test_card' : 'gift_card',
           items: await buildLocalizedReceiptItems(sessionForOrder.cart?.items || [], receiptLang),
@@ -486,6 +479,7 @@ export async function POST(request: NextRequest) {
             payment_method: isTestCard ? 'test_card' : 'gift_card_only',
             gift_card_code: giftCardCode,
             gift_card_amount: validGiftCardAmount,
+            _coupon: couponCode && validCouponAmount > 0 ? { code: couponCode, appliedAmount: validCouponAmount } : null,
             gift_card_remaining_balance: postPayment.giftCardRemainingBalance,
             generated_gift_cards: postPayment.generatedCards.map(c => ({
               code: c.code, amount: c.original_amount, currency: c.currency,

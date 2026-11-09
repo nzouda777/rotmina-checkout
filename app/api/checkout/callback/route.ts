@@ -3,7 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createShopifyOrder } from '@/lib/shopify'
 import { generateGiftCardsForOrder } from '@/lib/gift-cards'
 import { sendOrderConfirmationEmail, sendAdminOrderNotification } from '@/lib/email'
-import { sendMorningReceiptLogged, detectPaymentMethod } from '@/lib/morning'
+import { detectPaymentMethod } from '@/lib/morning'
+import { issueSessionReceipt, paidReceiptAmount } from '@/lib/morning-receipts'
+import { recordSessionDiscountUsage } from '@/lib/coupons'
 import { buildLocalizedReceiptItems } from '@/lib/product-titles'
 import { withCurrencyParam } from '@/lib/currency'
 import type { PaymentSession, CustomerInfo } from '@/lib/types'
@@ -179,10 +181,10 @@ export async function POST(request: NextRequest) {
           // `after` keeps the serverless instance alive past the response. A bare
           // fire-and-forget call is killed on Vercel before Morning's two round
           // trips (token, then document) complete — it only appears to work locally.
-          after(async () => sendMorningReceiptLogged(`[CALLBACK][${logId}]`, {
+          after(async () => issueSessionReceipt(`[CALLBACK][${logId}]`, actualSessionId, {
             customerEmail: customer.email,
             customerName: `${customer.firstName} ${customer.lastName}`,
-            amount: Number(session.cart?.total || 0),
+            amount: paidReceiptAmount(session),
             currency: session.cart?.currency,
             paymentMethod: detectPaymentMethod(session.raw_response),
             items: await buildLocalizedReceiptItems(session.cart?.items || [], receiptLang),
@@ -208,6 +210,7 @@ export async function POST(request: NextRequest) {
                     ...params,
                     shopifyOrderUrl: shopifyOrderUrl || undefined,
                     _gift_card: (session.raw_response as any)?._gift_card || undefined,
+                    _coupon: (session.raw_response as any)?._coupon || undefined,
                     _generated_gift_cards: generatedGiftCards.map((c: any) => ({
                       code: c.code, amount: c.original_amount, currency: c.currency,
                     })),
@@ -227,6 +230,9 @@ export async function POST(request: NextRequest) {
           // Next callback call will retry because idempotency guard now checks order_id too.
         }
       }
+
+      // Mark the discount codes (checkout coupon + Shopify cart codes) as used — once per session
+      after(() => recordSessionDiscountUsage(`[CALLBACK][${logId}]`, session))
     }
 
     const { error: updateError } = await supabase
@@ -238,6 +244,7 @@ export async function POST(request: NextRequest) {
           ...params,
           shopifyOrderUrl: shopifyOrderUrl || undefined,
           _gift_card: (session.raw_response as any)?._gift_card || undefined,
+          _coupon: (session.raw_response as any)?._coupon || undefined,
         },
         order_id: shopifyOrderId,
         tranzila_transaction_id: txnId,

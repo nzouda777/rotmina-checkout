@@ -130,4 +130,6 @@ export interface ShopifyOrderCreateData {
   customer: CustomerInfo
   transactionId?: string
   giftCard?: GiftCardInfo
+  /** Coupon typed in this checkout. Defaults to session.raw_response._coupon. */
+  coupon?: { code: string; appliedAmount: number } | null
 }
